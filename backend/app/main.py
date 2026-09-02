@@ -1,0 +1,58 @@
+"""FastAPI application.
+
+Deliberately thin. Three jobs only:
+  1. Cross the CORS/TLS boundary to erddap.incois.gov.in, which the browser
+     cannot cross itself.
+  2. Normalize every source into the two schemas in context.md §6.
+  3. Cache, so a demo never depends on venue wifi.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import CACHE_DIR
+from .routers import catalog, field, instruments, terrain
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s %(name)s  %(message)s",
+)
+
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+app = FastAPI(
+    title="INCOIS 3D Ocean Data Visualization",
+    description=(
+        "Co-visualization of INCOIS gridded ocean analysis and in-situ Argo "
+        "observations. SIH 2026, problem statement 26067."
+    ),
+    version="0.1.0",
+)
+
+# Vite proxies /api in development, so this is belt-and-braces for the case
+# where the frontend is served from a different origin during a demo.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+    expose_headers=["X-Field-Shape", "X-Field-Provenance"],
+)
+
+app.include_router(catalog.router, prefix="/api", tags=["catalog"])
+app.include_router(field.router, prefix="/api", tags=["field"])
+app.include_router(instruments.router, prefix="/api", tags=["instruments"])
+app.include_router(terrain.router, prefix="/api", tags=["terrain"])
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "service": "INCOIS 3D Ocean Data Visualization",
+        "docs": "/docs",
+        "upstream": "https://erddap.incois.gov.in/erddap",
+    }

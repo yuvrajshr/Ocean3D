@@ -1,0 +1,812 @@
+/* ============================================================================
+   app.css — the instrument console.
+   Every value here comes from tokens.css. Class names are flat and namespaced
+   (block__element--modifier) so that layout-level and component-level rules can
+   never accidentally out-specify each other on spacing.
+   ========================================================================== */
+
+.console {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Explicit, constrained column. Without it the implicit column sizes to the
+     widest row's min-content — the header's nowrap controls — and drags the
+     whole console wider than the viewport on a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  background: var(--surface-viewport);
+}
+
+/* ------------------------------------------------------------------ header */
+
+.console__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-panel);
+  z-index: var(--z-console);
+}
+
+.header__mark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The INCOIS seal is a circular device on a light ground. Rather than knock it
+   out or recolour an official emblem — which we may not do — it sits on its own
+   small light chip, the way a seal sits on a document. */
+.header__seal {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--foam);
+  padding: 1px;
+  display: block;
+}
+
+.header__titles {
+  display: flex;
+  flex-direction: column;
+  line-height: var(--leading-tight);
+  min-width: 0;
+}
+
+.header__title {
+  font-size: var(--size-title);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+  white-space: nowrap;
+}
+
+.header__subtitle {
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header__spacer { flex: 1 1 auto; }
+
+.header__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* ------------------------------------------------------- provenance readout */
+
+.provenance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-inset);
+  white-space: nowrap;
+}
+
+.provenance__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--bioluminescence);
+}
+
+.provenance__dot--cached { background: var(--advisory); }
+.provenance__dot--offline { background: var(--text-faint); }
+
+.provenance__text { color: var(--text-muted); }
+
+/* ------------------------------------------------------------- mode toggle */
+
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.mode-toggle__button {
+  appearance: none;
+  border: 0;
+  background: var(--control-idle);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  font-weight: var(--weight-medium);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  transition: background var(--transition-state), color var(--transition-state);
+}
+
+.mode-toggle__button:hover:not(:disabled) { background: var(--control-hover); color: var(--text-primary); }
+.mode-toggle__button:active:not(:disabled) { background: var(--control-active); }
+/* The view toggle is disabled until the entry descent finishes — there is nothing
+   coherent to switch to mid-gesture. "Skip intro" is the control for cutting it short. */
+.mode-toggle__button:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-toggle__button[aria-pressed="true"] { background: var(--control-on); color: var(--foam); }
+
+/* -------------------------------------------------------------------- main */
+
+.console__main {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 104px;
+  min-height: 0;
+  position: relative;
+}
+
+.console__main--explore { grid-template-columns: 196px minmax(0, 1fr) 104px; }
+
+/* Globe mode drops the side panels entirely — a depth ruler and a colorbar describe a
+   water column, and in this view there isn't one. Must stay AFTER --explore: both are
+   single-class selectors, so equal specificity means source order decides which wins when
+   Explore and Globe are both on. */
+.console__main--globe { grid-template-columns: minmax(0, 1fr); }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  /* Grid items default to min-width/min-height:auto, which resolves to their
+     min-content size. Without these, the horizontally-scrolling panel on
+     narrow screens widens the whole page instead of scrolling inside itself. */
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface-panel);
+  z-index: var(--z-console);
+  overflow: hidden;
+}
+
+.panel--left { border-right: 1px solid var(--hairline); }
+.panel--right { border-left: 1px solid var(--hairline); align-items: stretch; }
+
+.panel__section {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  min-height: 0;
+}
+
+.panel__section--grow { flex: 1 1 auto; display: flex; flex-direction: column; }
+.panel__section:last-child { border-bottom: 0; }
+
+.panel__heading {
+  font-size: var(--size-label);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+/* ---------------------------------------------------------------- variables */
+
+.variable-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.variable-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-idle);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: background var(--transition-state), color var(--transition-state);
+}
+
+.variable-option:hover:not(:disabled) { background: var(--control-hover); color: var(--text-primary); }
+.variable-option:active:not(:disabled) { background: var(--control-active); }
+.variable-option[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); font-weight: var(--weight-medium); }
+.variable-option:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.variable-option__swatch {
+  width: 3px;
+  align-self: stretch;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.variable-option[aria-pressed="true"] .variable-option__swatch { background: var(--bioluminescence); }
+
+.variable-option__units { margin-left: auto; color: var(--text-faint); }
+
+.variable-caption {
+  margin: var(--space-2) 0 0;
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+}
+
+/* -------------------------------------------------------------- float list */
+
+.float-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  max-height: 168px;
+}
+
+.float-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-idle);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: background var(--transition-state), color var(--transition-state);
+}
+
+.float-list__item:hover { background: var(--control-hover); color: var(--text-primary); }
+.float-list__item:active { background: var(--control-active); }
+.float-list__item[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); }
+
+.float-list__pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.float-list__pip--featured { background: var(--bioluminescence); }
+
+.float-list__id { color: inherit; }
+.float-list__depth { margin-left: auto; color: var(--text-faint); }
+
+.float-list__empty {
+  margin: 0;
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+}
+
+/* -------------------------------------------------------------- depth ruler */
+
+.depth-ruler {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.depth-ruler__scale {
+  position: relative;
+  border-right: 1px solid var(--hairline-strong);
+}
+
+.depth-ruler__tick {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  width: 100%;
+  pointer-events: none;
+}
+
+.depth-ruler__tick-line { background: var(--hairline-strong); height: 1px; width: 5px; }
+.depth-ruler__tick--major .depth-ruler__tick-line { width: 9px; background: var(--text-faint); }
+
+.depth-ruler__tick-label {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-readout);
+  color: var(--text-muted);
+}
+
+/* The track is the water column in miniature: it carries the same depth
+   gradient as the scene, quietly, so the ruler reads as part of the same
+   instrument rather than as a filled progress bar. */
+.depth-ruler__track {
+  position: relative;
+  cursor: ns-resize;
+  border: 1px solid var(--hairline-strong);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--current) 22%, var(--abyss)),
+    var(--abyss) 78%
+  );
+}
+
+.depth-ruler__window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--bioluminescence) 9%, transparent);
+  border-top: 1px solid var(--bioluminescence);
+  border-bottom: 1px solid var(--bioluminescence);
+}
+
+.depth-ruler__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11px;
+  transform: translateY(-50%);
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: ns-resize;
+}
+
+.depth-ruler__handle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: var(--bioluminescence);
+  transform: translateY(-50%);
+}
+
+.depth-ruler__handle:hover::after { height: 3px; }
+
+.depth-ruler__cursor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--advisory);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- colorbar */
+
+.colorbar {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  padding: var(--space-3) var(--space-2);
+  gap: var(--space-2);
+}
+
+.colorbar__units {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: var(--tracking-readout);
+}
+
+.colorbar__body { display: grid; grid-template-columns: 1fr 34px; gap: var(--space-2); min-height: 0; }
+
+.colorbar__ramp {
+  border: 1px solid var(--hairline-strong);
+  border-radius: 1px;
+  min-height: 0;
+}
+
+.colorbar__scale { position: relative; }
+
+.colorbar__tick {
+  position: absolute;
+  left: 0;
+  transform: translateY(50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.colorbar__tick-line { width: 5px; height: 1px; background: var(--text-faint); }
+
+.colorbar__tick-label {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-readout);
+  color: var(--text-muted);
+}
+
+.colorbar__note {
+  font-size: var(--size-caption);
+  color: var(--text-faint);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: var(--leading-tight);
+}
+
+.colorbar__note-line { cursor: help; }
+
+/* --------------------------------------------------------------- viewport */
+
+.viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-viewport);
+  z-index: var(--z-viewport);
+}
+
+.viewport__canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.viewport__canvas:active { cursor: grabbing; }
+
+.viewport__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+}
+
+.viewport__status {
+  align-self: flex-start;
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-readout);
+  background: color-mix(in srgb, var(--abyss) 72%, transparent);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+
+.viewport__hint {
+  align-self: flex-end;
+  font-size: var(--size-caption);
+  color: var(--text-faint);
+}
+
+/* Map attribution, in the corner convention every basemap uses. Absolutely positioned so
+   it stays out of the overlay's space-between flow, which only expects two children. */
+.viewport__credit {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-3);
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--size-caption);
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.viewport__hover {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(12px, -50%);
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.viewport__message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.viewport__message-inner { max-width: 40ch; }
+
+.viewport__message-title {
+  font-size: var(--size-title);
+  font-weight: var(--weight-semibold);
+  margin: 0 0 var(--space-2);
+}
+
+.viewport__message-body { color: var(--text-muted); margin: 0; }
+
+.skip-entry {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  pointer-events: auto;
+  appearance: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-inset);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.skip-entry:hover { background: var(--control-hover); color: var(--text-primary); }
+
+/* --------------------------------------------------------------- timeline */
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--hairline);
+  background: var(--surface-panel);
+  z-index: var(--z-console);
+}
+
+.timeline__button {
+  appearance: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--control-idle);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  font-weight: var(--weight-medium);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-state);
+}
+
+.timeline__button:hover:not(:disabled) { background: var(--control-hover); }
+.timeline__button:active:not(:disabled) { background: var(--control-active); }
+.timeline__button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.timeline__track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 30px;
+  cursor: pointer;
+}
+
+.timeline__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--hairline-strong);
+}
+
+.timeline__step {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  background: var(--text-faint);
+}
+
+.timeline__step--has-data { background: var(--current); height: 11px; }
+
+.timeline__thumb {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 19px;
+  transform: translate(-50%, -50%);
+  background: var(--bioluminescence);
+}
+
+.timeline__thumb::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  width: 7px;
+  height: 7px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--bioluminescence);
+}
+
+.timeline__readout {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-readout);
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-width: 15ch;
+}
+
+.timeline__bound {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------- profile panel */
+
+.profile-panel {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 372px;
+  max-width: calc(100% - var(--space-6));
+  max-height: calc(100% - var(--space-6));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-floating);
+  z-index: var(--z-floating);
+  overflow: hidden;
+}
+
+.profile-panel__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.profile-panel__identity { display: flex; flex-direction: column; min-width: 0; }
+
+.profile-panel__id {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout-lg);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-readout);
+}
+
+.profile-panel__meta {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-readout);
+}
+
+.profile-panel__close {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--control-idle);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  flex: none;
+}
+
+.profile-panel__close:hover { background: var(--control-hover); color: var(--text-primary); }
+
+.profile-panel__body { padding: var(--space-3); overflow-y: auto; min-height: 0; }
+
+.profile-panel__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+}
+
+.legend-item { display: flex; align-items: center; gap: var(--space-1); }
+.legend-swatch { width: 12px; height: 2px; flex: none; }
+.legend-swatch--band { height: 8px; width: 12px; }
+
+.profile-panel__footnote {
+  margin: var(--space-2) 0 0;
+  font-size: var(--size-caption);
+  color: var(--text-faint);
+  line-height: var(--leading-body);
+}
+
+.profile-panel__empty { color: var(--text-muted); font-size: var(--size-label); }
+
+/* --------------------------------------------------------------- feedback */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--advisory);
+  background: color-mix(in srgb, var(--advisory) 10%, transparent);
+  font-size: var(--size-caption);
+  color: var(--text-primary);
+  line-height: var(--leading-body);
+}
+
+.notice__icon { flex: none; color: var(--advisory); font-weight: var(--weight-semibold); }
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px 0;
+}
+
+.stat-row__label { font-size: var(--size-caption); color: var(--text-muted); }
+
+.stat-row__value {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-readout);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------------- responsive */
+
+/* Explore mode is the outreach audience and must work on a phone. Ops mode's
+   denser controls assume a larger screen (context.md §5.4). */
+@media (max-width: 900px) {
+  .console__main,
+  .console__main--explore {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  /* The water column is the hero and must stay on top; the controls become a
+     scrolling strip beneath it. Explicit rows are required because the panel
+     precedes the viewport in the DOM. */
+  .viewport { grid-row: 1; }
+  .panel--left { grid-row: 2; }
+
+  .panel--left {
+    border-right: 0;
+    border-top: 1px solid var(--hairline);
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 212px;
+  }
+
+  .panel--left .panel__section {
+    border-bottom: 0;
+    border-right: 1px solid var(--hairline);
+    flex: 0 0 auto;
+    width: 190px;
+  }
+
+  /* The depth ruler stays: it is a core control, and it reads correctly as a
+     vertical ruler inside the horizontal strip. */
+  .panel--left .panel__section--grow { width: 148px; }
+  .panel--right { display: none; }
+  .profile-panel { top: auto; bottom: var(--space-2); right: var(--space-2); left: var(--space-2); width: auto; }
+
+  /* The header wraps rather than truncating: the provenance readout must stay
+     legible as text, since colour alone may not carry its meaning (§5.4). */
+  .console__header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
+  .header__mark { min-width: 0; flex: 1 1 auto; }
+  .header__title { overflow: hidden; text-overflow: ellipsis; }
+  .header__subtitle { display: none; }
+  .header__spacer { display: none; }
+  .header__group { width: 100%; justify-content: space-between; }
+}

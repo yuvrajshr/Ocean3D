@@ -1,0 +1,918 @@
+/**
+ * The 3D scene: an ocean, with the analysis inside it.
+ *
+ * Design notes that are decisions, not incidentals:
+ *
+ * - Everything is positioned through one GeoFrame (viz/geo.ts). The terrain,
+ *   the sea, the volume and the markers must agree on where 15 N is, and the
+ *   only way to guarantee that is to give them one mapping to share.
+ * - The globe carries NASA Blue Marble imagery and is a place you can return to
+ *   (context.md §5.1 Principle 7, and the two §10 entries that reverse the
+ *   earlier "graticule, never a destination" decisions). What survives those
+ *   reversals: the app still opens by diving, so the globe is never the default
+ *   view, and the globe never rotates on its own.
+ * - The globe and the descent are ONE continuous gesture (context.md §5.1,
+ *   Principle 3), skipped entirely under prefers-reduced-motion.
+ * - The data volume is drawn in true colormap colour with no lighting or fog.
+ *   Every atmospheric effect belongs to the water around it.
+ */
+
+import * as THREE from "three";
+
+import { depthToNorm } from "./depth";
+import { OceanEffects } from "./effects";
+import { ANALYSIS_HEIGHT, ANALYSIS_MAX_DEPTH, GeoFrame, type Extent } from "./geo";
+import {
+  buildGlobe,
+  DEFAULT_BASEMAP,
+  type Globe,
+  globeFloatMarkers,
+  globeToLatLon,
+  regionOutline,
+  setGlobeOpacity,
+} from "./globe";
+import {
+  BLOOM_LAYER,
+  buildLightShafts,
+  buildMarineSnow,
+  buildSeaSurface,
+  buildSky,
+  SUN_DIRECTION,
+} from "./ocean";
+import { buildTerrainMesh, type TerrainField } from "./terrain";
+import { TOKEN_RGB } from "./water";
+import {
+  buildLutTexture,
+  buildVolumeTexture,
+  createVolumeMaterial,
+  type FieldGeometry,
+} from "./volume";
+import type { ColormapName } from "./colormaps";
+
+const TOKEN = {
+  abyss: 0x050b12,
+  thermocline: 0x0d2436,
+  current: 0x1c6e8c,
+  bioluminescence: 0x4fe8c4,
+  advisory: 0xe8a23d,
+  foam: 0xeaf3f1,
+} as const;
+
+export interface MarkerDatum {
+  id: string;
+  platformId: string;
+  lat: number;
+  lon: number;
+  maxDepth: number;
+  featured: boolean;
+}
+
+export type SceneExtent = Extent;
+
+/** The two views. "column" is where the app opens and where the data lives. */
+export type SceneView = "globe" | "column";
+
+export function isWebGL2Available(): boolean {
+  try {
+    return Boolean(document.createElement("canvas").getContext("webgl2"));
+  } catch {
+    return false;
+  }
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+/** Smootherstep — no overshoot, and it settles rather than snapping. */
+function ease(t: number): number {
+  const c = Math.max(0, Math.min(1, t));
+  return c * c * c * (c * (c * 6 - 15) + 10);
+}
+
+export class OceanScene {
+  private readonly renderer: THREE.WebGLRenderer;
+  private readonly scene = new THREE.Scene();
+  private readonly camera: THREE.PerspectiveCamera;
+  private readonly effects: OceanEffects;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointer = new THREE.Vector2();
+  private readonly clock = new THREE.Clock();
+
+  private readonly worldGroup = new THREE.Group();
+  private readonly volumeGroup = new THREE.Group();
+  private readonly markerGroup = new THREE.Group();
+  private readonly globeGroup = new THREE.Group();
+
+  private sky: THREE.Mesh | null = null;
+  private seaSurface: THREE.Mesh | null = null;
+  private terrainMesh: THREE.Mesh | null = null;
+  private marineSnow: THREE.Points | null = null;
+  private lightShafts: THREE.Group | null = null;
+  private volumeMesh: THREE.Mesh | null = null;
+  private markerMesh: THREE.InstancedMesh | null = null;
+  private markerStems: THREE.LineSegments | null = null;
+
+  private geo = new GeoFrame({ latRange: [5, 22], lonRange: [80, 95] });
+  private extent: SceneExtent = { latRange: [5, 22], lonRange: [80, 95] };
+  private boxSize = new THREE.Vector3(2, ANALYSIS_HEIGHT, 2);
+  private markers: MarkerDatum[] = [];
+  private hoveredIndex = -1;
+  private selectedIndex = -1;
+
+  private frame = 0;
+  private disposed = false;
+  private fpsSamples: number[] = [];
+  private lastFpsMark = 0;
+
+  private globe: Globe | null = null;
+  private globeOutline: THREE.LineLoop | null = null;
+  private globeFloats: THREE.Points | null = null;
+  /**
+   * Which of the two views is showing.
+   *
+   * The globe is a destination now, but never the default one — this starts on "column"
+   * because the entry gesture ends there, and a forecaster's data is in the water column.
+   */
+  private view: SceneView = "column";
+  private regionHovered = false;
+  /**
+   * The globe's own rotation, held separately from the entry's.
+   *
+   * `updateEntry()` writes `globeGroup.rotation.y` every frame from the camera azimuth, so
+   * that the study region keeps facing the camera as it flies in. In globe mode that
+   * formula must NOT run: it would counter-rotate the Earth against every drag and pin the
+   * same face toward the viewer forever. So globe mode fixes the rotation once and orbits
+   * the camera instead — which is also the physically honest choice, since the terminator
+   * is anchored in the sphere's object space and should stay put on the Earth as the
+   * viewer moves around it.
+   */
+  private globeRotationY = 0;
+
+  private entryDuration = 4600;
+  private entryActive = false;
+  private entryProgress = 0;
+  private entryLastFrame = 0;
+  /**
+   * Never advance the entry more than this much in a single frame.
+   *
+   * The gesture used to run on wall-clock time, which meant that on slow
+   * hardware the whole thing elapsed across two or three rendered frames and
+   * the viewer simply never saw it — the one orchestrated moment in the
+   * product, invisible precisely on the machines least able to spare it. Capping
+   * the per-frame step guarantees the gesture is always *seen*, taking longer in
+   * wall-clock time when the machine is slow. The skip control remains.
+   */
+  private static readonly MAX_ENTRY_STEP = 1 / 45;
+
+  private azimuth = -0.62;
+  // Lower than a plan view on purpose: the thermocline is vertical structure,
+  // and looking down at the column only shows its warm surface.
+  private elevation = 0.28;
+  private distance = 4.4;
+  private fitScale = 1;
+  private readonly target = new THREE.Vector3(0, -0.32, 0);
+  private dragging = false;
+  private lastPointer = { x: 0, y: 0 };
+
+  onHover: ((marker: MarkerDatum | null) => void) | null = null;
+  onSelect: ((marker: MarkerDatum | null) => void) | null = null;
+  onEntryComplete: (() => void) | null = null;
+  /** Fires when the scene changes view on its own — clicking into the region, say. */
+  onViewChange: ((view: SceneView) => void) | null = null;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: "high-performance",
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(TOKEN.abyss, 1);
+    // NO tone mapping. A filmic curve looks better on the water but it also
+    // remaps every colour in the frame, including the data volume's — which
+    // would quietly shift a reader's sense of a temperature away from what the
+    // colorbar states. context.md §5.1 forbids exactly that.
+    this.renderer.toneMapping = THREE.NoToneMapping;
+
+    this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 400);
+    this.worldGroup.add(this.volumeGroup, this.markerGroup);
+    this.scene.add(this.worldGroup, this.globeGroup);
+
+    this.sky = buildSky();
+    this.scene.add(this.sky);
+    this.seaSurface = buildSeaSurface();
+    this.worldGroup.add(this.seaSurface);
+
+    this.globe = buildGlobe({
+      basemapUrl: DEFAULT_BASEMAP,
+      maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+    });
+    this.globeGroup.add(this.globe.group);
+    this.globeGroup.visible = false;
+    this.buildAtmosphere();
+
+    this.effects = new OceanEffects(this.renderer, this.scene, this.camera);
+
+    this.attachInput();
+    this.resize();
+    this.renderer.setAnimationLoop(() => this.tick());
+  }
+
+  // ---------------------------------------------------------------- lifecycle
+
+  dispose(): void {
+    this.disposed = true;
+    this.renderer.setAnimationLoop(null);
+    this.detachInput();
+    this.effects.dispose();
+    // Explicit, because the traverse below only reaches geometries and materials — it
+    // would leave the basemap texture (4096×2048, ~45 MB on the GPU with mipmaps)
+    // allocated on every hot reload.
+    this.globe?.dispose();
+    this.globe = null;
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material?.dispose?.();
+    });
+    this.renderer.dispose();
+  }
+
+  resize(): void {
+    const parent = this.canvas.parentElement;
+    if (!parent) return;
+    const { clientWidth: width, clientHeight: height } = parent;
+    if (width === 0 || height === 0) return;
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.effects.setSize(width, height);
+
+    // Field of view is vertical, so a tall narrow viewport crops horizontally
+    // and the basin runs off the sides. Pull further out to compensate.
+    const TARGET_ASPECT = 1.35;
+    this.fitScale = Math.min(2.4, Math.max(1, TARGET_ASPECT / this.camera.aspect));
+  }
+
+  // ------------------------------------------------------------------- globe
+
+  /** A scenario picks its own season; no-op when the basemap is already loaded. */
+  setBasemap(url: string): void {
+    void this.globe?.setBasemap(url);
+  }
+
+  /**
+   * (Re)draw the marks on the sphere: the analysis extent, and the floats inside it.
+   *
+   * Rebuilt rather than mutated because both depend on the extent and the marker list,
+   * and both are cheap. Kept as fields so repeated calls replace rather than accumulate —
+   * the outline used to be added inside startEntry(), which leaked one loop per entry.
+   */
+  private refreshGlobeMarks(): void {
+    if (this.globeOutline) {
+      this.globeGroup.remove(this.globeOutline);
+      this.globeOutline.geometry.dispose();
+      (this.globeOutline.material as THREE.Material).dispose();
+      this.globeOutline = null;
+    }
+    if (this.globeFloats) {
+      this.globeGroup.remove(this.globeFloats);
+      this.globeFloats.geometry.dispose();
+      (this.globeFloats.material as THREE.Material).dispose();
+      this.globeFloats = null;
+    }
+
+    this.globeOutline = regionOutline(this.extent.latRange, this.extent.lonRange);
+    this.globeGroup.add(this.globeOutline);
+
+    const floats = globeFloatMarkers(
+      this.markers.map(({ lat, lon }) => ({ lat, lon })),
+    );
+    if (floats) {
+      this.globeFloats = floats;
+      this.globeGroup.add(floats);
+    }
+
+    this.applyRegionHighlight();
+  }
+
+  /**
+   * The outline is the click target, so it has to show that it is one.
+   *
+   * Brightness, not opacity: 0.95 -> 1.0 is invisible, and `linewidth` does nothing in
+   * WebGL, so neither of the obvious levers actually reads. Scaling the colour past 1.0
+   * drives it toward white while staying `bioluminescence` — a state change, not a change
+   * of meaning.
+   */
+  private applyRegionHighlight(): void {
+    const material = this.globeOutline?.material as THREE.LineBasicMaterial | undefined;
+    if (!material) return;
+    material.color.setRGB(...TOKEN_RGB.bioluminescence);
+    if (this.regionHovered) material.color.multiplyScalar(2.1);
+    material.opacity = this.regionHovered ? 1 : 0.9;
+  }
+
+  /** Is a point on the sphere inside the analysis extent? */
+  private isInsideExtent(lat: number, lon: number): boolean {
+    const [lat0, lat1] = this.extent.latRange;
+    const [lon0, lon1] = this.extent.lonRange;
+    return lat >= Math.min(lat0, lat1) && lat <= Math.max(lat0, lat1)
+      && lon >= Math.min(lon0, lon1) && lon <= Math.max(lon0, lon1);
+  }
+
+  get currentView(): SceneView {
+    return this.view;
+  }
+
+  /**
+   * Go back to the globe.
+   *
+   * Instant in both directions — the descent is the *entry*, and replaying a 4.6 s
+   * cinematic every time someone checks where they are would turn the product's one
+   * orchestrated moment into a toll. Returning to the column replays it (see
+   * enterColumn) because that direction is the gesture; coming back up is navigation.
+   */
+  enterGlobe(): void {
+    if (this.view === "globe") return;
+    this.entryActive = false;
+    this.view = "globe";
+
+    this.globeGroup.visible = true;
+    this.globeGroup.scale.setScalar(1);
+    setGlobeOpacity(this.globeGroup, 1);
+    this.worldGroup.visible = false;
+
+    // Frame the whole sphere, centred. Radius 1.35 at a 42° vertical FOV needs ~3.8 to
+    // fit; 4.05 leaves the margin of space the reference frames have around the limb.
+    this.target.set(0, 0, 0);
+    this.distance = 4.05;
+    this.elevation = 0.22;
+
+    // Fix the Earth's rotation so the study region faces the camera on arrival, then
+    // leave it alone — from here the camera orbits and the Earth stays put.
+    const midLon = (this.extent.lonRange[0] + this.extent.lonRange[1]) / 2;
+    this.globeRotationY = THREE.MathUtils.degToRad(midLon) - Math.PI / 2 + this.azimuth;
+    this.globeGroup.rotation.set(0, this.globeRotationY, 0);
+
+    this.hoveredIndex = -1;
+    this.canvas.style.cursor = "grab";
+    this.onHover?.(null);
+  }
+
+  /** Dive back into the water column, replaying the entry descent. */
+  enterColumn(): void {
+    if (this.view === "column") return;
+    this.view = "column";
+    this.regionHovered = false;
+    this.applyRegionHighlight();
+    this.canvas.style.cursor = "grab";
+
+    if (prefersReducedMotion()) {
+      this.globeGroup.visible = false;
+      this.worldGroup.visible = true;
+      this.resetColumnCamera();
+      this.revealMarkers();
+      // Reported even though nothing was animated: the caller resets its "entry running"
+      // state before calling this, and without the callback it would never clear.
+      this.onEntryComplete?.();
+      return;
+    }
+    this.startEntry();
+  }
+
+  private resetColumnCamera(): void {
+    this.azimuth = -0.62;
+    this.elevation = 0.28;
+    this.distance = 4.4;
+    this.target.set(0, -0.32, 0);
+  }
+
+  // -------------------------------------------------------------- atmosphere
+
+  private buildAtmosphere(): void {
+    const bounds = new THREE.Vector3(7, ANALYSIS_HEIGHT * 1.7, 7);
+    this.marineSnow = buildMarineSnow(bounds);
+    this.lightShafts = buildLightShafts(bounds);
+    this.worldGroup.add(this.marineSnow, this.lightShafts);
+  }
+
+  // ----------------------------------------------------------------- terrain
+
+  setTerrain(field: TerrainField): void {
+    if (this.terrainMesh) {
+      this.worldGroup.remove(this.terrainMesh);
+      this.terrainMesh.geometry.dispose();
+      (this.terrainMesh.material as THREE.Material).dispose();
+    }
+    this.terrainMesh = buildTerrainMesh(field, this.geo);
+    this.worldGroup.add(this.terrainMesh);
+  }
+
+  // ------------------------------------------------------------------ volume
+
+  setExtent(extent: SceneExtent): void {
+    this.extent = extent;
+    this.geo = new GeoFrame(extent);
+    const span = this.geo.spanOf(extent);
+    this.boxSize = new THREE.Vector3(span.width, ANALYSIS_HEIGHT, span.depth);
+    this.refreshGlobeMarks();
+  }
+
+  /** Vertical exaggeration, so the UI can state it rather than imply it. */
+  get verticalExaggeration(): number {
+    return this.geo.verticalExaggeration();
+  }
+
+  setField(
+    values: Float32Array,
+    geometry: FieldGeometry,
+    valueRange: [number, number],
+    colormap: ColormapName,
+  ): void {
+    this.clearVolume();
+
+    const { texture } = buildVolumeTexture(values, geometry, valueRange, colormap);
+    const material = createVolumeMaterial({ volume: texture, lut: buildLutTexture(colormap) });
+
+    // A UNIT cube scaled to the field's aspect. The raymarch shader intersects
+    // against [-0.5, 0.5] in object space, so a pre-sized geometry would leave
+    // it marching only the central unit cube and clipping the field away.
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+    mesh.scale.copy(this.boxSize);
+    // Hung from the sea surface: top face at y = 0, bottom at the 2000 m mark.
+    mesh.position.set(0, -this.boxSize.y / 2, 0);
+    mesh.renderOrder = 2;
+    this.volumeMesh = mesh;
+    this.volumeGroup.add(mesh);
+
+    this.buildFrame();
+  }
+
+  /** A hairline cage stating the analysis extent, now that the data fades out. */
+  private buildFrame(): void {
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(this.boxSize.x, this.boxSize.y, this.boxSize.z)),
+      new THREE.LineBasicMaterial({ color: TOKEN.current, transparent: true, opacity: 0.34 }),
+    );
+    edges.position.set(0, -this.boxSize.y / 2, 0);
+    edges.renderOrder = 3;
+    this.volumeGroup.add(edges);
+  }
+
+  /** Clears only the field. Markers live in their own group and survive. */
+  private clearVolume(): void {
+    for (const child of [...this.volumeGroup.children]) {
+      this.volumeGroup.remove(child);
+      const mesh = child as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      (mesh.material as THREE.Material | undefined)?.dispose?.();
+    }
+    this.volumeMesh = null;
+  }
+
+  setDepthWindow(minDepth: number, maxDepth: number): void {
+    const material = this.volumeMesh?.material as THREE.ShaderMaterial | undefined;
+    if (!material) return;
+    material.uniforms.uDepthMin!.value = depthToNorm(minDepth);
+    material.uniforms.uDepthMax!.value = depthToNorm(maxDepth);
+  }
+
+  setSliceMode(enabled: boolean, depth: number): void {
+    const material = this.volumeMesh?.material as THREE.ShaderMaterial | undefined;
+    if (!material) return;
+    material.uniforms.uSlice!.value = enabled ? 1 : 0;
+    material.uniforms.uSliceDepth!.value = depthToNorm(depth);
+  }
+
+  // ----------------------------------------------------------------- markers
+
+  setMarkers(markers: MarkerDatum[]): void {
+    if (this.markerMesh) {
+      this.markerGroup.remove(this.markerMesh);
+      this.markerMesh.geometry.dispose();
+      (this.markerMesh.material as THREE.Material).dispose();
+      this.markerMesh = null;
+    }
+    if (this.markerStems) {
+      this.markerGroup.remove(this.markerStems);
+      this.markerStems.geometry.dispose();
+      (this.markerStems.material as THREE.Material).dispose();
+      this.markerStems = null;
+    }
+    this.markers = markers;
+    this.hoveredIndex = -1;
+    // The globe carries the same floats, so it is rebuilt from the same list. Done before
+    // the early return so clearing the markers clears them on the sphere too.
+    this.refreshGlobeMarks();
+    if (markers.length === 0) return;
+
+    // Per-instance colour comes from instanceColor, which the renderer
+    // multiplies against the material colour. `vertexColors` must stay off: it
+    // makes the shader look for a geometry colour attribute that does not exist
+    // here, and every marker renders black.
+    const mesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.02, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+      markers.length,
+    );
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(markers.length * 3), 3);
+
+    const stemPoints: number[] = [];
+    const matrix = new THREE.Matrix4();
+
+    markers.forEach((marker, index) => {
+      const p = this.geoToWorld(marker.lat, marker.lon, 0);
+      matrix.makeTranslation(p.x, p.y, p.z);
+      mesh.setMatrixAt(index, matrix);
+      mesh.setColorAt(index, new THREE.Color(marker.featured ? TOKEN.bioluminescence : TOKEN.foam));
+
+      const bottom = this.geoToWorld(marker.lat, marker.lon, Math.min(marker.maxDepth, ANALYSIS_MAX_DEPTH));
+      stemPoints.push(p.x, p.y, p.z, bottom.x, bottom.y, bottom.z);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.renderOrder = 5;
+    // The markers are the ONLY thing permitted to bloom. Enabling (not setting)
+    // keeps them in the normal render too.
+    mesh.layers.enable(BLOOM_LAYER);
+    mesh.visible = !this.entryActive;
+    this.markerMesh = mesh;
+    this.markerGroup.add(mesh);
+
+    const stems = new THREE.LineSegments(
+      new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(stemPoints, 3)),
+      new THREE.LineBasicMaterial({ color: TOKEN.bioluminescence, transparent: true, opacity: 0.24 }),
+    );
+    stems.renderOrder = 4;
+    stems.visible = !this.entryActive;
+    this.markerStems = stems;
+    this.markerGroup.add(stems);
+  }
+
+  setSelected(platformId: string | null): void {
+    this.selectedIndex = platformId ? this.markers.findIndex((m) => m.platformId === platformId) : -1;
+    this.refreshMarkerColors();
+  }
+
+  private refreshMarkerColors(): void {
+    const mesh = this.markerMesh;
+    if (!mesh?.instanceColor) return;
+    const colour = new THREE.Color();
+    this.markers.forEach((marker, index) => {
+      if (index === this.selectedIndex) colour.setHex(TOKEN.advisory);
+      else if (index === this.hoveredIndex) colour.setHex(TOKEN.bioluminescence);
+      else colour.setHex(marker.featured ? TOKEN.bioluminescence : TOKEN.foam);
+      mesh.setColorAt(index, colour);
+    });
+    mesh.instanceColor.needsUpdate = true;
+  }
+
+  private geoToWorld(lat: number, lon: number, depth: number): THREE.Vector3 {
+    return new THREE.Vector3(this.geo.x(lon), this.geo.depthY(depth), this.geo.z(lat));
+  }
+
+  private revealMarkers(): void {
+    if (this.markerMesh) this.markerMesh.visible = true;
+    if (this.markerStems) this.markerStems.visible = true;
+  }
+
+  // ------------------------------------------------------------------- input
+
+  private readonly onPointerDown = (event: PointerEvent) => {
+    this.dragging = true;
+    this.lastPointer = { x: event.clientX, y: event.clientY };
+    this.canvas.setPointerCapture(event.pointerId);
+  };
+
+  private readonly onPointerUp = (event: PointerEvent) => {
+    this.dragging = false;
+    try { this.canvas.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+  };
+
+  private readonly onPointerMove = (event: PointerEvent) => {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    if (this.dragging) {
+      const dx = event.clientX - this.lastPointer.x;
+      const dy = event.clientY - this.lastPointer.y;
+      this.lastPointer = { x: event.clientX, y: event.clientY };
+      this.azimuth -= dx * 0.006;
+      this.elevation = this.view === "globe"
+        // Almost to either pole, but never past — the camera rig degenerates at ±π/2.
+        ? Math.max(-1.35, Math.min(1.35, this.elevation + dy * 0.005))
+        // Allowed below the horizon so the viewer can dive under the surface.
+        : Math.max(-0.85, Math.min(1.35, this.elevation + dy * 0.005));
+      return;
+    }
+    this.updateHover();
+  };
+
+  private readonly onWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const next = this.distance + event.deltaY * 0.0016;
+    // The globe's near limit has to clear its own radius (1.35) or the camera ends up
+    // inside the Earth, looking at the back of the texture.
+    this.distance = this.view === "globe"
+      ? Math.max(2.0, Math.min(9, next))
+      : Math.max(1.2, Math.min(11, next));
+  };
+
+  private readonly onClick = () => {
+    // On the globe, clicking the analysis extent dives into it. This is the spatial route
+    // in; the header toggle is the discoverable, keyboard-reachable one.
+    if (this.view === "globe") {
+      if (this.regionHovered) {
+        this.enterColumn();
+        this.onViewChange?.("column");
+      }
+      return;
+    }
+    if (this.hoveredIndex >= 0) {
+      const marker = this.markers[this.hoveredIndex]!;
+      this.selectedIndex = this.hoveredIndex;
+      this.refreshMarkerColors();
+      this.onSelect?.(marker);
+    }
+  };
+
+  private attachInput(): void {
+    this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    window.addEventListener("pointerup", this.onPointerUp);
+    this.canvas.addEventListener("pointermove", this.onPointerMove);
+    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    this.canvas.addEventListener("click", this.onClick);
+  }
+
+  private detachInput(): void {
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    window.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("wheel", this.onWheel);
+    this.canvas.removeEventListener("click", this.onClick);
+  }
+
+  /**
+   * Globe hover: is the cursor over the analysis extent?
+   *
+   * Raycasts the sphere and tests the resulting lat/lon against the extent, rather than
+   * raycasting the outline itself. A LineLoop is a nearly un-hittable target — a few
+   * pixels wide, and only its edges — whereas this makes the whole region clickable, which
+   * is what a reader expects from a box drawn on a map.
+   */
+  private updateGlobeHover(): void {
+    const sphere = this.globe?.sphere;
+    if (!sphere) return;
+
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = this.raycaster.intersectObject(sphere, false)[0];
+
+    let inside = false;
+    if (hit) {
+      // World space to the sphere's own space, so the globe's rotation is undone before
+      // the position is read as a place on Earth.
+      const local = sphere.worldToLocal(hit.point.clone());
+      const { lat, lon } = globeToLatLon(local);
+      inside = this.isInsideExtent(lat, lon);
+    }
+
+    if (inside === this.regionHovered) return;
+    this.regionHovered = inside;
+    this.applyRegionHighlight();
+    this.canvas.style.cursor = inside ? "pointer" : "grab";
+  }
+
+  private updateHover(): void {
+    if (this.entryActive) return;
+    if (this.view === "globe") {
+      this.updateGlobeHover();
+      return;
+    }
+    if (!this.markerMesh) return;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hits = this.raycaster.intersectObject(this.markerMesh, false);
+    const next = hits.length > 0 && hits[0]!.instanceId !== undefined ? hits[0]!.instanceId! : -1;
+    if (next === this.hoveredIndex) return;
+    this.hoveredIndex = next;
+    this.refreshMarkerColors();
+    this.canvas.style.cursor = next >= 0 ? "pointer" : "grab";
+    this.onHover?.(next >= 0 ? this.markers[next]! : null);
+  }
+
+  focusMarker(platformId: string): void {
+    const index = this.markers.findIndex((m) => m.platformId === platformId);
+    if (index < 0) return;
+    this.selectedIndex = index;
+    this.refreshMarkerColors();
+    this.onSelect?.(this.markers[index]!);
+  }
+
+  // ------------------------------------------------------------------- entry
+
+  startEntry(): void {
+    this.view = "column";
+    if (prefersReducedMotion()) {
+      this.globeGroup.visible = false;
+      this.worldGroup.visible = true;
+      this.entryActive = false;
+      this.resetColumnCamera();
+      this.revealMarkers();
+      this.onEntryComplete?.();
+      return;
+    }
+    this.globeGroup.visible = true;
+    this.globeGroup.scale.setScalar(1);
+    setGlobeOpacity(this.globeGroup, 1);
+    this.worldGroup.visible = false;
+    this.entryProgress = 0;
+    this.entryLastFrame = performance.now();
+    this.entryActive = true;
+  }
+
+  skipEntry(): void {
+    if (!this.entryActive) return;
+    this.entryActive = false;
+    this.view = "column";
+    this.globeGroup.visible = false;
+    this.globeGroup.scale.setScalar(1);
+    this.worldGroup.visible = true;
+    this.resetColumnCamera();
+    this.revealMarkers();
+    this.onEntryComplete?.();
+  }
+
+  private updateEntry(now: number): void {
+    const elapsed = now - this.entryLastFrame;
+    this.entryLastFrame = now;
+    this.entryProgress = Math.min(
+      1,
+      this.entryProgress + Math.min(elapsed / this.entryDuration, OceanScene.MAX_ENTRY_STEP),
+    );
+    const t = this.entryProgress;
+
+    if (t < 0.52) {
+      // Approach: fall toward the basin.
+      const k = ease(t / 0.52);
+      this.globeGroup.visible = true;
+      this.worldGroup.visible = false;
+      this.distance = 9.5 - k * 6.0;
+      this.elevation = 0.95 - k * 0.46;
+      this.azimuth = -1.15 + k * 0.35;
+    } else if (t < 0.72) {
+      // Hand-off: the sphere opens into the sea it contains.
+      const k = ease((t - 0.52) / 0.2);
+      this.globeGroup.visible = true;
+      this.worldGroup.visible = true;
+      this.globeGroup.scale.setScalar(1 + k * 1.8);
+      setGlobeOpacity(this.globeGroup, 1 - k);
+      this.distance = 3.5 + k * 0.7;
+      this.elevation = 0.49;
+      this.azimuth = -0.8 + k * 0.1;
+    } else {
+      // Settle into the working view, above the waterline.
+      const k = ease((t - 0.72) / 0.28);
+      this.globeGroup.visible = false;
+      this.worldGroup.visible = true;
+      this.distance = 4.1 + k * 0.3;
+      this.elevation = 0.49 - k * 0.21;
+      this.azimuth = -0.7 - k * -0.08;
+      this.target.y = -0.14 - k * 0.18;
+    }
+
+    // Turn the study region to face the camera. Done after the phase branches
+    // so it uses this frame's azimuth, not the previous one's.
+    //
+    // The globe shader derives longitude as atan2(n.z, n.x), so a point at
+    // longitude L sits at angle L in the xz plane, and rotating the globe by
+    // theta moves it to L - theta. The camera at azimuth `az` looks along the
+    // direction at angle (pi/2 - az); setting those equal gives the rotation
+    // below. The previous formula ignored the camera azimuth entirely, which is
+    // why the entry used to fly toward the Atlantic.
+    const midLon = (this.extent.lonRange[0] + this.extent.lonRange[1]) / 2;
+    this.globeGroup.rotation.y =
+      THREE.MathUtils.degToRad(midLon) - Math.PI / 2 + this.azimuth;
+    this.globeGroup.rotation.x = 0;
+
+    if (t >= 1) {
+      this.entryActive = false;
+      this.globeGroup.visible = false;
+      this.globeGroup.scale.setScalar(1);
+      this.revealMarkers();
+      this.onEntryComplete?.();
+    }
+  }
+
+  // -------------------------------------------------------------------- loop
+
+  private tick(): void {
+    if (this.disposed) return;
+    const now = performance.now();
+    const time = this.clock.getElapsedTime();
+    if (this.entryActive) this.updateEntry(now);
+
+    const cosE = Math.cos(this.elevation);
+    const radius = this.distance * this.fitScale;
+    this.camera.position.set(
+      this.target.x + radius * cosE * Math.sin(this.azimuth),
+      this.target.y + radius * Math.sin(this.elevation),
+      this.target.z + radius * cosE * Math.cos(this.azimuth),
+    );
+    this.camera.lookAt(this.target);
+
+    // The sky follows the camera so the horizon never runs out. It belongs to the sea, so
+    // it is hidden whenever the sea is — which puts the globe against space rather than
+    // against a horizon gradient, as the reference frames have it. During the hand-off
+    // phase both groups are visible and the sky comes up with the water.
+    this.sky?.position.copy(this.camera.position);
+    if (this.sky) this.sky.visible = this.worldGroup.visible;
+
+    const underwater = this.camera.position.y < 0;
+    if (this.marineSnow) this.marineSnow.visible = underwater && this.worldGroup.visible;
+    if (this.lightShafts) this.lightShafts.visible = underwater && this.worldGroup.visible;
+
+    // --- per-frame uniforms ---
+    const setUniform = (material: THREE.Material | undefined, name: string, value: unknown) => {
+      const shader = material as THREE.ShaderMaterial | undefined;
+      if (shader?.uniforms?.[name]) shader.uniforms[name]!.value = value;
+    };
+
+    setUniform(this.seaSurface?.material as THREE.Material, "uTime", time);
+    if (this.seaSurface) {
+      const uniforms = (this.seaSurface.material as THREE.ShaderMaterial).uniforms;
+      uniforms.uCameraPos!.value.copy(this.camera.position);
+    }
+    if (this.terrainMesh) {
+      const uniforms = (this.terrainMesh.material as THREE.ShaderMaterial).uniforms;
+      uniforms.uTime!.value = time;
+      uniforms.uCameraPos!.value.copy(this.camera.position);
+    }
+    setUniform(this.marineSnow?.material as THREE.Material, "uTime", time);
+    this.lightShafts?.children.forEach((shaft) => {
+      setUniform((shaft as THREE.Mesh).material as THREE.Material, "uTime", time);
+    });
+
+    if (this.volumeMesh) {
+      const material = this.volumeMesh.material as THREE.ShaderMaterial;
+      // The shader marches in the box's own space, so hand it the camera there.
+      material.uniforms.uCameraLocal!.value.copy(
+        this.volumeMesh.worldToLocal(this.camera.position.clone()),
+      );
+    }
+
+    this.effects.render();
+
+    this.frame++;
+    // Measured against performance.now() directly. Calling clock.getDelta()
+    // here would reset the same clock getElapsedTime() drives, and would time
+    // one frame rather than ten.
+    if (this.frame % 10 === 0) {
+      if (this.lastFpsMark > 0) {
+        const seconds = (now - this.lastFpsMark) / 1000;
+        if (seconds > 0) {
+          this.fpsSamples.push(10 / seconds);
+          if (this.fpsSamples.length > 12) this.fpsSamples.shift();
+        }
+      }
+      this.lastFpsMark = now;
+    }
+  }
+
+  get frameCount(): number {
+    return this.frame;
+  }
+
+  /** Rolling frame rate, so verification can report it rather than guess. */
+  get fps(): number {
+    if (this.fpsSamples.length === 0) return 0;
+    return this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
+  }
+
+  get isUnderwater(): boolean {
+    return this.camera.position.y < 0;
+  }
+
+  /** Exposed so verification can catch the entry gesture deterministically. */
+  get isGlobeVisible(): boolean {
+    return this.globeGroup.visible;
+  }
+
+  /**
+   * Exposed for verification. Markers have silently vanished on group rebuilds before
+   * (next_session.md §6.8), and switching views rebuilds groups, so the count is checked
+   * across round trips rather than assumed.
+   */
+  get markerCount(): number {
+    return this.markers.length;
+  }
+
+  set sunDirection(direction: THREE.Vector3) {
+    SUN_DIRECTION.copy(direction.normalize());
+  }
+}

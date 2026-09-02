@@ -1,0 +1,194 @@
+/* ============================================================================
+   tokens.css — INCOIS 3D Ocean Data Visualization
+   Derived directly from context.md §5.1. This file is downstream of that
+   section: do not add a color, radius, shadow or type role here without
+   amending §5.1 first (CLAUDE.md hard rules).
+
+   Two color systems live in this project and never mix:
+     1. CHROME  — the six named tokens below. Defined here.
+     2. DATA    — perceptually-uniform cmocean ramps. Defined in
+                  src/viz/colormaps.ts, because the shaders need them as
+                  lookup tables. No token encodes a value; no colormap color
+                  appears in the chrome.
+   ========================================================================== */
+
+:root {
+  /* --- The six tokens (§5.1). Channels are exposed so alpha variants below
+         stay derived from these exact values rather than re-picked by eye. --- */
+  --abyss-rgb:            5 11 18;      /* #050B12  base background, deep water   */
+  --thermocline-rgb:     13 36 54;      /* #0D2436  panel surfaces, dividers      */
+  --current-rgb:         28 110 140;    /* #1C6E8C  primary UI accent             */
+  --bioluminescence-rgb: 79 232 196;    /* #4FE8C4  live data — the "alive" color */
+  --advisory-rgb:       232 162  61;    /* #E8A23D  hazard state ONLY             */
+  --foam-rgb:           234 243 241;    /* #EAF3F1  primary text on dark          */
+
+  --abyss:            rgb(var(--abyss-rgb));
+  --thermocline:      rgb(var(--thermocline-rgb));
+  --current:          rgb(var(--current-rgb));
+  --bioluminescence:  rgb(var(--bioluminescence-rgb));
+  --advisory:         rgb(var(--advisory-rgb));
+  --foam:             rgb(var(--foam-rgb));
+
+  /* --- Depth as the organizing metaphor (§5.1, Principle 1).
+         The chrome gets literally deeper toward the edges of the console.
+         These are the ONLY surface colors; they are mixes of two tokens,
+         not new hues. --- */
+  --surface-viewport: var(--abyss);                               /* z-plane 0 */
+  --surface-panel:    color-mix(in srgb, var(--thermocline) 55%, var(--abyss));
+  --surface-raised:   var(--thermocline);                          /* z-plane 2 */
+  --surface-inset:    color-mix(in srgb, var(--abyss) 80%, var(--thermocline));
+
+  /* --- Hairline dividers: instrument housings meeting, not card edges --- */
+  --hairline:        rgb(var(--thermocline-rgb) / 0.9);
+  --hairline-strong: color-mix(in srgb, var(--thermocline) 70%, var(--foam));
+
+  /* --- Text roles --- */
+  --text-primary:  var(--foam);
+  --text-muted:    rgb(var(--foam-rgb) / 0.62);
+  --text-faint:    rgb(var(--foam-rgb) / 0.38);
+  --text-on-accent: var(--abyss);
+
+  /* --- Interactive states. Every control needs hover / focus-visible /
+         active (CLAUDE.md Step 6). --- */
+  --control-idle:    transparent;
+  --control-hover:   rgb(var(--current-rgb) / 0.18);
+  --control-active:  rgb(var(--current-rgb) / 0.34);
+  --control-on:      var(--current);
+  --focus-ring:      var(--bioluminescence);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* --- Radius: a single 2px value, reserved for interactive controls only.
+         Panels and instrument housings are square (§5.1). --- */
+  --radius-control: 2px;
+
+  /* --- Elevation: thermocline-tinted, never black (CLAUDE.md Step 6).
+         Only the floating profile panel is allowed to use this. --- */
+  --shadow-floating:
+    0 1px 0 rgb(var(--thermocline-rgb) / 0.9),
+    0 8px 24px -6px rgb(var(--thermocline-rgb) / 0.7),
+    0 2px 8px -2px rgb(var(--abyss-rgb) / 0.8);
+
+  /* --- Z-planes. Exactly three. Nothing introduces a fourth (CLAUDE.md
+         Step 6): the viewport is base, docked panels are one level up, the
+         profile panel is the floating layer. --- */
+  --z-viewport: 0;
+  --z-console:  10;
+  --z-floating: 20;
+
+  /* --- Type. IBM Plex Sans for UI, IBM Plex Mono for literal readouts ONLY
+         (depth, lat/lon, timestamps, values, platform IDs). §5.1. --- */
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+             "Segoe UI", Roboto, sans-serif;
+  --font-readout: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas,
+                  "Liberation Mono", monospace;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Type scale. Small and dense: this is a console, not a landing page. */
+  --size-readout-lg: 1.25rem;   /* 20px — the one big number, e.g. live depth  */
+  --size-title:      0.9375rem; /* 15px — app title                            */
+  --size-label:      0.8125rem; /* 13px — control labels                       */
+  --size-readout:    0.75rem;   /* 12px — tick labels, values, platform IDs    */
+  --size-caption:    0.6875rem; /* 11px — Explore-mode captions, units         */
+
+  --leading-tight: 1.2;
+  --leading-body: 1.5;
+  /* Mono readouts get slight negative tracking so columns of digits align
+     optically at small sizes. Sans gets none — no tracked-out eyebrows. */
+  --tracking-readout: -0.01em;
+
+  /* --- Spacing. 4px base; instrument panels are dense, the viewport is not. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* --- Motion. Exactly one orchestrated moment: the globe→dive entry
+         (§5.1, Principle 3). Everything else is instant. These durations are
+         for state feedback only — never for entrances. --- */
+  --transition-state: 90ms ease-out;
+  --entry-duration: 4200ms;
+}
+
+/* The single bold gesture is the only animation in the product, and it is
+   fully skipped for users who ask for reduced motion (§5.4). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-state: 0ms;
+    --entry-duration: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   Base
+   ========================================================================== */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--surface-viewport);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden; /* the console owns the viewport; the page never scrolls */
+}
+
+/* Every focusable control shows a bioluminescence ring on the dark ground
+   (§5.4). Applied globally so no control can ship without it. */
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Utility classes for the two type roles. A readout reads out; a label
+   labels; nothing does double duty (§5.3). */
+.readout {
+  font-family: var(--font-readout);
+  font-size: var(--size-readout);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-readout);
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--size-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+/* Screen-reader-only, for pairing icons/labels with color-coded hazard state
+   so color is never the sole encoding (§5.4). */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

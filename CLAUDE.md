@@ -1,0 +1,294 @@
+# CLAUDE.md — Ocean Data Visualization Frontend Rules
+
+This file governs how Claude Code works on the **frontend** of the INCOIS 3D Ocean Data
+Visualization Platform (SIH 2026, PS 26067). It's adapted from the team's general
+frontend-design workflow, but overrides parts of it where this project's needs differ from
+a typical marketing/landing page — see the callouts marked **[project override]**.
+
+Read alongside `context.md` in the repo root, which owns the problem statement,
+architecture, data model, and the locked design system this file assumes.
+
+---
+
+## Step 0 — Always do first
+
+- **Read `context.md` Section 5 (UI/UX Design Direction) before touching any frontend
+  code, every session.** That section already contains the color tokens, type system,
+  layout concept, and design principles for this project — treat it as canon, not a
+  starting point to re-derive.
+- **Invoke the `frontend-design` skill** every session before writing frontend code, same
+  as always — but its job here is to *apply and extend* the existing system, not invent a
+  new one from scratch (see Step 3).
+- **Check `frontend/src/styles/tokens.css`** before styling anything. If it doesn't exist
+  yet, the first frontend session should create it directly from `context.md` Section 5.1
+  (the `abyss` / `thermocline` / `current` / `bioluminescence` / `advisory` / `foam`
+  palette, IBM Plex Sans + IBM Plex Mono roles).
+- **Check `brand_assets/`** if it exists (INCOIS logo, MoES/Ocean Valley marks, official
+  wordmark) — use real assets exactly as given, never a placeholder logo, since this is
+  a real government deliverable.
+- **Know the two standing references in `context.md` §5.5, and go look at them whenever
+  they'd help** — a new field to draw, a colour or camera decision, a variable INCOIS
+  doesn't publish, a unit you'd otherwise guess at:
+  - **Copernicus Marine Service** — <https://data.marine.copernicus.eu/> — supplementary
+    ocean data (physics, biogeochemistry, in-situ collections) and how a real operational
+    ocean service states units, depth levels, and product metadata.
+  - **NASA Scientific Visualization Studio** — <https://svs.gsfc.nasa.gov/> — the reference
+    standard for scientific-visualization visual language: field colouring, annotation,
+    flow rendering, and motivated camera moves.
+  Consult them as needed, not ritually every session — but prefer looking over inventing an
+  answer. If network access isn't available in a session, say so rather than guessing at
+  what they contain.
+
+---
+
+## Step 1 — Understand the brief (already answered — don't re-litigate)
+
+- **Subject:** a live, browser-based 3D water column — ocean model fields (temperature,
+  salinity, currents, chlorophyll) co-displayed with real Argo/Glider/CTD/BGC instrument
+  readings.
+- **Audience:** two real audiences sharing one interface — INCOIS forecasters (`Ops mode`)
+  and public/student explorers (`Explore mode`). See `context.md` §5, Principle 4.
+- **Job:** let a forecaster compare model prediction against real measurement, in 3D, in
+  one screen, faster than switching between desktop tools — and let a newcomer explore the
+  ocean without training.
+
+If a task seems to require re-deciding any of this, check `context.md` first — it's
+probably already settled there.
+
+---
+
+## Step 2 — Reference image rules
+
+**If a teammate provides a reference image or Figma mockup for a specific screen:**
+- Match layout, spacing, typography, and color exactly.
+- Where the reference conflicts with `tokens.css`, flag it rather than silently picking
+  one — a mockup that drifts from the locked palette usually means the palette needs a
+  documented update in `context.md`, not a one-off exception.
+- Swap in real sample data (from `data/sample_netcdf/`, `data/sample_instruments/`) rather
+  than lorem-ipsum placeholders — this is a data tool; fake-looking numbers undermine trust
+  even in a prototype.
+- Skip Step 3 (fresh design plan) and go straight to building.
+
+**If no reference image is provided:** follow Step 3 in full, scoped to just the new
+screen or component — not the whole system, which is already planned.
+
+---
+
+## Step 3 — Design plan (new screens/components only)
+
+The system-level plan (color, type, layout, principles) already exists in `context.md`
+§5.1. Do **not** re-run that exercise for the app as a whole. Do run a scoped version of it
+for anything genuinely new — a modal, a mobile nav, an error state — using the same
+method:
+
+1. **Which existing tokens and type roles does this need?** (Usually all of them — this is
+   about confirming fit, not picking new ones.)
+2. **One-sentence layout concept** + a small ASCII wireframe, consistent with the
+   "instrument console" language in §5.1 (real rulers, real units, hairline dividers — not
+   rounded cards).
+3. **Does this introduce a new pattern** (a new interaction, a new structural device)?
+   If yes, it needs its own one-line principle added to `context.md` §5.1 before it ships,
+   so the next session inherits it too.
+4. **Is there prior art worth checking first?** For anything about how a physical field is
+   drawn, coloured, labelled, or moved through, look at NASA SVS (`context.md` §5.5) before
+   designing from scratch — it has almost certainly solved a version of it. Note in one line
+   what you took and what you deliberately didn't.
+
+---
+
+## Step 4 — Critique the plan before building
+
+Ask: *would this component look at home in a generic dark-mode SaaS dashboard, or a
+generic "spinning globe" data-viz demo?* If yes, it's drifted from the brief. Specific
+risks for *this* project (beyond the generic AI-design tells):
+
+1. Turning the instrument console into a card grid — depth ruler, colorbar, and timeline
+   are structural instruments, not dashboard widgets, and must never become rounded
+   `shadow-md` cards.
+2. Defaulting to a "generic 3D globe explorer" look (blue marble, orbit controls, glowing
+   dots) instead of the water-column-and-depth-gradient language this project actually
+   uses — see `context.md` §5.2 for the full self-critique already run against this.
+3. Letting `Ops mode` and `Explore mode` diverge into two different visual systems instead
+   of one system with different control density (§5.1, Principle 4).
+4. Reaching for the three generic tells `frontend-design` already warns about (cream +
+   terracotta; near-black + single neon accent; broadsheet hairlines) as a shortcut instead
+   of the depth-gradient system that's already specific to this brief.
+
+If any part of a new component reads as a default rather than a deliberate extension,
+revise it and note what changed and why, in the same session, before writing code.
+
+---
+
+## Step 5 — Build
+
+### Output defaults **[project override]**
+The general team workflow defaults to a single `index.html` with Tailwind via CDN — that's
+right for quick landing pages, but **not** for this app. Follow `context.md` §8 (repo
+structure) instead:
+- React + TypeScript, built with Vite (not a CDN script tag) — the app has real state
+  (selected variable, depth, timestamp, mode) that needs proper component architecture.
+- Three.js for the 3D viewport (`frontend/src/viz/`), not a generic globe library — see
+  `context.md` §4 for the Three.js vs. CesiumJS decision status.
+- Tailwind is fine *if the team wants it*, but configured via PostCSS against
+  `tokens.css` custom properties — never raw default Tailwind color scale (`indigo-500`,
+  `blue-600`, etc.) as a primary. Every color in the app traces back to the six named
+  tokens.
+- Real sample data for development, not `placehold.co` — wire against
+  `data/sample_netcdf/` and `data/sample_instruments/` from day one so rendering bugs
+  surface early.
+- If a variable, period, or region the component needs isn't in INCOIS's ERDDAP, check
+  **Copernicus Marine** (`context.md` §5.5) before synthesizing anything. It reaches the app
+  the same way every other upstream does — through the `DataSource` interface in
+  `backend/app/ingestion/base.py`, behind FastAPI, never fetched from the browser (it needs
+  an account and requires attribution).
+- Mobile-first responsive for `Explore mode`; `Ops mode` can assume a larger screen
+  (`context.md` §5.4).
+
+### CSS specificity
+Same caution as always: audit for selectors that cancel each other out, especially between
+layout-level selectors (`.console-panel`) and component-level ones (`.depth-ruler`) on
+padding/margin between the instrument panels.
+
+### Quality floor (always, without announcing it)
+- Full keyboard operability, visible `focus-visible` ring in `bioluminescence` on dark
+  surfaces (`context.md` §5.4).
+- `prefers-reduced-motion` respected — skip the load-in camera descent (§5.1, Principle 3)
+  and jump straight to the default view.
+- Colorbar/hazard states distinguishable for common color-vision deficiencies — pair
+  `advisory` amber with an icon or label, never color alone.
+- **[project-specific]** WebGL2 feature-detect on load; if unsupported, show a clear
+  in-voice fallback message (per §5.3 tone — state what happened and what to do), not a
+  blank canvas.
+- **[project-specific]** Target a usable frame rate on a mid-range laptop with the full
+  sample dataset loaded — treat a janky 3D scene as a bug, not a later optimization pass.
+
+---
+
+## Step 6 — Anti-generic guardrails
+
+**Colors:** Only the six named tokens (`abyss`, `thermocline`, `current`,
+`bioluminescence`, `advisory`, `foam`). `bioluminescence` means live data; `advisory` means
+hazard state — never swap their jobs or use either decoratively.
+
+**Shadows:** No flat `shadow-md`. If a floating element needs elevation (a profile panel
+sliding in over the viewport), use a `thermocline`-tinted, low-opacity shadow — not black.
+
+**Typography:** IBM Plex Sans for headings/UI, IBM Plex Mono *only* for literal readouts
+(depth, lat/lon, timestamps, values, platform IDs). Sentence case everywhere — no
+tracked-out ALL-CAPS eyebrows.
+
+**Motion:** One signature moment — the load-in descent through the water column. Everything
+else responds instantly to input (toggling a variable, opening a profile panel). No
+scattered hover-fade-slide-up on every panel or marker.
+
+**Structure:** Numbered markers are not used anywhere except the timeline, which already
+has a real scrubber. The depth control and colorbar are literal rulers with correct units,
+not decorative gradients.
+
+**Interactive states:** every control (variable toggle, depth ruler, timeline, mode switch)
+needs hover, `focus-visible`, and active states — including the map markers for
+Argo/Glider platforms.
+
+**Depth (z-plane), literally and visually:** the viewport is base, docked panels are one
+level up, the profile-chart panel (on marker click) is the floating layer — nothing else
+should introduce a fourth level.
+
+**Restraint:** before calling a component done, remove one decoration that doesn't serve
+the brief — this project's signature is the live water column itself; nothing else should
+compete with it for attention.
+
+---
+
+## Step 7 — Copy and writing
+
+Follow `context.md` §5.3 directly:
+- Sentence case, active voice, buttons say exactly what happens ("Show temperature," "Play
+  timeline").
+- Loading states name what's loading ("Loading 25 Aug model run…").
+- Empty states are invitations with a next step ("No Argo or Glider data in this window —
+  try widening the date range"), not "No data found."
+- Errors state what happened and what to do, without apologizing ("Model field unavailable
+  for this depth — showing nearest available level (50m)").
+- One job per element — a label labels, a readout reads out, nothing does double duty.
+
+---
+
+## Step 8 — Verification workflow
+
+**Serve locally:**
+- `npm run dev` from `frontend/` (Vite; default `http://localhost:5173` — update this line
+  if the team's config differs). Never screenshot a `file:///` URL.
+- If a dev server is already running, don't start a second instance.
+
+**Screenshot / browser automation — [team: confirm which is set up]:**
+- If a browser-automation MCP (e.g. a Playwright-based connector) is connected in this
+  Claude Code environment, prefer it over a bespoke script — it can drive real interactions
+  (rotate the 3D scene, drag the depth ruler, click a marker) as well as capture stills.
+- Otherwise, fall back to a local Puppeteer script (`serve.mjs` + `screenshot.mjs`, same
+  pattern as the team's general workflow) — fill in the actual install paths for
+  whichever machine is running the session; don't assume another teammate's local paths.
+- Screenshots save to `./temporary screenshots/screenshot-N-label.png`, auto-incremented,
+  never overwritten.
+
+**What to check, specific to this app (beyond the usual spacing/color/type diff):**
+- The 3D canvas actually renders data, not a blank or default-gray WebGL canvas.
+- Depth ruler tick marks are correctly scaled and labeled at the current dataset's depth
+  range.
+- Colorbar legend matches the currently selected variable's real units and value range.
+- `Ops mode` and `Explore mode` both render correctly and look like one system, not two.
+- Profile-chart panel opens correctly when a platform marker is clicked, and closes without
+  disturbing the 3D camera state.
+- Reduced-motion setting actually suppresses the load-in descent.
+
+**Comparison rounds:** at least 2 full passes, specific about deltas ("depth ruler tick
+label is 11px, spec calls for 12px IBM Plex Mono," not "ruler looks a bit small"). Stop
+only when no visible differences remain or the team says so.
+
+---
+
+## Relevant skills & MCPs for this project
+
+- **`frontend-design` skill** — every session, Step 0, scoped as above (extend the locked
+  system rather than re-derive it).
+- **Data-inspection skill/tooling** (if available in this Claude Code environment) — use it
+  when looking at real sample NetCDF or Argo/Glider files before wiring up a component
+  against them, rather than guessing at field names or units.
+- **Browser-automation MCP** (Playwright-class) — preferred for the Step 8 verification
+  loop when connected; falls back to the local Puppeteer scripts otherwise.
+- **Docs/deliverable skills** (docx/pptx) — used elsewhere in the project for the SIH
+  report and pitch deck, not for this frontend build; keep those artifacts out of the
+  `frontend/` tree.
+- **Web fetch / browsing** — used to reach the two standing references in `context.md` §5.5
+  (Copernicus Marine, NASA SVS) when a design or data question calls for them. Cite what you
+  actually looked at rather than describing them from memory.
+
+If a needed skill or connector isn't available in a given session, say so rather than
+silently working around it — the team should know to enable it rather than get an
+unverified result.
+
+---
+
+## Hard rules
+
+- Do not introduce a color, shadow style, or type role outside `tokens.css` / §5.1 without
+  updating `context.md` first — this file and that one must never drift apart.
+- Do not re-run the full system-level design-planning exercise for the whole app; only for
+  genuinely new patterns (Step 3).
+- Do not use `placehold.co` or lorem ipsum for anything that should be real sample ocean
+  data.
+- Do not use `transition-all`, default Tailwind blue/indigo as a primary, or numbered
+  structural markers outside the timeline.
+- Do not skip the critique step (Step 4) before building a new component.
+- Do not stop after one screenshot pass.
+- Do not ship a component that makes the viewport compete visually with the surrounding
+  chrome — the water column is the one signature element.
+- Do not clone the Copernicus Marine portal's catalogue layout (faceted list + 2D map +
+  side panel) or ship NASA SVS renders as project assets. Both are references to study
+  (`context.md` §5.5): take Copernicus's data and metadata rigour, take SVS's visual
+  grammar, leave their interfaces and their passive-film framing behind. SVS content is
+  public domain and legally reusable — not shipping it is our design call, not a licence
+  limit.
+- Do not ingest Copernicus Marine data without also adding its required credit line
+  ("Generated using E.U. Copernicus Marine Service Information" + each product's DOI) to the
+  UI in the same change. It is a licence condition (`context.md` §5.5), so it ships with the
+  data or the data doesn't ship.

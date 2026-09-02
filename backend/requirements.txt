@@ -1,0 +1,16 @@
+# INCOIS 3D Ocean Data Visualization — backend
+#
+# The backend is deliberately thin: it crosses the CORS/TLS boundary to
+# erddap.incois.gov.in, normalizes every source into the two schemas in
+# context.md §6, and caches responses so a demo never depends on the network.
+
+fastapi>=0.115
+uvicorn[standard]>=0.32
+httpx>=0.27
+
+# NetCDF ingestion. The PS names xarray explicitly; ERDDAP serves real
+# CF-1.6 NetCDF, so this path is genuinely exercised rather than simulated.
+xarray>=2024.9
+netCDF4>=1.7
+numpy>=2.0
+pandas>=2.2

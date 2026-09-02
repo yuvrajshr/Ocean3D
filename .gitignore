@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+backend/.venv/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Cached INCOIS ERDDAP responses. These are regenerated on demand and can be
+# large; the committed demo fixtures live in data/ instead.
+backend/app/cache_store/*
+!backend/app/cache_store/.gitignore
+
+# Verification artifacts
+temporary screenshots/
+
+# The original 14584x14584 INCOIS seal (5.5 MB). The downscaled 64/128/256 px
+# versions used by the app are committed.
+brand_assets/incois-logo-original.png
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
