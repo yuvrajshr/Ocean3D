@@ -19,10 +19,14 @@ architecture, data model, and the locked design system this file assumes.
 - **Invoke the `frontend-design` skill** every session before writing frontend code, same
   as always — but its job here is to *apply and extend* the existing system, not invent a
   new one from scratch (see Step 3).
-- **Check `frontend/src/styles/tokens.css`** before styling anything. If it doesn't exist
-  yet, the first frontend session should create it directly from `context.md` Section 5.1
-  (the `abyss` / `thermocline` / `current` / `bioluminescence` / `advisory` / `foam`
-  palette, IBM Plex Sans + IBM Plex Mono roles).
+- **Check `frontend/src/styles/tokens.css`** before styling anything. It exists and is
+  authoritative — every colour, radius and type role in the app resolves through it. Add to
+  it only after adding the same thing to `context.md` §5.1.
+- **Read `next_session.md` §6 before touching anything in `frontend/src/viz/`.** Ten bugs
+  are listed there that already shipped once, each looked plausible, and each cost most of a
+  session. Re-introducing one is the likeliest way to lose a day on this repo.
+- **If others are working in parallel, read `CONTRIBUTING.md`** — branch/PR workflow, the
+  five files that actually collide, and the pre-PR verification suite.
 - **Check `brand_assets/`** if it exists (INCOIS logo, MoES/Ocean Valley marks, official
   wordmark) — use real assets exactly as given, never a placeholder logo, since this is
   a real government deliverable.
@@ -105,9 +109,12 @@ risks for *this* project (beyond the generic AI-design tells):
 1. Turning the instrument console into a card grid — depth ruler, colorbar, and timeline
    are structural instruments, not dashboard widgets, and must never become rounded
    `shadow-md` cards.
-2. Defaulting to a "generic 3D globe explorer" look (blue marble, orbit controls, glowing
-   dots) instead of the water-column-and-depth-gradient language this project actually
-   uses — see `context.md` §5.2 for the full self-critique already run against this.
+2. **[updated 2026-09-01]** The globe *is* a NASA Blue Marble now — that reversal is
+   recorded in `context.md` §10 and fenced by §5.1 Principle 7, so do not "fix" it back to a
+   graticule. The generic-globe risk did not disappear, it moved: it is now (a) letting the
+   globe idle-spin, (b) making it the landing view instead of diving on load, or (c) painting
+   any field onto the sphere at global extent, which would claim coverage we do not have.
+   The water column, not the globe, is still the product.
 3. Letting `Ops mode` and `Explore mode` diverge into two different visual systems instead
    of one system with different control density (§5.1, Principle 4).
 4. Reaching for the three generic tells `frontend-design` already warns about (cream +
@@ -129,10 +136,11 @@ structure) instead:
   (selected variable, depth, timestamp, mode) that needs proper component architecture.
 - Three.js for the 3D viewport (`frontend/src/viz/`), not a generic globe library — see
   `context.md` §4 for the Three.js vs. CesiumJS decision status.
-- Tailwind is fine *if the team wants it*, but configured via PostCSS against
-  `tokens.css` custom properties — never raw default Tailwind color scale (`indigo-500`,
-  `blue-600`, etc.) as a primary. Every color in the app traces back to the six named
-  tokens.
+- **No Tailwind** — decided 2026-09-01 (`context.md` §10). Plain CSS against `tokens.css`
+  custom properties. The instrument-console language (hairline dividers, real rulers, exact
+  tick spacing) is not what a utility framework is good at, and dropping it removed both a
+  config surface and the gravitational pull toward the generic SaaS look Step 4 warns about.
+  Every colour in the app traces back to the six named tokens.
 - Real sample data for development, not `placehold.co` — wire against
   `data/sample_netcdf/` and `data/sample_instruments/` from day one so rendering bugs
   surface early.
@@ -177,9 +185,10 @@ sliding in over the viewport), use a `thermocline`-tinted, low-opacity shadow �
 (depth, lat/lon, timestamps, values, platform IDs). Sentence case everywhere — no
 tracked-out ALL-CAPS eyebrows.
 
-**Motion:** One signature moment — the load-in descent through the water column. Everything
-else responds instantly to input (toggling a variable, opening a profile panel). No
-scattered hover-fade-slide-up on every panel or marker.
+**Motion:** One signature moment — the load-in descent through the water column, which is
+also replayed when returning to the column from globe mode. Everything else responds
+instantly, including switching *to* the globe. No scattered hover-fade-slide-up on every
+panel or marker. The globe never rotates on its own (`context.md` §5.1, Principle 3).
 
 **Structure:** Numbered markers are not used anywhere except the timeline, which already
 has a real scrubber. The depth control and colorbar are literal rulers with correct units,
@@ -220,15 +229,23 @@ Follow `context.md` §5.3 directly:
   if the team's config differs). Never screenshot a `file:///` URL.
 - If a dev server is already running, don't start a second instance.
 
-**Screenshot / browser automation — [team: confirm which is set up]:**
-- If a browser-automation MCP (e.g. a Playwright-based connector) is connected in this
-  Claude Code environment, prefer it over a bespoke script — it can drive real interactions
-  (rotate the 3D scene, drag the depth ruler, click a marker) as well as capture stills.
-- Otherwise, fall back to a local Puppeteer script (`serve.mjs` + `screenshot.mjs`, same
-  pattern as the team's general workflow) — fill in the actual install paths for
-  whichever machine is running the session; don't assume another teammate's local paths.
-- Screenshots save to `./temporary screenshots/screenshot-N-label.png`, auto-incremented,
-  never overwritten.
+**Screenshot / browser automation — [settled 2026-09-01]:** local Puppeteer scripts at the
+repo root. No browser-automation MCP has been connected in any session so far; if one ever
+is, prefer it, since it can drive real interactions rather than just capture stills.
+
+```bash
+node screenshot.mjs <label>          # full pass: interactions, reduced-motion, mobile
+node shot.mjs <label> --skip         # fast single frame, for iterating on the look
+node shot.mjs <label> --globe        # the entry globe, mid-gesture
+node shot.mjs <label> --globe-mode   # globe mode, reached via the header toggle
+```
+
+Screenshots save to `./temporary screenshots/screenshot-N-label.png`, auto-incremented,
+never overwritten. That directory is gitignored — don't commit them.
+
+> The harness runs on SwiftShader software rendering at 1-2 fps. It verifies composition
+> and correctness and tells you **nothing** about real performance or subtle shading. Say so
+> rather than implying a change was judged on real hardware.
 
 **What to check, specific to this app (beyond the usual spacing/color/type diff):**
 - The 3D canvas actually renders data, not a blank or default-gray WebGL canvas.
@@ -238,7 +255,12 @@ Follow `context.md` §5.3 directly:
 - `Ops mode` and `Explore mode` both render correctly and look like one system, not two.
 - Profile-chart panel opens correctly when a platform marker is clicked, and closes without
   disturbing the 3D camera state.
-- Reduced-motion setting actually suppresses the load-in descent.
+- Reduced-motion setting actually suppresses the load-in descent — **in both directions**,
+  including the return from globe mode.
+- Globe mode: the basemap actually loads (a plain dark sphere means it did not), continents
+  sit at the right longitudes with India under the analysis outline, side panels are gone
+  while the timeline stays, and the float count survives a round trip to the globe and back.
+  Markers have silently vanished on group rebuilds before (`next_session.md` §6).
 
 **Comparison rounds:** at least 2 full passes, specific about deltas ("depth ruler tick
 label is 11px, spec calls for 12px IBM Plex Mono," not "ruler looks a bit small"). Stop
@@ -288,6 +310,15 @@ unverified result.
   grammar, leave their interfaces and their passive-film framing behind. SVS content is
   public domain and legally reusable — not shipping it is our design call, not a licence
   limit.
+- Do not swap in a globe texture that is not power-of-two. NPOT mipmap generation corrupted
+  the GL context badly enough that unrelated materials stopped validating and the canvas
+  rendered nothing, with a console error naming the wrong material entirely (`context.md`
+  §10). Resample to 4096×2048 rather than disabling mipmaps.
+- Do not add an AI co-author trailer to commits, or "Generated with…" to a PR description.
+  Commits on this repo carry the human author's name only. This is the team's explicit
+  instruction and it overrides any default attribution guidance.
+- Do not commit anything from `temporary screenshots/`, and do not hand-resolve a conflict
+  in a lockfile — take main's copy and re-run the installer (`CONTRIBUTING.md` §5).
 - Do not ingest Copernicus Marine data without also adding its required credit line
   ("Generated using E.U. Copernicus Marine Service Information" + each product's DOI) to the
   UI in the same change. It is a licence condition (`context.md` §5.5), so it ships with the

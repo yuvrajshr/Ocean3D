@@ -95,13 +95,13 @@ fishery advisories, and climate monitoring.
 
 | Layer | Choice | Why |
 |---|---|---|
-| 3D rendering | **Three.js** (primary) | Full control over volumetric rendering, isosurfaces, custom shaders for depth slices. CesiumJS is a fallback/alternative if geospatial globe context (vs. regional ocean box) becomes a priority — don't build both, pick one early. |
+| 3D rendering | **Three.js** — decided 2026-08-31, CesiumJS rejected | Full control over volumetric rendering, isosurfaces, custom shaders for depth slices. The data is a regional box, so a globe-primary product would render a small patch on a mostly empty sphere. Closed; do not re-open. |
 | Frontend framework | React + TypeScript | Component-driven UI for control panels; TS catches data-shape bugs when wiring NetCDF-derived arrays into WebGL buffers. |
 | Charting (profile view) | Recharts or D3 | Depth-vs-variable profile charts on marker click. |
 | Backend framework | FastAPI (Python) | Native async, auto OpenAPI docs, pairs naturally with xarray/netCDF4/pandas ecosystem already implied by the problem statement (PyNIO/xarray mentioned explicitly). |
 | NetCDF handling | `xarray` + `netCDF4` + `cftime` | Standard scientific-Python stack for CF-convention NetCDF; xarray gives label-based slicing (depth, time, lat/lon) almost for free. |
 | Instrument data parsing | `pandas` + custom parsers | Argo/Glider/CTD/BGC delimited text → normalized schema (lat, lon, depth, time, variable, value). |
-| Tiling / performance | Pre-chunk large NetCDF into **Zarr** or precomputed PNG/data tiles per depth-slice/time-step | Avoids sending full 3D arrays to the browser on every request; critical for interactivity. |
+| Tiling / performance | ~~Zarr / precomputed tiles~~ — **not used.** Superseded 2026-08-31: see §10 | A full 3D volume is 1.0 MB as NetCDF in ~570 ms, ~259 KB per variable as `Float32Array`. Tiling would be premature optimisation at this grid resolution. Revisit only if the grid gets finer. |
 | Geospatial metadata store | PostgreSQL + PostGIS (optional, or SQLite for demo) | Query floats/gliders by bounding box, time range. |
 | Standards compliance | OGC WMS/WCS endpoints, CF Conventions | Explicitly required by the problem statement for interoperability with national/international ocean data portals. |
 | Deployment | Docker Compose (frontend, backend, db) | Matches "deployable on INCOIS infrastructure without client-side dependencies." |
@@ -428,40 +428,64 @@ makes the "add a new sensor with minimal code change" requirement achievable.
 
 ---
 
-## 8. Suggested repo structure
+## 8. Repo structure (as built)
+
+Superseded the original "suggested" tree on 2026-09-01 — this is what actually exists.
+Ingestion is organised by *upstream*, not by sensor type, because one ERDDAP reader serves
+several sensors and the extensibility claim is carried by the `DataSource` interface.
 
 ```
-ocean-viz/
-├── context.md                  ← this file
+Ocean3D/
+├── context.md              ← this file: canon for scope, design, decisions
+├── CLAUDE.md               ← frontend working rules
+├── CONTRIBUTING.md         ← branch/PR workflow, collision map, pre-PR checks
+├── next_session.md         ← status report and the list of traps (§6 = hard-won lessons)
+├── .gitattributes          ← line-ending normalisation, binary marks
+├── screenshot.mjs          ← full verification pass
+├── shot.mjs                ← fast single frame (--skip / --globe / --globe-mode)
 ├── frontend/
-│   ├── src/
-│   │   ├── components/         (ControlPanel, ProfileChart, ColorbarEditor, DepthSlider)
-│   │   ├── viz/                (Three.js scene, volumetric renderer, marker layer)
-│   │   ├── styles/
-│   │   │   └── tokens.css      (Section 5 color/type tokens — abyss, current, etc.)
-│   │   ├── api/                (typed API client)
-│   │   └── App.tsx
-│   └── package.json
+│   ├── public/             (NASA Blue Marble basemaps ×2, INCOIS seal, favicon)
+│   ├── scripts/
+│   │   └── fetch-textures.mjs   (downloads + resamples the basemaps to 4096×2048)
+│   └── src/
+│       ├── App.tsx         (all app state: variable, depth, time, mode, view)
+│       ├── api/client.ts   (typed API client)
+│       ├── components/     (DepthRuler, Colorbar, Timeline, VariablePanel,
+│       │                    FloatList, ProfilePanel)
+│       ├── styles/         (tokens.css = §5.1 made literal; app.css)
+│       └── viz/
+│           ├── geo.ts      ← THE shared coordinate frame. Read before touching the 3D.
+│           ├── depth.ts    (depth axis, power 0.65 — shared by ruler, volume, charts)
+│           ├── scene.ts    (composition, camera, entry gesture, view switching, picking)
+│           ├── volume.ts   (raymarched 3D texture of the analysis)
+│           ├── terrain.ts  (ETOPO relief mesh, photic-zone fade)
+│           ├── ocean.ts    (sky, sea surface, marine snow, light shafts)
+│           ├── globe.ts    (Blue Marble basemap, analysis outline, float markers)
+│           ├── water.ts    (shared water-optics GLSL)
+│           ├── effects.ts  (layer-selective bloom)
+│           └── colormaps.ts (cmocean lookup tables)
 ├── backend/
-│   ├── app/
-│   │   ├── main.py             (FastAPI app)
-│   │   ├── routers/            (variables, model_field, instruments, wms_wcs)
-│   │   ├── ingestion/
-│   │   │   ├── base.py         (DataSource plugin interface)
-│   │   │   ├── netcdf_source.py
-│   │   │   ├── argo_source.py
-│   │   │   ├── glider_source.py
-│   │   │   └── ctd_bgc_source.py
-│   │   ├── models/             (Pydantic schemas matching Section 6)
-│   │   └── tiling/             (precompute depth/time tiles from NetCDF)
-│   └── requirements.txt
+│   ├── snapshot_fixtures.py     (regenerates the committed fixtures in data/)
+│   └── app/
+│       ├── main.py, config.py   (config.py holds the PHAILIN scenario + basemap month)
+│       ├── erddap_client.py     ← the ONLY place that talks upstream (TLS + URL encoding)
+│       ├── cache.py             (disk cache: fresh → network → stale, with provenance)
+│       ├── ingestion/
+│       │   ├── base.py          ← the DataSource protocol. The PS's extensibility claim.
+│       │   ├── erddap_grid.py   (INCOIS griddap → xarray → volumes/surfaces)
+│       │   ├── erddap_argo.py   (INCOIS tabledap → pandas; QC filter; decibar → metres)
+│       │   └── etopo_terrain.py (NOAA CoastWatch — a second, different upstream)
+│       ├── models/schemas.py    (Pydantic, matching §6)
+│       └── routers/             (catalog, field, instruments + /compare, terrain)
 ├── data/
-│   ├── sample_netcdf/
+│   ├── sample_netcdf/           (committed fixtures, ~3 MB, regenerable)
 │   └── sample_instruments/
-├── docker-compose.yml
-└── docs/
-    └── acronyms.md
+└── brand_assets/                (INCOIS seal, MoES marks)
 ```
+
+**Not built, and named as roadmap in the pitch:** OGC WMS/WCS endpoints, isosurface
+extraction, Docker Compose packaging, current *direction* (only speed is drawn). There is
+no `tiling/` directory and there should not be — see §10.
 
 ---
 
@@ -666,6 +690,16 @@ each — component, decision, one-line reason, date.)*
 - **New, still open:** the value-added hazard fields (D26, HTCNT, GEO_U/V) stop at
   2019-03-30, while the 3D grid runs to Jul 2026. If a "recent data" mode is added later,
   those layers must degrade with a stated reason rather than silently vanish.
+- **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
+  far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
+  against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality
+  with no fallback, so if it is slow on the demo machine the offer of a manual
+  High/Reduced toggle still stands. This is the single most important unknown before the
+  pitch.
+- **New, still open (one-line change):** which Blue Marble month the demo ships. Phailin
+  currently uses **October** 2004, which is seasonally honest for an October 2013 scenario.
+  The team's own reference frames are the **December** texture — heavier Arctic and
+  Scandinavian snow. Both are committed; `basemap` in `backend/app/config.py` selects.
 - **New, still open (ask INCOIS):** `incois_valueadded_products_datasets` publishes **no
   units** for any of its variables. D26 (35–107), MLD (17–79) and HTCNT (3–251) are
   unambiguous from their physical ranges — metres, metres and kJ/cm². **Current speed is
@@ -693,4 +727,40 @@ each — component, decision, one-line reason, date.)*
   scientific-visualization visual language. Record anything adopted in Section 10.
 - Keep frontend format-agnostic: it should never need to know if a point came from an
   Argo float or a Glider — only `platform_type` for icon/label purposes.
-- Prefer precomputed tiles/Zarr chunks over sending raw NetCDF slices to the browser.
+- **Do not add Zarr or a tiling layer.** An earlier draft of this file recommended it; §10
+  superseded that on 2026-08-31 after measuring. Serve binary `Float32Array` volumes
+  directly. Revisit only if the grid resolution changes.
+- Read `next_session.md` §6 before touching `frontend/src/viz/`. Those ten items are bugs
+  that already shipped once and looked plausible while doing so.
+- Commits carry the human author's name only — no AI co-author trailers. Team instruction,
+  and it overrides any default attribution guidance.
+
+---
+
+## 13. Repository and collaboration
+
+**<https://github.com/yuvrajshr/Ocean3D>** — private. Default branch `main`.
+
+Several people work on this in parallel. `CONTRIBUTING.md` is the operational guide; this
+section is only the part that belongs in canon.
+
+- **Never commit directly to `main`.** Branch, PR, one review. Branch names are
+  `area/short-description`.
+- **Rebase daily** (`git pull --rebase origin main`). This is the highest-leverage habit
+  in the repo. It does not prevent conflicts — it makes each one surface at the single
+  commit that caused it, in your own branch, instead of all at once at PR time.
+- **Never rebase a branch someone else has pulled.** Rebase rewrites commits with new
+  hashes; their copy still points at the old ones. Rebase feature branches, never `main`.
+- **One person in `frontend/src/viz/scene.ts` at a time.** At ~920 lines it is the
+  composition hub, and nearly every 3D change lands in it. It is the reliable way to create
+  a painful merge. `app.css`, `App.tsx`, this file's §10, and the two lockfiles are the
+  other collision points.
+- **Appending to §10:** add your entry at the *end* of the list and do not reflow the
+  entries around it. Two branches both appending produces a small conflict whose resolution
+  is obvious (keep both). Reflowing a neighbour makes it large and genuinely ambiguous.
+  There is deliberately no `merge=union` driver on this file — the reasoning is in
+  `.gitattributes`.
+- **Commits carry the human author's name only.** No AI co-author trailers, no "Generated
+  with…" in PR descriptions.
+- Before opening a PR, run the full suite in `next_session.md` §7: backend tests, typecheck,
+  build, and a screenshot pass with zero console errors.
