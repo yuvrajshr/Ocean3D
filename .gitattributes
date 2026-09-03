@@ -1,0 +1,67 @@
+# Repository attributes — mostly about keeping merges clean for a team on mixed
+# operating systems. See CONTRIBUTING.md for the workflow these support.
+
+# ---------------------------------------------------------------- line endings
+
+# The single most valuable line here.
+#
+# Without it, each clone's line endings depend on that machine's local
+# core.autocrlf. A teammate whose setting differs commits a file with CRLF, and
+# git sees EVERY LINE as changed — a 900-line file conflicts with itself, and
+# the real one-line change is invisible in the diff.
+#
+# `text=auto` makes git normalise to LF in the repository regardless of local
+# config, while still checking out each platform's native endings. Every tracked
+# text file in this repo is already stored as LF, so adding this changes nothing
+# on disk — it just stops the situation from ever arising.
+* text=auto
+
+# ------------------------------------------------------------- binary content
+
+# Git cannot merge these. Marking them explicitly means it does not try, does
+# not print megabytes of garbage into a diff, and fails loudly (both versions
+# kept, pick one) rather than producing a corrupt file.
+*.jpg   binary
+*.jpeg  binary
+*.png   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+
+# NetCDF sample data — binary, and the committed fixtures are regenerable with
+# `backend/snapshot_fixtures.py`.
+*.nc    binary
+
+# SVG is XML, so leave it mergeable, but the MoES marks are largely base64 blobs
+# and a diff of them is noise.
+*.svg   -diff
+
+# ------------------------------------------------------------------ generated
+
+# Lockfiles are generated, not authored. Collapsed in review because a diff of
+# them tells a reviewer nothing.
+#
+# NEVER hand-resolve a conflict in these. Take main's copy and regenerate:
+#     git checkout --theirs package-lock.json && npm install
+# Hand-editing a lockfile produces a tree that installs differently for
+# different people, which is a genuinely nasty class of bug to chase.
+package-lock.json          -diff linguist-generated=true
+frontend/package-lock.json -diff linguist-generated=true
+
+# ------------------------------------------------------------ GitHub language
+
+# Reference material for the editor tooling, not project source. Without this,
+# ~5,000 lines of bundled Three.js notes dominate GitHub's language bar and the
+# repo reads as a Markdown project.
+.claude/skills/** linguist-documentation
+
+# ---------------------------------------------------------------------- notes
+#
+# Deliberately NOT set: a `merge=union` driver on context.md.
+#
+# The decision log in §10 is append-only and would genuinely benefit from union
+# merging, but .gitattributes applies a merge driver to a whole FILE, and
+# context.md is 700 lines of structured prose and tables. Union-merging all of
+# it would silently keep BOTH sides of any edited paragraph — producing a file
+# that merges cleanly and reads as nonsense, which is worse than a conflict you
+# can see. The convention in CONTRIBUTING.md handles it instead.
