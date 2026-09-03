@@ -39,11 +39,13 @@ import {
   buildSky,
   SUN_DIRECTION,
 } from "./ocean";
+import { buildLattice, ensureLabelFont, type Lattice, RENDER_ORDER } from "./lattice";
 import { buildTerrainMesh, type TerrainField } from "./terrain";
 import { TOKEN_RGB } from "./water";
 import {
   buildLutTexture,
   buildVolumeTexture,
+  createProfileMaterial,
   createVolumeMaterial,
   type FieldGeometry,
 } from "./volume";
@@ -65,6 +67,15 @@ export interface MarkerDatum {
   lon: number;
   maxDepth: number;
   featured: boolean;
+}
+
+/** One float's measured profile, ready to draw beside the model field. */
+export interface ProfileTrace {
+  lat: number;
+  lon: number;
+  /** Which variable was measured. Must match the displayed field, or nothing draws. */
+  variable: string;
+  points: ReadonlyArray<{ depth: number; value: number }>;
 }
 
 export type SceneExtent = Extent;
@@ -103,6 +114,10 @@ export class OceanScene {
   private readonly volumeGroup = new THREE.Group();
   private readonly markerGroup = new THREE.Group();
   private readonly globeGroup = new THREE.Group();
+  // Siblings of volumeGroup, never children: clearVolume() disposes everything
+  // under it on every field load, which is how markers once silently vanished.
+  private readonly latticeGroup = new THREE.Group();
+  private readonly profileGroup = new THREE.Group();
 
   private sky: THREE.Mesh | null = null;
   private seaSurface: THREE.Mesh | null = null;
@@ -112,6 +127,22 @@ export class OceanScene {
   private volumeMesh: THREE.Mesh | null = null;
   private markerMesh: THREE.InstancedMesh | null = null;
   private markerStems: THREE.LineSegments | null = null;
+  private lattice: Lattice | null = null;
+
+  // Held on the scene rather than only inside the volume material, because
+  // ShaderMaterial.dispose() does not reach textures in uniforms (they leaked
+  // once per timestep) and because the ribbon has to share the very same LUT.
+  private volumeTexture: THREE.Data3DTexture | null = null;
+  private lutTexture: THREE.DataTexture | null = null;
+  /** What the texture is actually encoded against — diverging maps re-centre on zero. */
+  private encodedRange: [number, number] = [0, 1];
+  private fieldVariable = "";
+  private fieldHasDepth = true;
+  private depthWindow: [number, number] = [0, ANALYSIS_MAX_DEPTH];
+
+  private ribbon: THREE.Mesh | null = null;
+  private ribbonCasing: THREE.Mesh | null = null;
+  private profile: ProfileTrace | null = null;
 
   private geo = new GeoFrame({ latRange: [5, 22], lonRange: [80, 95] });
   private extent: SceneExtent = { latRange: [5, 22], lonRange: [80, 95] };
@@ -197,8 +228,11 @@ export class OceanScene {
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 400);
-    this.worldGroup.add(this.volumeGroup, this.markerGroup);
+    this.worldGroup.add(this.volumeGroup, this.markerGroup, this.latticeGroup, this.profileGroup);
     this.scene.add(this.worldGroup, this.globeGroup);
+    // Parented to worldGroup, not scene, so globe mode hides them with everything
+    // else — depth labels have no meaning floating beside the Earth.
+    void ensureLabelFont();
 
     this.sky = buildSky();
     this.scene.add(this.sky);
@@ -232,7 +266,16 @@ export class OceanScene {
     // allocated on every hot reload.
     this.globe?.dispose();
     this.globe = null;
+    this.lattice?.dispose();
+    this.lattice = null;
+    this.volumeTexture?.dispose();
+    this.volumeTexture = null;
+    this.lutTexture?.dispose();
+    this.lutTexture = null;
     this.scene.traverse((object) => {
+      // Every Sprite in the process shares one module-level geometry. Disposing
+      // it here would yank it out from under every other sprite on the page.
+      if ((object as THREE.Sprite).isSprite) return;
       const mesh = object as THREE.Mesh;
       mesh.geometry?.dispose?.();
       const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
@@ -251,6 +294,8 @@ export class OceanScene {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.effects.setSize(width, height);
+    // sizeAttenuation is off, so a label's world scale depends on the projection.
+    this.lattice?.setLabelScale(this.camera, height);
 
     // Field of view is vertical, so a tall narrow viewport crops horizontally
     // and the basin runs off the sides. Pull further out to compensate.
@@ -420,6 +465,22 @@ export class OceanScene {
     const span = this.geo.spanOf(extent);
     this.boxSize = new THREE.Vector3(span.width, ANALYSIS_HEIGHT, span.depth);
     this.refreshGlobeMarks();
+    this.rebuildLattice();
+  }
+
+  /**
+   * The lattice belongs to the extent, not the field: it states where the box
+   * is, which does not change when the variable does. Rebuilding it here rather
+   * than in setField also keeps it clear of clearVolume().
+   */
+  private rebuildLattice(): void {
+    this.lattice?.dispose();
+    this.latticeGroup.clear();
+    this.lattice = buildLattice(this.geo, this.extent, this.boxSize);
+    this.lattice.setDepthAxisVisible(this.fieldHasDepth);
+    this.lattice.setVisible(!this.entryActive);
+    this.lattice.setLabelScale(this.camera, this.renderer.domElement.clientHeight || 1);
+    this.latticeGroup.add(this.lattice.group);
   }
 
   /** Vertical exaggeration, so the UI can state it rather than imply it. */
@@ -432,11 +493,21 @@ export class OceanScene {
     geometry: FieldGeometry,
     valueRange: [number, number],
     colormap: ColormapName,
+    variable: string,
   ): void {
     this.clearVolume();
 
-    const { texture } = buildVolumeTexture(values, geometry, valueRange, colormap);
-    const material = createVolumeMaterial({ volume: texture, lut: buildLutTexture(colormap) });
+    // encodedRange, not valueRange: a diverging map re-centres on zero, so the
+    // texture is encoded against a different span than the metadata reports.
+    // Anything colouring alongside the volume has to use what it actually used.
+    const { texture, encodedRange } = buildVolumeTexture(values, geometry, valueRange, colormap);
+    this.volumeTexture = texture;
+    this.lutTexture = buildLutTexture(colormap);
+    this.encodedRange = encodedRange;
+    this.fieldVariable = variable;
+    this.fieldHasDepth = (geometry.shape[0] ?? 1) > 1;
+
+    const material = createVolumeMaterial({ volume: texture, lut: this.lutTexture });
 
     // A UNIT cube scaled to the field's aspect. The raymarch shader intersects
     // against [-0.5, 0.5] in object space, so a pre-sized geometry would leave
@@ -445,11 +516,17 @@ export class OceanScene {
     mesh.scale.copy(this.boxSize);
     // Hung from the sea surface: top face at y = 0, bottom at the 2000 m mark.
     mesh.position.set(0, -this.boxSize.y / 2, 0);
-    mesh.renderOrder = 2;
+    mesh.renderOrder = RENDER_ORDER.volume;
     this.volumeMesh = mesh;
     this.volumeGroup.add(mesh);
 
     this.buildFrame();
+
+    // A surface variable carries one level smeared down the whole box. Marking
+    // depths on it would assert a measurement at 500 m that does not exist.
+    this.lattice?.setDepthAxisVisible(this.fieldHasDepth);
+    this.setDepthWindow(this.depthWindow[0], this.depthWindow[1]);
+    this.rebuildRibbon();
   }
 
   /** A hairline cage stating the analysis extent, now that the data fades out. */
@@ -459,11 +536,11 @@ export class OceanScene {
       new THREE.LineBasicMaterial({ color: TOKEN.current, transparent: true, opacity: 0.34 }),
     );
     edges.position.set(0, -this.boxSize.y / 2, 0);
-    edges.renderOrder = 3;
+    edges.renderOrder = RENDER_ORDER.frame;
     this.volumeGroup.add(edges);
   }
 
-  /** Clears only the field. Markers live in their own group and survive. */
+  /** Clears only the field. Markers, lattice and ribbon are siblings and survive. */
   private clearVolume(): void {
     for (const child of [...this.volumeGroup.children]) {
       this.volumeGroup.remove(child);
@@ -471,14 +548,129 @@ export class OceanScene {
       mesh.geometry?.dispose?.();
       (mesh.material as THREE.Material | undefined)?.dispose?.();
     }
+    // ShaderMaterial.dispose() does not reach textures held in uniforms, so
+    // without this every variable or timestep change orphaned a 3D texture.
+    this.volumeTexture?.dispose();
+    this.volumeTexture = null;
+    this.lutTexture?.dispose();
+    this.lutTexture = null;
     this.volumeMesh = null;
   }
 
   setDepthWindow(minDepth: number, maxDepth: number): void {
-    const material = this.volumeMesh?.material as THREE.ShaderMaterial | undefined;
-    if (!material) return;
-    material.uniforms.uDepthMin!.value = depthToNorm(minDepth);
-    material.uniforms.uDepthMax!.value = depthToNorm(maxDepth);
+    this.depthWindow = [minDepth, maxDepth];
+    const min = depthToNorm(minDepth);
+    const max = depthToNorm(maxDepth);
+    for (const object of [this.volumeMesh, this.ribbon, this.ribbonCasing]) {
+      const material = object?.material as THREE.ShaderMaterial | undefined;
+      if (!material) continue;
+      material.uniforms.uDepthMin!.value = min;
+      material.uniforms.uDepthMax!.value = max;
+    }
+  }
+
+  // --------------------------------------------------------- profile ribbon
+
+  /**
+   * The selected float's measured profile, drawn where it was measured and
+   * coloured on the same scale as the water around it. This is the co-display
+   * the problem statement asks for, happening in the viewport rather than only
+   * in a side panel.
+   */
+  setProfile(profile: ProfileTrace | null): void {
+    this.profile = profile;
+    this.rebuildRibbon();
+  }
+
+  private clearRibbon(): void {
+    for (const child of [...this.profileGroup.children]) {
+      this.profileGroup.remove(child);
+      const mesh = child as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      (mesh.material as THREE.Material | undefined)?.dispose?.();
+    }
+    this.ribbon = null;
+    this.ribbonCasing = null;
+  }
+
+  private rebuildRibbon(): void {
+    this.clearRibbon();
+
+    const profile = this.profile;
+    const lut = this.lutTexture;
+    if (!profile || !lut) return;
+
+    // Colouring an observed temperature through the current-speed ramp would be
+    // a lie the reader cannot see. When the float and the field disagree, draw
+    // nothing — the marker's own stem already says where the float is.
+    if (profile.variable !== this.fieldVariable) return;
+
+    const points = profile.points
+      .filter((p) => Number.isFinite(p.value) && p.depth <= ANALYSIS_MAX_DEPTH && p.depth >= 0)
+      .slice()
+      .sort((a, b) => a.depth - b.depth);
+    if (points.length < 2) return;
+
+    const count = points.length;
+    const position = new Float32Array(count * 6);
+    const side = new Float32Array(count * 2);
+    const value = new Float32Array(count * 2);
+    const norm = new Float32Array(count * 2);
+
+    points.forEach((point, i) => {
+      const world = this.geoToWorld(profile.lat, profile.lon, point.depth);
+      for (const half of [0, 1]) {
+        const v = i * 2 + half;
+        position[v * 3] = world.x;
+        position[v * 3 + 1] = world.y;
+        position[v * 3 + 2] = world.z;
+        side[v] = half === 0 ? -1 : 1;
+        value[v] = point.value;
+        norm[v] = depthToNorm(point.depth);
+      }
+    });
+
+    const indices: number[] = [];
+    for (let i = 0; i < count - 1; i++) {
+      const a = i * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+
+    const build = (halfWidth: number, casingColor: number | undefined, opacity: number) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
+      geometry.setAttribute("aSide", new THREE.BufferAttribute(side, 1));
+      geometry.setAttribute("aValue", new THREE.BufferAttribute(value, 1));
+      geometry.setAttribute("aNorm", new THREE.BufferAttribute(norm, 1));
+      geometry.setIndex(indices);
+      return new THREE.Mesh(
+        geometry,
+        createProfileMaterial({ lut, encodedRange: this.encodedRange, halfWidth, casingColor, opacity }),
+      );
+    };
+
+    // Figure/ground separation, drawn behind — never a wash on top.
+    //
+    // `foam`, not `abyss`, and the reason is worth keeping: most of a profile's
+    // length is deep water, which sits at the COLD end of every cmocean ramp and
+    // is therefore nearly black. A dark casing cannot separate dark from dark, so
+    // the first attempt made a correct ribbon invisible. A light sheath separates
+    // in both directions. It encodes nothing; only the core carries a value.
+    // Kept to ~1.4x rather than 1.8x: the ribbon is a few pixels wide at the
+    // default camera, and a wider casing swallowed the colour it exists to frame.
+    const casing = build(0.027, TOKEN.foam, 0.36);
+    casing.renderOrder = RENDER_ORDER.ribbonCasing;
+    casing.visible = !this.entryActive;
+    this.ribbonCasing = casing;
+    this.profileGroup.add(casing);
+
+    const ribbon = build(0.019, undefined, 1);
+    ribbon.renderOrder = RENDER_ORDER.ribbon;
+    ribbon.visible = !this.entryActive;
+    this.ribbon = ribbon;
+    this.profileGroup.add(ribbon);
+
+    this.setDepthWindow(this.depthWindow[0], this.depthWindow[1]);
   }
 
   setSliceMode(enabled: boolean, depth: number): void {
@@ -536,9 +728,11 @@ export class OceanScene {
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.renderOrder = 5;
+    mesh.renderOrder = RENDER_ORDER.markers;
     // The markers are the ONLY thing permitted to bloom. Enabling (not setting)
-    // keeps them in the normal render too.
+    // keeps them in the normal render too. Nothing added since — lattice, labels,
+    // ribbon — goes on that layer: the bloom pass renders it alone, so anything
+    // on it is unoccludable and would glow through the water and the Earth.
     mesh.layers.enable(BLOOM_LAYER);
     mesh.visible = !this.entryActive;
     this.markerMesh = mesh;
@@ -548,7 +742,7 @@ export class OceanScene {
       new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(stemPoints, 3)),
       new THREE.LineBasicMaterial({ color: TOKEN.bioluminescence, transparent: true, opacity: 0.24 }),
     );
-    stems.renderOrder = 4;
+    stems.renderOrder = RENDER_ORDER.stems;
     stems.visible = !this.entryActive;
     this.markerStems = stems;
     this.markerGroup.add(stems);
@@ -579,6 +773,10 @@ export class OceanScene {
   private revealMarkers(): void {
     if (this.markerMesh) this.markerMesh.visible = true;
     if (this.markerStems) this.markerStems.visible = true;
+    // The descent is meant to arrive at the instruments, not fly through them.
+    this.lattice?.setVisible(true);
+    if (this.ribbon) this.ribbon.visible = true;
+    if (this.ribbonCasing) this.ribbonCasing.visible = true;
   }
 
   // ------------------------------------------------------------------- input
@@ -818,13 +1016,22 @@ export class OceanScene {
     if (this.entryActive) this.updateEntry(now);
 
     const cosE = Math.cos(this.elevation);
+    const sinA = Math.sin(this.azimuth);
+    const cosA = Math.cos(this.azimuth);
     const radius = this.distance * this.fitScale;
     this.camera.position.set(
-      this.target.x + radius * cosE * Math.sin(this.azimuth),
+      this.target.x + radius * cosE * sinA,
       this.target.y + radius * Math.sin(this.elevation),
-      this.target.z + radius * cosE * Math.cos(this.azimuth),
+      this.target.z + radius * cosE * cosA,
     );
     this.camera.lookAt(this.target);
+
+    // Elevation is clamped inside ±90°, so cosE > 0 and the camera's x/z signs
+    // are the azimuth's — which is all the far-face choice needs.
+    if (this.lattice && this.worldGroup.visible) {
+      this.lattice.faceCull(sinA, cosA);
+      this.lattice.anchorLabels(this.camera);
+    }
 
     // The sky follows the camera so the horizon never runs out. It belongs to the sea, so
     // it is hidden whenever the sea is — which puts the globe against space rather than

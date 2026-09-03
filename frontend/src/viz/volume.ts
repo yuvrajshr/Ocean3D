@@ -217,6 +217,117 @@ const FRAGMENT = /* glsl */ `
   }
 `;
 
+/**
+ * The float profile ribbon.
+ *
+ * A measured profile is data, so it is coloured through the SAME lookup table
+ * and the SAME encoded range as the volume around it — that is the whole point:
+ * a reader compares the float against the water by looking at one against the
+ * other. Which is also why this is a raw GLSL3 material rather than Three's
+ * `Line2`: `LineMaterial`'s fragment shader ends with `<tonemapping_fragment>`
+ * and `<colorspace_fragment>`. `toneMapped = false` disarms the first; nothing
+ * disarms the second. It is identity today only because the composer's targets
+ * happen to be Linear-sRGB — change that and the ribbon would shift while the
+ * volume stayed put, disagreeing with the colorbar in silence. Same reasoning
+ * as the renderer's NoToneMapping, reached through an addon instead.
+ *
+ * The strip is billboarded in the vertex shader. A profile is a vertical line,
+ * so its perpendicular is always horizontal and the quad only degenerates when
+ * looking straight down the axis — which the length guard covers.
+ */
+const PROFILE_VERTEX = /* glsl */ `
+  in float aSide;
+  in float aValue;
+  in float aNorm;
+
+  out float vValue;
+  out float vNorm;
+
+  uniform float uHalfWidth;
+
+  void main() {
+    vValue = aValue;
+    vNorm = aNorm;
+
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vec3 toCamera = normalize(cameraPosition - world.xyz);
+    vec3 across = cross(vec3(0.0, 1.0, 0.0), toCamera);
+    float len = length(across);
+    vec3 right = len > 1e-4 ? across / len : vec3(1.0, 0.0, 0.0);
+    world.xyz += right * aSide * uHalfWidth;
+
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const PROFILE_FRAGMENT = /* glsl */ `
+  precision highp float;
+
+  in float vValue;
+  in float vNorm;
+  out vec4 fragColor;
+
+  uniform sampler2D uLut;
+  uniform float uLo;
+  uniform float uHi;
+  uniform float uDepthMin;
+  uniform float uDepthMax;
+  uniform float uOpacity;
+  uniform float uCasing;
+  uniform vec3  uCasingColor;
+
+  void main() {
+    // The ribbon is data, so the depth ruler governs it exactly as it governs
+    // the volume. A ribbon that outlived the window would make the ruler a lie.
+    if (vNorm < uDepthMin || vNorm > uDepthMax) discard;
+
+    if (uCasing > 0.5) {
+      fragColor = vec4(uCasingColor, uOpacity);
+      return;
+    }
+
+    float t = clamp((vValue - uLo) / max(uHi - uLo, 1e-6), 0.0, 1.0);
+    fragColor = vec4(texture(uLut, vec2(t, 0.5)).rgb, uOpacity);
+  }
+`;
+
+export interface ProfileMaterialOptions {
+  lut: THREE.DataTexture;
+  encodedRange: [number, number];
+  halfWidth: number;
+  /** A casing draws flat in `abyss` behind the ribbon: figure/ground, never a tint on top. */
+  casingColor?: number;
+  opacity: number;
+}
+
+export function createProfileMaterial({
+  lut,
+  encodedRange,
+  halfWidth,
+  casingColor,
+  opacity,
+}: ProfileMaterialOptions): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: PROFILE_VERTEX,
+    fragmentShader: PROFILE_FRAGMENT,
+    uniforms: {
+      uLut: { value: lut },
+      uLo: { value: encodedRange[0] },
+      uHi: { value: encodedRange[1] },
+      uDepthMin: { value: 0 },
+      uDepthMax: { value: 1 },
+      uHalfWidth: { value: halfWidth },
+      uOpacity: { value: opacity },
+      uCasing: { value: casingColor === undefined ? 0 : 1 },
+      uCasingColor: { value: new THREE.Color(casingColor ?? 0x000000) },
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
 export interface VolumeMaterialOptions {
   volume: THREE.Data3DTexture;
   lut: THREE.DataTexture;

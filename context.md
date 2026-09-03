@@ -245,6 +245,27 @@ only.
    regional box and a global-looking data layer would claim otherwise. The same split that
    governs the viewport (Principle 6) governs the globe: the *place* may be photographic,
    the *data* stays measured.
+8. **The viewport may carry instrument markings — but only ones the console already states.**
+   Chrome was DOM-only until now. The water column now also carries a *lattice*: hairline
+   gridlines on the analysis box's faces at exactly the depths `viz/depth.ts` hands the depth
+   ruler, plus depth labels set in IBM Plex Mono. This is not decoration — a raymarched field
+   has no edges, and the eye reads structure from edges, so without a reference surface the
+   volume reads as haze no matter what its density is. Three limits keep it an instrument
+   rather than chart trim. It draws only on the **far** faces, so it never sits between the
+   reader and the data. It uses the **same tick values** as the DOM ruler, so the two agree
+   literally rather than approximately. And depth markings **vanish entirely** for variables
+   with no depth dimension, because writing "500 m" on a surface field asserts a measurement
+   that does not exist. The type role is unchanged: a depth in metres is a literal readout,
+   which §5.1 already assigns to IBM Plex Mono — the label moved medium, not role.
+
+   **Corollary — a data mark may take a casing, and it is `foam`.** Where a measured mark
+   would disappear against what is behind it, it gets a light sheath drawn one step wider and
+   one step behind. The casing separates figure from ground and encodes nothing; only the core
+   carries a value. It is the one place a chrome token sits *behind* a colormap value, and it
+   must never tint one: casing behind, never a wash on top. **Why `foam` and not `abyss`:**
+   most of a float profile's length is deep water, which sits at the cold end of every cmocean
+   ramp and is therefore nearly black against nearly black water. A dark casing cannot
+   separate dark from dark — tried first, and it made a correctly-coloured ribbon invisible.
 
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
@@ -670,6 +691,32 @@ each — component, decision, one-line reason, date.)*
   contradict the no-tone-mapping decision above** — that one forbids a renderer-wide curve
   because it would also remap the data volume. This is confined to one shader, on a basemap
   that by Principle 7 encodes nothing._
+- _2026-09-04 — The chunk view gets a lattice and the observation enters the 3D (§5.1
+  Principle 8). The column read as blank, and the cause was structural, not a tuning problem:
+  `uDensity` is stuck between a slab (too high) and a haze (too low) because a uniform fog has
+  no edges, and by design no lighting may touch the data. The fix is to give the eye reference
+  surfaces it can read structure against — far-face gridlines at the ruler's own tick values —
+  rather than to keep tuning density. Rejected from the reference mock that prompted this: its
+  rainbow colormap (cmocean stays, per §5.1) and its box-in-a-void framing, which is this
+  project's own recorded "before" state._
+- _2026-09-04 — Depth markings are suppressed for surface variables. Four of seven variables
+  are `kind="surface"` (chlorophyll, D26, heat content, MLD), so `shape[0] == 1` and one value
+  is smeared down the whole 2000 m box. Harmless while nothing marked depth; the moment a
+  label says "500 m" it asserts a measurement that does not exist. Correctness, not polish._
+- _2026-09-04 — The float ribbon is drawn with a raw GLSL3 material, not `Line2`. Three's
+  `LineMaterial` fragment shader ends with `<tonemapping_fragment>` and `<colorspace_fragment>`;
+  `toneMapped = false` neutralises the first and nothing neutralises the second. It is identity
+  only because the composer's targets happen to be Linear-sRGB today — change that and the
+  ribbon shifts colour while the volume does not, silently disagreeing with the colorbar. Same
+  reasoning as the no-tone-mapping decision above, arriving through an addon instead of a
+  renderer setting._
+- _2026-09-04 — Three bugs fixed while building the above, all pre-existing. (a) `clearVolume`
+  disposed geometry and material but not the `Data3DTexture` or LUT held in uniforms —
+  `ShaderMaterial.dispose()` does not reach them — so every timeline step leaked ~0.7 MB.
+  (b) `setField` discarded `buildVolumeTexture`'s `encodedRange`, which for diverging maps is
+  re-centred on zero and is therefore NOT `meta.value_range`; anything colouring against the
+  latter disagrees with the volume. (c) `dispose()`'s blind traverse would have disposed Three's
+  module-shared Sprite geometry once sprites existed._
 
 ---
 

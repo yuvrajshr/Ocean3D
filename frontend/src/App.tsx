@@ -190,6 +190,7 @@ export default function App() {
           { lat: meta.grid.lat, lon: meta.grid.lon, depths: meta.depth_levels, shape: meta.shape },
           meta.value_range,
           meta.colormap,
+          variableKey,
         );
         sceneRef.current?.setDepthWindow(depthWindow[0], depthWindow[1]);
       } catch (error) {
@@ -314,6 +315,22 @@ export default function App() {
     })();
     return () => controller.abort();
   }, [selected, variableKey]);
+
+  // The measured profile goes into the 3D as well as the side panel, so the
+  // float can be read against the water it was measured in. The scene draws it
+  // only when the measured variable matches the field on screen.
+  useEffect(() => {
+    sceneRef.current?.setProfile(
+      comparison
+        ? {
+            lat: comparison.lat,
+            lon: comparison.lon,
+            variable: comparison.variable,
+            points: comparison.observed,
+          }
+        : null,
+    );
+  }, [comparison]);
 
   // --------------------------------------------------------------- timeline
 
