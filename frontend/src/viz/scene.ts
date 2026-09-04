@@ -464,7 +464,7 @@ export class OceanScene {
   }
 
   /** Clears only the field. Markers live in their own group and survive. */
-  private clearVolume(): void {
+  clearVolume(): void {
     for (const child of [...this.volumeGroup.children]) {
       this.volumeGroup.remove(child);
       const mesh = child as THREE.Mesh;

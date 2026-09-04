@@ -1,0 +1,213 @@
+/* ============================================================================
+   depth-ruler.css — Ocean3D Modern Vertical Depth Slider
+   Precision pill container, cyan glow, vertical D E P T H header & active callout
+   ========================================================================== */
+
+#ocean3d-depth-slider {
+  position: absolute;
+  right: 84px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 24;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  animation: depthSliderFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes depthSliderFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+/* Tooltip Callout on Left */
+.depth-slider-tooltip {
+  position: absolute;
+  right: calc(100% + 14px);
+  background: rgba(11, 18, 32, 0.96);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  color: #ffffff;
+  font-family: var(--font-readout, monospace);
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(34, 211, 238, 0.2);
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 35;
+  animation: depthTooltipSlideIn 0.15s ease-out;
+}
+
+@keyframes depthTooltipSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.depth-slider-tooltip-tag {
+  font-size: 10px;
+  color: #22d3ee;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.depth-slider-tooltip-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 1px 0;
+}
+
+.depth-slider-tooltip-sub {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+/* Outer Pill Container */
+.depth-slider-pill {
+  background: rgba(11, 18, 32, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  border-radius: 30px;
+  padding: 14px 7px;
+  box-shadow: 0 20px 30px -8px rgba(0, 0, 0, 0.7), 0 0 15px rgba(15, 23, 42, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.depth-slider-pill:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  box-shadow: 0 20px 30px -8px rgba(0, 0, 0, 0.7), 0 0 20px rgba(34, 211, 238, 0.15);
+}
+
+/* Vertical D E P T H Header */
+.depth-slider-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 900;
+  color: #22d3ee;
+  font-family: var(--font-readout, monospace);
+  line-height: 1;
+  gap: 2px;
+  margin-bottom: 10px;
+  user-select: none;
+  letter-spacing: 0.05em;
+}
+
+/* Vertical Track */
+.depth-slider-track {
+  position: relative;
+  width: 14px;
+  height: 240px;
+  background: rgba(2, 6, 23, 0.85);
+  border-radius: 9999px;
+  cursor: pointer;
+  overflow: visible;
+  border: 1px solid rgba(30, 41, 59, 0.9);
+  touch-action: none;
+}
+
+/* Gradient Fill */
+.depth-slider-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to bottom, #22d3ee, #2563eb 50%, #1e1b4b 100%);
+  border-radius: 9999px;
+  opacity: 0.75;
+  transition: height 0.05s ease-out;
+}
+
+/* Tick marks on left of track */
+.depth-slider-tick {
+  position: absolute;
+  right: calc(100% + 4px);
+  height: 2px;
+  width: 5px;
+  transform: translateY(-50%);
+  background: #334155;
+  border-radius: 1px;
+  transition: all 0.15s ease;
+  pointer-events: none;
+}
+
+.depth-slider-tick--active {
+  width: 10px;
+  background: #22d3ee;
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.8);
+}
+
+/* Draggable Round Handle */
+.depth-slider-handle {
+  position: absolute;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  background: #22d3ee;
+  color: #020617;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.8), 0 2px 4px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  transition: background 0.15s ease, transform 0.1s ease;
+  z-index: 10;
+  padding: 0;
+  outline: none;
+}
+
+.depth-slider-handle:hover {
+  background: #67e8f9;
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.depth-slider-handle:active {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+.depth-slider-handle-grip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.depth-slider-handle-bar {
+  width: 10px;
+  height: 2px;
+  background: #090d16;
+  border-radius: 1px;
+}
+
+/* Bottom Depth Readout */
+.depth-slider-footer {
+  margin-top: 10px;
+  font-size: 9.5px;
+  font-family: var(--font-readout, monospace);
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: -0.02em;
+}

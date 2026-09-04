@@ -245,6 +245,22 @@ only.
    regional box and a global-looking data layer would claim otherwise. The same split that
    governs the viewport (Principle 6) governs the globe: the *place* may be photographic,
    the *data* stays measured.
+8. **Layer stack hierarchy: Uppermost active layer rules the water column.** The layers panel
+   manages an ordered oceanographic stack (surface to subsurface). The 3D water column
+   renders the single uppermost active (visible/eye-on) layer in the stack. Toggling an upper
+   layer's eye off immediately reveals the next active layer below it. If all layers are
+   hidden or deleted, the 3D volume and timeline scrubber gracefully step down to avoid
+   displaying phantom data or desynchronized dates.
+9. **Side-by-side right HUD architecture.** Right-hand floating tools are arranged in non-colliding
+   lateral coordinate lanes: `ToolDock` at `right: 16px` (Points inspector & 3D projection
+   toggle), `DepthSlider` at `right: 84px` (vertical water column ruler), and floating flyout
+   drawers (e.g. Points profiling list) offset at `right: calc(100% + 78px)` (~150px from edge).
+   Instruments never overlap, collide, or obscure each other.
+10. **Vertical depth discretization matches physical sampling.** The vertical depth slider is
+    an instrument reflecting the true 24-level vertical grid of the INCOIS ERDDAP analysis
+    (0.5 m surface down to 2000 m floor). Real-time hover callouts display oceanographic
+    physical zones (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) so depth
+    selection is grounded in ocean physics.
 
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
@@ -646,6 +662,34 @@ each — component, decision, one-line reason, date.)*
   contradict the no-tone-mapping decision above** — that one forbids a renderer-wide curve
   because it would also remap the data volume. This is confined to one shader, on a basemap
   that by Principle 7 encodes nothing._
+- _2026-09-04 — **Interactive Layer Stack Hierarchy & Uppermost Active Layer Rendering (§5.1, Principle 8).**
+  The layers panel was modernized into an extensible ocean GIS manager supporting multi-layer stacks.
+  Decision: The 3D water column physically renders the single uppermost layer whose visibility (eye toggle)
+  is active. Toggling an upper layer's eye off automatically reveals the next active layer underneath.
+  If all active layers are toggled off or deleted, the volume is cleared and the timeline scrubber hides,
+  preventing visual desynchronization and phantom datasets._
+- _2026-09-04 — **Data Catalogue Modal Streamlining.**
+  The catalogue modal was restructured around two primary operational categories: Physical Ocean Variables
+  (Temperature, Salinity, Currents) and Hazard / Cyclone tracks (Cyclone Phailin). Extraneous filters
+  (time ranges, personal bookmarks) were removed to keep the interface focused. Added 1-click "Add to map"
+  which prepends the layer to the top of the stack and automatically dismisses the modal._
+- _2026-09-04 — **ToolDock & Development Testing Badges.**
+  A floating right-hand dock was introduced for GIS analytical tools. Points inspector stays active and
+  functional, connecting directly to real in-situ Argo float profiles with 1-click graph overlays.
+  Representational tools (`lines`, `areas`, `import`, `settings`) were equipped with professional amber
+  `<FlaskConical /> Under Testing` badges and 2s auto-close timeouts, and then cleanly commented out in
+  the primary dock bar to keep the UI focused on functional features._
+- _2026-09-05 — **Side-by-Side Right HUD Architecture & Non-Conflicting Layout (§5.1, Principle 9).**
+  The right-hand interface was unified into lateral non-conflicting zones: `ToolDock` at `right: 16px`
+  (48px width), `DepthSlider` at `right: 84px` (48px width), and floating flyout drawers (e.g. Points
+  profiling drawer) offset at `right: calc(100% + 78px)` (~150px from edge). This guarantees that
+  the Points drawer, DepthSlider, and ToolDock remain mutually visible with zero overlap or layout jumping._
+- _2026-09-05 — **Vertical Depth Slider with 24-Level Physical Discretization (§5.1, Principle 10).**
+  The depth ruler was redesigned as an upright glassmorphic pill slider at `right: 84px` with a vertical
+  `D E P T H` header, smooth gradient fill, and interactive left-anchored tooltip. The track is calibrated
+  directly to INCOIS ERDDAP's 24 physical vertical levels (0.5 m to 2000 m), displaying real oceanographic
+  zone callouts (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) and dynamically windowing
+  the Three.js raymarched volume via `scene.setDepthWindow(0, targetDepth)`._
 
 ---
 

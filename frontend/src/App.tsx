@@ -11,12 +11,11 @@ import {
   type SourceStatus,
   type VariableInfo,
 } from "./api/client";
-import { Colorbar } from "./components/Colorbar";
-import { DepthRuler } from "./components/DepthRuler";
-import { FloatList } from "./components/FloatList";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { Timeline } from "./components/Timeline";
 import { VariablePanel } from "./components/VariablePanel";
+import { ToolDock, type PointAnnotation } from "./components/ToolDock";
+import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
 import { MAX_DEPTH } from "./viz/depth";
 import { BASEMAPS } from "./viz/globe";
 import {
@@ -59,8 +58,17 @@ export default function App() {
   const [hovered, setHovered] = useState<MarkerDatum | null>(null);
 
   const [depthWindow, setDepthWindow] = useState<[number, number]>([0, MAX_DEPTH]);
+  const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
+
+  const handleDepthIndexChange = useCallback((index: number) => {
+    setDepthIndex(index);
+    const targetDepth = DEFAULT_DEPTH_LEVELS[index]?.depthMeters ?? MAX_DEPTH;
+    const nextWindow: [number, number] = [0, targetDepth];
+    setDepthWindow(nextWindow);
+    sceneRef.current?.setDepthWindow(0, targetDepth);
+  }, []);
 
   /**
    * Switch view. Returning to the column replays the descent, so `entryDone` is reset and
@@ -166,7 +174,13 @@ export default function App() {
   // --------------------------------------------------------------- field load
 
   useEffect(() => {
-    if (!scenario || !currentTime || !activeVariable) return;
+    if (!activeVariable) {
+      sceneRef.current?.clearVolume();
+      setFieldMeta(null);
+      setFieldLoading(false);
+      return;
+    }
+    if (!scenario || !currentTime) return;
     const controller = new AbortController();
 
     (async () => {
@@ -266,6 +280,30 @@ export default function App() {
     [visiblePlatforms, featuredIds],
   );
 
+  const toolPoints = useMemo<PointAnnotation[]>(() => {
+    return visiblePlatforms.map((p) => ({
+      id: p.platform_id,
+      lat: p.lat,
+      lon: p.lon,
+      variableCode: "DEPTH",
+      value: Math.round(p.max_depth ?? 0),
+      units: "m",
+      maxDepth: p.max_depth ?? 0,
+      platform: p,
+    }));
+  }, [visiblePlatforms]);
+
+  const handleOpenGraphForPoint = useCallback((pt: PointAnnotation) => {
+    if (pt.platform) {
+      setSelected(pt.platform);
+      sceneRef.current?.setSelected(pt.platform.platform_id);
+    }
+  }, []);
+
+  const handleToggleProjection = useCallback(() => {
+    handleView(view === "globe" ? "column" : "globe");
+  }, [handleView, view]);
+
   useEffect(() => {
     sceneRef.current?.setMarkers(visibleMarkers);
     sceneRef.current?.setSelected(selected?.platform_id ?? null);
@@ -325,9 +363,21 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [playing, scenario]);
 
-  const handleDepthChange = useCallback((next: [number, number]) => {
-    setDepthWindow(next);
-    sceneRef.current?.setDepthWindow(next[0], next[1]);
+  const handleVolumeOpacityChange = useCallback((opacity: number) => {
+    const scene = sceneRef.current;
+    if (scene && (scene as any).volumeMesh) {
+      const mat = (scene as any).volumeMesh.material;
+      if (mat?.uniforms?.uDensity) {
+        mat.uniforms.uDensity.value = 2.6 * opacity;
+      }
+    }
+  }, []);
+
+  const handleVolumeVisibilityChange = useCallback((visible: boolean) => {
+    const scene = sceneRef.current;
+    if (scene && (scene as any).volumeMesh) {
+      (scene as any).volumeMesh.visible = visible;
+    }
   }, []);
 
   const closePanel = useCallback(() => {
@@ -418,41 +468,19 @@ export default function App() {
           view === "globe" ? " console__main--globe" : ""
         }`}
       >
-        {view === "column" ? (
-        <div className="panel panel--left">
-          <VariablePanel
-            variables={variables}
-            selected={variableKey}
-            mode={mode}
-            onSelect={setVariableKey}
-          />
-          <div className="panel__section">
-            <h2 className="panel__heading">
-              Floats reporting{visiblePlatforms.length > 0 ? ` (${visiblePlatforms.length})` : ""}
-            </h2>
-            <FloatList
-              platforms={visiblePlatforms}
-              featured={featuredIds}
-              selectedId={selected?.platform_id ?? null}
-              onSelect={(platform) => {
-                setSelected(platform);
-                sceneRef.current?.setSelected(platform.platform_id);
-              }}
-            />
-          </div>
-
-          <div className="panel__section panel__section--grow">
-            <h2 className="panel__heading">Depth</h2>
-            <DepthRuler
-              window={depthWindow}
-              cursorDepth={selected?.max_depth ?? null}
-              onChange={handleDepthChange}
-            />
-          </div>
-        </div>
-        ) : null}
-
         <div className="viewport">
+          {view === "column" ? (
+            <VariablePanel
+              variables={variables}
+              selected={variableKey}
+              mode={mode}
+              onSelect={setVariableKey}
+              currentTime={currentTime}
+              fieldMeta={fieldMeta}
+              onOpacityChange={handleVolumeOpacityChange}
+              onVisibilityChange={handleVolumeVisibilityChange}
+            />
+          ) : null}
           {webglReady ? (
             <>
               <canvas ref={canvasRef} className="viewport__canvas" />
@@ -553,32 +581,36 @@ export default function App() {
               onClose={closePanel}
             />
           ) : null}
-        </div>
 
-        {view === "column" ? (
-        <div className="panel panel--right">
-          <Colorbar
-            label={activeVariable?.label ?? "Field"}
-            units={activeVariable?.units ?? ""}
-            unitsDeclaredByUs={activeVariable?.units_declared_by_us ?? false}
-            colormap={activeVariable?.colormap ?? "thermal"}
-            range={fieldMeta?.value_range ?? null}
-            fullRange={fieldMeta?.full_range ?? null}
-            clipped={fieldMeta?.clipped ?? false}
-            loading={fieldLoading}
+          {view === "column" ? (
+            <DepthRuler
+              currentDepthIndex={depthIndex}
+              onDepthChange={handleDepthIndexChange}
+              window={depthWindow}
+              cursorDepth={selected?.max_depth ?? null}
+            />
+          ) : null}
+
+          <ToolDock
+            projectionMode={view === "globe" ? "3d" : "2d"}
+            onToggleProjection={handleToggleProjection}
+            points={toolPoints}
+            selectedPointId={selected?.platform_id}
+            onOpenGraphForPoint={handleOpenGraphForPoint}
           />
         </div>
-        ) : null}
       </div>
 
-      <Timeline
-        timesteps={scenario?.timesteps ?? []}
-        index={timeIndex}
-        playing={playing}
-        disabled={!scenario}
-        onSeek={setTimeIndex}
-        onTogglePlay={() => setPlaying((p) => !p)}
-      />
+      {activeVariable ? (
+        <Timeline
+          timesteps={scenario?.timesteps ?? []}
+          index={timeIndex}
+          playing={playing}
+          disabled={!scenario}
+          onSeek={setTimeIndex}
+          onTogglePlay={() => setPlaying((p) => !p)}
+        />
+      ) : null}
     </div>
   );
 }
