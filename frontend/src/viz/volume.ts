@@ -34,9 +34,31 @@ export interface VolumeUpload {
 }
 
 /**
- * Pack a field into an RG 3D texture: R carries the normalized value, G marks
- * validity. A separate validity channel matters because NaN is not reliably
- * filterable — without it, land bleeds a fake value into neighbouring water.
+ * Pack a field into an RG 3D texture: R carries the normalized value, G carries
+ * validity AND local structure.
+ *
+ * Validity has to be its own signal because NaN is not reliably filterable —
+ * without it, land bleeds a fake value into neighbouring water.
+ *
+ * Structure rides in the same channel because of what was wrong with the first
+ * version of this renderer: opacity was CONSTANT for every sample in the box.
+ * Colour varied with the value and opacity did not, which is the definition of
+ * a homogeneous fog — it cannot show structure at any density, because nothing
+ * in it is more present than anything else. Raising uDensity gave a brighter
+ * fog, lowering it a fainter one, and neither had form.
+ *
+ * So the shader needs to know where the field is *changing*: a thermocline, a
+ * front, the edge of a cold wake. That is a gradient, and computing it here —
+ * once, on upload, with the real Float32 values — costs the raymarch nothing,
+ * where doing it in the shader would have meant six extra texture fetches on
+ * every one of 160 steps.
+ *
+ * Encoding: G = 0 means no data. Valid samples occupy 128..255, so the shader's
+ * `g < 0.5` land test is unchanged and land still cuts off cleanly under linear
+ * filtering; the remaining 7 bits carry gradient magnitude.
+ *
+ * Colour is untouched by all of this. Opacity is the only channel modulated,
+ * which is exactly what this file already permitted.
  */
 export function buildVolumeTexture(
   values: Float32Array,
@@ -57,30 +79,138 @@ export function buildVolumeTexture(
   }
   const span = hi - lo || 1;
 
-  const data = new Uint8Array(nLon * nLat * layers * 2);
   const columnStride = nLat * nLon;
+  const voxels = layers * nLat * nLon;
 
+  // Pass 1 — normalized values on the render grid. NaN marks no data.
+  const norm = new Float32Array(voxels);
   for (let i = 0; i < nLat; i++) {
     for (let j = 0; j < nLon; j++) {
       const offset = i * nLon + j;
-
       const column =
         nDepth > 1
           ? resampleToNormAxis(geometry.depths, values, offset, columnStride, layers, MAX_DEPTH)
           : Float32Array.of(values[offset]!);
-
       for (let k = 0; k < layers; k++) {
         const value = column[k]!;
-        const out = (k * nLat * nLon + i * nLon + j) * 2;
-        if (Number.isFinite(value)) {
-          const t = (value - lo) / span;
-          data[out] = Math.max(0, Math.min(255, Math.round(t * 255)));
-          data[out + 1] = 255;
-        } else {
-          data[out] = 0;
-          data[out + 1] = 0;
-        }
+        norm[k * columnStride + offset] = Number.isFinite(value) ? (value - lo) / span : NaN;
       }
+    }
+  }
+
+  const at = (k: number, i: number, j: number) => norm[k * columnStride + i * nLon + j]!;
+
+  // Pass 2 — central differences. A one-sided difference at a land or surface
+  // boundary would invent a huge gradient and draw a bright shell around the
+  // coastline, so an axis only contributes where both neighbours are real.
+  const gradient = new Float32Array(voxels);
+  for (let k = 0; k < layers; k++) {
+    for (let i = 0; i < nLat; i++) {
+      for (let j = 0; j < nLon; j++) {
+        const index = k * columnStride + i * nLon + j;
+        if (!Number.isFinite(norm[index]!)) continue;
+
+        let sum = 0;
+        if (k > 0 && k < layers - 1) {
+          const a = at(k - 1, i, j);
+          const b = at(k + 1, i, j);
+          if (Number.isFinite(a) && Number.isFinite(b)) sum += (b - a) * (b - a);
+        }
+        if (i > 0 && i < nLat - 1) {
+          const a = at(k, i - 1, j);
+          const b = at(k, i + 1, j);
+          if (Number.isFinite(a) && Number.isFinite(b)) sum += (b - a) * (b - a);
+        }
+        if (j > 0 && j < nLon - 1) {
+          const a = at(k, i, j - 1);
+          const b = at(k, i, j + 1);
+          if (Number.isFinite(a) && Number.isFinite(b)) sum += (b - a) * (b - a);
+        }
+        gradient[index] = Math.sqrt(sum);
+      }
+    }
+  }
+
+  // Normalize against a high percentile, never the maximum: one bad cell would
+  // otherwise flatten every real feature to nothing. Same reasoning as the
+  // percentile colour clipping in context.md §10.
+  //
+  // Taken from a histogram rather than by sorting. Sorting these gradients —
+  // once for the field and again for each of 64 layers — measured at 78 ms per
+  // field load, which is a visible hitch every time the timeline steps. This is
+  // one linear pass, and 1024 bins is far more resolution than a scale that
+  // only drives opacity will ever need.
+  const BINS = 1024;
+  let maxGradient = 0;
+  for (let n = 0; n < voxels; n++) {
+    if (gradient[n]! > maxGradient) maxGradient = gradient[n]!;
+  }
+  const binScale = maxGradient > 0 ? (BINS - 1) / maxGradient : 0;
+
+  const percentileOf = (counts: Uint32Array, total: number, p: number): number => {
+    if (total === 0 || binScale === 0) return 0;
+    const target = total * p;
+    let seen = 0;
+    for (let b = 0; b < BINS; b++) {
+      seen += counts[b] ?? 0;
+      if (seen >= target) return b / binScale;
+    }
+    return maxGradient;
+  };
+
+  const globalCounts = new Uint32Array(BINS);
+  let globalTotal = 0;
+  for (let n = 0; n < voxels; n++) {
+    const g = gradient[n]!;
+    if (g > 0) {
+      const b = Math.round(g * binScale);
+      globalCounts[b] = (globalCounts[b] ?? 0) + 1;
+      globalTotal++;
+    }
+  }
+  const globalReference = percentileOf(globalCounts, globalTotal, 0.98) || 1;
+
+  // Then normalize PER DEPTH LAYER. The thermocline's vertical gradient is
+  // orders of magnitude larger than anything below it, so on one global scale
+  // it alone saturates and the entire deep column collapses to the floor — the
+  // box keeps its lid and loses its depth. Per-layer, every level shows its own
+  // structure, which is what makes an eddy at 800 m visible at all.
+  //
+  // Opacity is not a quantitative channel here (colour is), so rescaling it by
+  // depth states nothing false. The guard matters though: a genuinely uniform
+  // layer would divide by its own noise and manufacture structure that is not
+  // there, so no layer may be scaled more aggressively than the global floor.
+  const layerReference = new Float32Array(layers);
+  const layerCounts = new Uint32Array(BINS);
+  for (let k = 0; k < layers; k++) {
+    layerCounts.fill(0);
+    let total = 0;
+    for (let n = k * columnStride; n < (k + 1) * columnStride; n++) {
+      const g = gradient[n]!;
+      if (g > 0) {
+        const b = Math.round(g * binScale);
+        layerCounts[b] = (layerCounts[b] ?? 0) + 1;
+        total++;
+      }
+    }
+    layerReference[k] = Math.max(percentileOf(layerCounts, total, 0.98), globalReference * 0.18) || 1;
+  }
+
+  // Pass 3 — pack.
+  const data = new Uint8Array(voxels * 2);
+  for (let n = 0; n < voxels; n++) {
+    const value = norm[n]!;
+    const out = n * 2;
+    if (Number.isFinite(value)) {
+      data[out] = Math.max(0, Math.min(255, Math.round(value * 255)));
+      const ratio = Math.min(1, gradient[n]! / layerReference[Math.floor(n / columnStride)]!);
+      // Square root, so moderate structure is not swamped by the strongest few
+      // percent — and so the seven bits available spend their range where the
+      // features actually live.
+      data[out + 1] = 128 + Math.round(Math.sqrt(ratio) * 127);
+    } else {
+      data[out] = 0;
+      data[out + 1] = 0;
     }
   }
 
@@ -138,6 +268,7 @@ const FRAGMENT = /* glsl */ `
   uniform float uDepthMin;   // normalized, 0 = surface
   uniform float uDepthMax;
   uniform float uDensity;
+  uniform float uStructureFloor; // how present still water is, against structure
   uniform float uSlice;      // 1.0 = show only the selected depth plane
   uniform float uSliceDepth;
   uniform float uEdgeFade;   // width of the boundary fade, in texture units
@@ -200,12 +331,22 @@ const FRAGMENT = /* glsl */ `
 
       vec3 colour = texture(uLut, vec2(sampled.r, 0.5)).rgb;
 
+      // The transfer function. G's upper seven bits carry local gradient
+      // magnitude, packed once on upload. Water that is not changing steps back
+      // toward uStructureFloor; a thermocline, a front, or the edge of a cold
+      // wake steps forward to full weight. This is what makes the field read as
+      // form rather than as an even haze — with a constant weight the volume is
+      // a homogeneous fog by construction, and no density setting can fix that.
+      float structure = clamp((sampled.g - 0.5) * 2.0, 0.0, 1.0);
+      float weight = mix(uStructureFloor, 1.0, structure);
+
       // Front-to-back compositing.
       // NOTE: the sampled colour is used exactly as the colormap produced it.
       // No lighting, fog or depth attenuation is applied to the data, because
       // any of those would shift a value away from what the colorbar claims.
-      // Only opacity is modulated, and only at the analysis boundary.
-      float sampleAlpha = uDensity * stepSize * (uSlice > 0.5 ? 40.0 : 1.0);
+      // OPACITY is the only channel ever modulated — by the boundary fade and
+      // by the transfer function above. Never colour.
+      float sampleAlpha = uDensity * stepSize * weight * (uSlice > 0.5 ? 40.0 : 1.0);
       sampleAlpha *= edgeFalloff(uv);
       sampleAlpha = clamp(sampleAlpha, 0.0, 1.0);
       accum += (1.0 - alpha) * colour * sampleAlpha;
@@ -345,10 +486,17 @@ export function createVolumeMaterial({ volume, lut }: VolumeMaterialOptions): TH
       uSteps: { value: 160 },
       uDepthMin: { value: 0 },
       uDepthMax: { value: 1 },
-      // Lowered when the analysis box was shortened to share the terrain's
-      // vertical axis: the same density over a shorter path made the volume
-      // read as an opaque glowing slab rather than water with structure in it.
-      uDensity: { value: 2.6 },
+      // Raised from 2.6 once opacity started carrying the transfer function.
+      // At a constant weight, 2.6 was the least-bad point on a bad axis: higher
+      // was an opaque glowing slab, lower was haze, and neither had structure.
+      // Now the two ends are separated — still water is scaled down by
+      // uStructureFloor and the features are scaled up — so the field can be
+      // denser where it matters without filling the box.
+      uDensity: { value: 5.5 },
+      // Not near zero. Still water is real water; it should recede, not vanish.
+      // At 0.09 the deep column disappeared and the analysis read as a lid with
+      // nothing under it, which is a different lie from the fog it replaced.
+      uStructureFloor: { value: 0.26 },
       uSlice: { value: 0 },
       uSliceDepth: { value: depthToNorm(0) },
       uEdgeFade: { value: 0.06 },

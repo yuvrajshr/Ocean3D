@@ -717,6 +717,32 @@ each — component, decision, one-line reason, date.)*
   re-centred on zero and is therefore NOT `meta.value_range`; anything colouring against the
   latter disagrees with the volume. (c) `dispose()`'s blind traverse would have disposed Three's
   module-shared Sprite geometry once sprites existed._
+- _2026-09-04 — **The volume gets a transfer function; opacity stops being constant.** This is
+  the actual reason the column read as blank, and the lattice above did not fix it. Every
+  sample in the box carried the same opacity: colour varied with the value, opacity did not,
+  which is the definition of a homogeneous fog — it cannot show structure at any density,
+  because nothing in it is more present than anything else. `uDensity` was therefore stuck on
+  a bad axis, higher being an opaque slab and lower being haze, with no setting in between
+  that had form. Opacity is now driven by local gradient magnitude, so a thermocline, a front
+  or the edge of a cold wake reads as form while still water recedes to `uStructureFloor`.
+  **Colour is untouched** — this stays inside the one channel this renderer was always
+  permitted to modulate, so the colorbar remains exactly true._
+- _2026-09-04 — Gradient is computed on the CPU at upload and packed into the texture's G
+  channel, not sampled in the shader. In-shader central differences would have cost six extra
+  3D-texture fetches on every one of 160 raymarch steps. G already carried validity, so the
+  encoding keeps 0 = no data and puts valid samples in 128–255: the shader's `g < 0.5` land
+  test is unchanged and land still cuts off cleanly under linear filtering, with the remaining
+  seven bits carrying structure._
+- _2026-09-04 — Gradient is normalised PER DEPTH LAYER, floored at 18% of the global scale.
+  On one global scale the thermocline saturates and the whole deep column collapses to the
+  floor — the box keeps its lid and loses its depth, which is a different lie from the fog it
+  replaced. Per-layer, an eddy at 800 m is visible at all. Opacity is not a quantitative
+  channel here (colour is), so rescaling it by depth states nothing false; the floor is what
+  stops a genuinely uniform layer from being divided by its own noise into invented structure._
+- _2026-09-04 — Those percentiles come from a 1024-bin histogram, not from sorting. Sorting
+  345,600 gradients once globally and again per layer measured at **77.5 ms per field load** —
+  a visible hitch every time the timeline steps. The histogram is one linear pass: **35.5 ms
+  median, 19.3 ms warm.** Measured, not estimated._
 
 ---
 
