@@ -201,12 +201,26 @@ is a rounded card with a soft drop-shadow; panels meet at hairline dividers, lik
 instrument housings, with a single small radius (2px) reserved for interactive controls
 only.
 
+> **Superseded 2026-09-05 for the floating console.** The docked left and right rails are
+> gone. The layer panel, tool dock and depth slider now float over a full-bleed viewport as
+> rounded, elevated surfaces (radii 4-12 px, real drop shadows), and the timeline is a
+> floating strip rather than a docked row. The paragraph above still describes the *docked*
+> chrome the app no longer has; it is kept because the reasoning behind it — that an
+> instrument is not a widget kit — still governs what goes *inside* those surfaces: real
+> rulers, exact tick spacing, literal units, no decorative gradients. What changed is the
+> container, not the contents. See 5.1.2.
+
 **Principles**
 1. **Depth is the organizing metaphor.** The same color ramp used to encode ocean depth in
    the render also darkens the surrounding chrome — the interface itself gets "deeper"
    toward the edges.
 2. **Instrument, not dashboard.** Controls look like they belong on a research vessel's
    console: rulers, tick marks, real units — never a SaaS widget kit.
+
+   **Amended 2026-09-05.** The surfaces those controls sit on are now rounded and elevated
+   (see 5.1.2). The principle survives where it does the work: what is *on* the surface must
+   still be an instrument. A depth slider that names real physical zones and a colorbar that
+   states its true clipped range are instruments whatever their container's border-radius.
 3. **One bold gesture.** On load, the camera performs a single continuous move: it begins
    on the Earth, flies to the Indian Ocean basin, and descends through the water column
    to the default depth as the model data streams in. The globe and the descent are one
@@ -301,10 +315,14 @@ only.
 
    **The layer stack.** Chrome may now be stacked and reordered, and a colorbar
    may live inside a layer's own housing instead of the right rail — with three
-   layers there cannot be one shared colorbar. A housing is a flat band the full
-   width of the rail, separated by hairlines, square-cornered and shadowless.
-   Both reference tools draw these as rounded cards with drop shadows; that is
-   the SaaS-card kit `CLAUDE.md` Step 4 names, and it is rejected here.
+   layers there cannot be one shared colorbar.
+
+   **Revised 2026-09-05.** A housing is a rounded, elevated card in the floating
+   panel, not the flat hairline band this principle first specified. The team
+   reviewed both and chose the card. What the housing must still do is unchanged
+   and is the part that matters: state its dataset, grid spacing and cadence in
+   mono, always visible and never in a tooltip; carry its own colorbar with the
+   real range; and name the upstream that actually drew it.
 
    **Every layer names its dataset, grid spacing and cadence, always visible and
    always in IBM Plex Mono — never a tooltip.** This is not decoration. It is the
@@ -368,14 +386,51 @@ visible in the source rather than being asserted here. As of 2026-09-04: horizon
 that both call `skyColour()` — a value added to only one uploads as zero and that material
 renders black. This principle adds no new colour to the system.
 
+
+### 5.1.2 The floating console (adopted 2026-09-05)
+
+The side-panel branch replaced the docked rails with a floating console, and the team
+reviewed it and chose it over the flat treatment 5.1 originally specified. Recorded here so
+the docs and the code do not drift, which `CLAUDE.md` names as a hard rule.
+
+**What the app actually looks like now.** A full-bleed viewport with three floating
+surfaces over it — the layer panel (top left), the tool dock and depth slider (right) — and
+a floating timeline strip along the bottom. Nothing is docked; the map, globe and water
+column all get the whole frame.
+
+**Shape and elevation.** Radii 4 px (controls and chips), 6-8 px (inner blocks), 12 px
+(panel shells), and full pills for badges. Two shadow families: neutral elevation
+(`0 20px 25px -5px rgba(0,0,0,0.5)`) to lift a surface off the viewport, and a cyan glow
+(`0 0 10px rgba(6,182,212,0.4)`) to mark an active control. `--radius-control: 2px` in
+`tokens.css` now governs the 3D viewport's own chrome only.
+
+**Colour — and this is an unresolved split, stated rather than hidden.** The floating
+console is drawn from a slate-and-cyan palette (`#22d3ee` accent; `#020617`, `#1e293b`,
+`#334155`, `#64748b`, `#94a3b8`, `#cbd5e1`, `#e2e8f0` greys), not from the six named tokens.
+Two of them map closely onto the existing system — `#22d3ee` plays the part
+`bioluminescence` plays, `#020617` the part `abyss` plays — but the rest are new, and
+`tokens.css` does not define them. **So the product currently has two chrome palettes: the
+six tokens in the 3D viewport, slate+cyan in the floating console.** That is a real
+inconsistency and it is the open design question, listed in section 11.
+
+**What did NOT change, and must not.** Data is still coloured only by cmocean; no chrome
+colour ever encodes a value and no colormap colour appears in chrome. Readouts are still IBM
+Plex Mono. A layer housing still states its dataset, resolution, cadence and the upstream
+that drew it. Percentile clipping is still declared. The rounding is a container decision; it
+buys no licence over how a measurement is drawn or described.
+
 ### 5.2 Self-critique against generic defaults
 
 Checked against common AI-generated tells before locking this in:
 - Not a warm-cream-and-terracotta or near-black-with-single-neon-accent palette picked by
   default — the near-black base and two accents here are each tied to something real
   (depth, bioluminescence, hazard-advisory convention) and used for exactly one job each.
-- No rounded SaaS card grid, no matching soft shadow under every panel, no gradient-wash
-  decoration — panels are flat, hairline-divided instrument housings.
+- ~~No rounded SaaS card grid, no matching soft shadow under every panel~~ — **no longer
+  true as of 2026-09-05, and left visible rather than deleted.** The floating console is
+  rounded and elevated (5.1.2). What the original point was defending still holds: the
+  surfaces are not a *grid* of identical cards, the shadow is not applied uniformly to
+  everything, and there are no gradient washes as decoration. Elevation marks what floats
+  over the viewport; it is not applied to docked chrome, because there is none left.
 - No tracked-out ALL-CAPS eyebrows, no "WORD — fragment" labels, no middle-dot metadata
   strings, no arrow (→) appended to buttons.
 - Numbered markers are intentionally *not* used anywhere in the UI, since nothing in this
@@ -1011,6 +1066,15 @@ each — component, decision, one-line reason, date.)*
   1° with 24 levels running 2004 to 2026; 0.083°/50 is Copernicus's spec, which the map uses
   and the column does not._
 
+- _2026-09-05 — **§5.1 updated to describe the shipped design, not the intended one.** The
+  merged side panel is rounded, elevated and drawn from slate+cyan; §5.1 still specified flat
+  square housings in six tokens. The team reviewed both and chose the panel, so canon follows
+  the code — new §5.1.2 records the real radii, shadows and palette, and Principles 2 and 9
+  and §5.2 are amended rather than quietly rewritten, so the reversal stays visible. What did
+  not move: cmocean still owns data colour, no chrome colour encodes a value, readouts stay
+  mono, and every layer still states its source and range. The rounding is a container
+  decision and buys no licence over how a measurement is drawn._
+
 ---
 
 ## 11. Open questions for the team
@@ -1030,6 +1094,14 @@ each — component, decision, one-line reason, date.)*
 - **New, still open:** the value-added hazard fields (D26, HTCNT, GEO_U/V) stop at
   2019-03-30, while the 3D grid runs to Jul 2026. If a "recent data" mode is added later,
   those layers must degrade with a stated reason rather than silently vanish.
+- **New, still open (design, and the biggest one):** **the product now has two chrome
+  palettes.** The 3D viewport uses the six named tokens; the floating console uses slate+cyan
+  (`#22d3ee` and seven greys) that `tokens.css` does not define. Two of them duplicate roles
+  the tokens already fill — `#22d3ee` does what `bioluminescence` does, `#020617` what `abyss`
+  does. Either the six tokens absorb the console (restyle the panels to the tokens) or the
+  console's palette is adopted into `tokens.css` and the viewport follows it. Leaving both is
+  the one option that is actively wrong, because a reader cannot learn what a colour means
+  when the same role has two values. See §5.1.2.
 - **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
   far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
   against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality

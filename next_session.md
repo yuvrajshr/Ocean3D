@@ -9,6 +9,67 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ---
 
+## 0. Start here — state as of 2026-09-05
+
+**Everything is on `main` and pushed.** `origin/main` = `1309a55`. Working tree clean.
+The side-panel branch is merged and contained in main; the worktree used to review it is gone.
+
+Suite green: **23/23 backend, 18/18 frontend**, typecheck clean, build clean, zero console
+errors in the browser.
+
+**Run it:** backend `uvicorn app.main:app --port 8000`, frontend `npm run dev` → :5173.
+Nothing else needs starting. `npm install` first if you are pulling for the first time —
+`lucide-react` is new.
+
+### What to work on tomorrow, in the order I would do it
+
+1. **Look at it on a real GPU.** Still the oldest open item and still the single largest
+   unknown. Every visual decision in this project — water fog, the globe's shadow lift, the
+   submerged camera, the streamline density — was tuned against SwiftShader at 1-4 fps. The
+   map's CPU raster path is immune to this, but the 3D column is not.
+
+2. **Resolve the two-palette split (§11, §5.1.2).** The 3D viewport uses the six named
+   tokens; the merged floating console uses slate+cyan that `tokens.css` does not define, and
+   two of those colours duplicate roles the tokens already fill. Pick one direction and make
+   it true everywhere. This is the biggest *design* debt and it is newly created, so it is
+   fresh in everyone's head.
+
+3. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
+   stride, so zooming in shows ~0.4° cells under a 50 m coastline. `derive_stride` already
+   takes a bbox; the work is refetching on zoom-settle without giving up "pan never
+   refetches". Most visible quality win available.
+
+4. **Pre-warm the demo dates.** Copernicus is ~12 s cold and 0.03 s cached. Before the pitch,
+   walk the dates you will actually show so every one is warm. A short script against
+   `/api/map/slice/meta` is enough.
+
+5. **Wire the tool dock's remaining buttons or remove them.** Points, Areas and the 2D toggle
+   are live. Lines and Import are not, and a dead control is worse than an absent one.
+
+6. **Confirm current-speed units with INCOIS** (§11) — unchanged, and still needed before the
+   pitch. Copernicus now gives a cross-check: it publishes u/v in m/s over the same box.
+
+7. **§9 acronyms and dataset-links tables** from the PS PDF. Needed for the report, not the
+   build.
+
+### Traps added today
+
+- **`enterColumn()` early-returns when the scene is already in "column".** The scene does not
+  know the map exists, so its view never leaves "column" while the map is up; diving from the
+  map hit that guard and left the view toggle permanently disabled. `App.handleView` routes to
+  `startEntry()` unless the scene is genuinely on the globe. **Test a full Map → Column →
+  Globe → Map round trip after touching view switching**, never one hop.
+- **A layer is a variable, not a dataset.** `map_dataset_for()` resolves one to a source per
+  view. If you add an upstream, give it a `variable_key` or it will never appear in the panel.
+- **A truncated time axis is a display sample, not the real steps.** Snapping to it invents an
+  offset on a product that has a step for every day.
+- **`*.pfeg.noaa.gov` is dead.** NOAA retired it. Terrain now comes from NCEI's ArcGIS
+  ImageServer as a tiled Float32 GeoTIFF.
+- **Latitude direction differs per server** — VIIRS descends, HYCOM ascends. Both normalised at
+  the boundary and asserted in tests; getting it wrong is a plausible-looking upside-down ocean.
+
+---
+
 ## 1. Where things stand
 
 **The app is built and working end to end on live INCOIS data.** Backend and frontend both
