@@ -7,6 +7,8 @@ a plausible-looking but wrong picture. See context.md §10.
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,6 +29,35 @@ CACHE_TTL_SECONDS = 60 * 60 * 12
 # via AIA fetching; httpx does not. This is the single place that decision is
 # made — see erddap_client.py.
 ERDDAP_VERIFY_TLS = False
+
+
+# --- Credentials -----------------------------------------------------------
+# Copernicus Marine needs an account. The credentials live in `backend/.env`,
+# which is gitignored; only the variable NAMES are committed, in .env.example.
+# Loaded here rather than by the toolbox so a missing file degrades to "the
+# Copernicus layers are unavailable" instead of an import-time crash.
+def _load_dotenv() -> None:
+    env = Path(__file__).resolve().parent.parent / ".env"
+    if not env.exists():
+        return
+    for raw in env.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+
+COPERNICUS_USERNAME = os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME", "")
+COPERNICUS_PASSWORD = os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD", "")
+COPERNICUS_AVAILABLE = bool(COPERNICUS_USERNAME and COPERNICUS_PASSWORD)
+
+# Licence condition, not a courtesy: using Copernicus Marine data obliges us to
+# display this plus each product's DOI. It ships with the data or the data does
+# not ship (context.md 5.5).
+COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 
 
 @dataclass(frozen=True)
@@ -158,8 +189,16 @@ HAZARD_VARIABLES: tuple[VariableSpec, ...] = (
 # Ghats and the floor of the Bay of Bengal, which is the point — they are one
 # continuous surface, and rendering them as one is what stops the analysis
 # looking like a box in a void (context.md §5.1, Principle 6).
-TERRAIN_BASE = "https://coastwatch.pfeg.noaa.gov/erddap"
-TERRAIN_DATASET = "etopo180"
+# 2026-09-05: repointed. The old base, coastwatch.pfeg.noaa.gov, is a legacy
+# host NOAA has retired — it no longer resolves, and `etopo180` exists on no
+# reachable ERDDAP. Terrain was therefore loading only from the disk cache, so a
+# fresh clone lost the seafloor entirely. NCEI's ArcGIS ImageServer publishes the
+# same ETOPO1 bedrock grid and returns real Float32 metres, so the fix is a new
+# transport rather than a new dataset.
+TERRAIN_BASE = "https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics"
+TERRAIN_DATASET = "ETOPO1_bedrock"
+# ETOPO1 is 1 arc-minute, so a span in degrees times 60 is its native cell count.
+TERRAIN_ARCMIN_PER_DEG = 60
 
 # Deliberately wider than the analysis box so the sea continues past the data
 # to a horizon rather than stopping at its edge.
@@ -213,3 +252,246 @@ PHAILIN = Scenario(
 )
 
 SCENARIOS = {PHAILIN.key: PHAILIN}
+
+
+# ---------------------------------------------------------------------------
+# 2D map layers (added 2026-09-05)
+# ---------------------------------------------------------------------------
+# Deliberately a separate dataclass from VariableSpec. These live on other
+# ERDDAP servers, carry their own depth axes, cadences and axis orders, and are
+# addressed one depth level at a time. Widening VariableSpec would force every
+# 3D consumer to care about a `base` URL and an axis order it never uses.
+#
+# Every dataset below was verified live on 2026-09-05: dimensions read from the
+# server's own /info/ endpoint, payload sizes and latency measured by fetching
+# them. Nothing here is assumed.
+
+MAP_ERDDAP_APDRC = "https://apdrc.soest.hawaii.edu/erddap"
+MAP_ERDDAP_COASTWATCH = "https://coastwatch.noaa.gov/erddap"
+
+# A slice is capped at this many cells; the server raises the stride to fit and
+# reports what it used, rather than refusing. 400k cells is 1.6 MB as Float32.
+MAX_SLICE_CELLS = 400_000
+# A time axis longer than this is summarised rather than enumerated. HYCOM has
+# 8034 daily steps and VIIRS 4833; sending every stamp is ~200 KB of JSON.
+MAX_TIME_ENTRIES = 2_000
+
+
+@dataclass(frozen=True)
+class MapDataset:
+    """A gridded product the 2D map can draw.
+
+    `axis_order` is the griddap dimension order, which differs per server and is
+    the single most common source of a silently-wrong query: HYCOM is
+    (time, LEV, latitude, longitude) while VIIRS carries a singleton `altitude`
+    where a depth would go. Building the query by walking this tuple means a new
+    upstream is a table entry, not a new code path.
+    """
+
+    id: str
+    base: str
+    dataset_id: str
+    variable: str
+    label: str
+    provider: str
+    attribution: str
+    units: str
+    kind: str  # "volume" (has depth) | "surface" | "vector"
+    colormap: str
+    caption: str
+    axis_order: tuple[str, ...]
+    depth_dim: str | None  # the member of axis_order that is a real depth
+    lat_dim: str = "latitude"
+    lon_dim: str = "longitude"
+    # Some servers store latitude north-to-south. A griddap range must be given
+    # in axis order, so asking for (lo):(hi) on a descending axis returns 404.
+    lat_descending: bool = False
+    lon_range: tuple[float, float] = (-180.0, 180.0)
+    lat_range: tuple[float, float] = (-90.0, 90.0)
+    native_shape: tuple[int, int] = (0, 0)  # (n_lat, n_lon)
+    time_range: tuple[str, str] = ("", "")
+    cadence: str = "daily"
+    cadence_days: float = 1.0
+    vector_components: tuple[str, str] | None = None
+    regional: bool = False
+    units_declared_by_us: bool = False
+    default_stride: int = 1
+    # "erddap" reaches the server with a griddap URL; "cmems" goes through the
+    # Copernicus Marine toolbox, which subsets server-side and has no stride.
+    protocol: str = "erddap"
+    # Licence attribution that MUST appear wherever the layer does.
+    doi: str = ""
+
+
+# HYCOM GLBv0.08 — the workhorse. Global, 40 levels to 5000 m, daily.
+# One dataset supplies the coloured field, the depth slider, the profile, the
+# depth-time section and the u/v for streamlines.
+_HYCOM = dict(
+    base=MAP_ERDDAP_APDRC,
+    dataset_id="hawaii_soest_6a0a_5127_d118",
+    provider="HYCOM GLBv0.08",
+    attribution="HYCOM GLBv0.08 via APDRC, University of Hawaii",
+    axis_order=("time", "LEV", "latitude", "longitude"),
+    depth_dim="LEV",
+    lat_range=(-80.0, 90.0),
+    lon_range=(-180.0, 179.92),
+    native_shape=(3251, 4500),
+    time_range=("1994-01-01", "2015-12-30"),
+    cadence="daily",
+    cadence_days=1.0,
+    default_stride=16,
+)
+
+MAP_DATASETS: tuple[MapDataset, ...] = (
+    MapDataset(
+        id="hycom_temperature",
+        variable="water_temp",
+        label="Temperature",
+        units="°C",
+        kind="volume",
+        colormap="thermal",
+        caption="How warm the water is, from the surface down to 5000 m.",
+        **_HYCOM,
+    ),
+    MapDataset(
+        id="hycom_salinity",
+        variable="salinity",
+        label="Salinity",
+        units="PSU",
+        kind="volume",
+        colormap="haline",
+        caption="How salty the water is. Rivers and rain freshen the surface.",
+        **_HYCOM,
+    ),
+    MapDataset(
+        id="hycom_currents",
+        variable="water_u",
+        vector_components=("water_u", "water_v"),
+        label="Currents",
+        units="m/s",
+        kind="vector",
+        colormap="speed",
+        caption="How fast the water is moving, and which way.",
+        **{k: v for k, v in _HYCOM.items() if k != "default_stride"},
+        default_stride=16,
+    ),
+    MapDataset(
+        id="viirs_chlorophyll",
+        base=MAP_ERDDAP_COASTWATCH,
+        dataset_id="noaacwNPPVIIRSSQchlaDaily",
+        variable="chlor_a",
+        label="Chlorophyll",
+        provider="S-NPP VIIRS, science quality",
+        attribution="NOAA CoastWatch, S-NPP VIIRS Level 3",
+        units="mg/m³",
+        kind="surface",
+        colormap="algae",
+        caption="Plant life near the surface. Satellites cannot see through cloud, so there are gaps.",
+        # `altitude` is a singleton, not a depth — it must still be indexed, but
+        # it must never produce a depth ruler.
+        axis_order=("time", "altitude", "latitude", "longitude"),
+        depth_dim=None,
+        lat_descending=True,
+        lat_range=(-89.75625, 89.75625),
+        lon_range=(-179.98, 179.98),
+        native_shape=(4788, 9600),
+        time_range=("2012-01-02", "2026-08-26"),
+        cadence="daily",
+        cadence_days=1.0,
+        default_stride=24,
+    ),
+)
+
+MAP_DATASETS_BY_ID: dict[str, MapDataset] = {d.id: d for d in MAP_DATASETS}
+
+
+# --- Copernicus Marine (GLORYS) -------------------------------------------
+# Better data than HYCOM on every axis that matters here: 0.083 deg, 50 levels
+# to 5728 m, daily, and it runs to 2026-06 with a forecast product reaching ten
+# days past today. The cost is that CMEMS has no server-side striding and about
+# 11 s of fixed request overhead, so slices are downsampled and cached by us.
+_GLORYS = dict(
+    base="https://data.marine.copernicus.eu",
+    dataset_id="cmems_mod_glo_phy_my_0.083deg_P1D-m",
+    provider="Copernicus Marine GLORYS12V1",
+    attribution=(
+        "Generated using E.U. Copernicus Marine Service Information; "
+        "Global Ocean Physics Reanalysis, doi.org/10.48670/moi-00021"
+    ),
+    doi="10.48670/moi-00021",
+    protocol="cmems",
+    axis_order=("time", "depth", "latitude", "longitude"),
+    depth_dim="depth",
+    lat_range=(-80.0, 90.0),
+    lon_range=(-180.0, 179.9167),
+    native_shape=(2041, 4320),
+    time_range=("1993-01-01", "2026-06-23"),
+    cadence="daily",
+    cadence_days=1.0,
+    default_stride=5,
+)
+
+CMEMS_DATASETS: tuple[MapDataset, ...] = (
+    MapDataset(
+        id="cmems_temperature",
+        variable="thetao",
+        label="Temperature (Copernicus)",
+        units="°C",
+        kind="volume",
+        colormap="thermal",
+        caption="How warm the water is, at 0.083° and 50 levels, back to 1993.",
+        **_GLORYS,
+    ),
+    MapDataset(
+        id="cmems_salinity",
+        variable="so",
+        label="Salinity (Copernicus)",
+        units="PSU",
+        kind="volume",
+        colormap="haline",
+        caption="How salty the water is, through the full water column.",
+        **_GLORYS,
+    ),
+    MapDataset(
+        id="cmems_currents",
+        variable="uo",
+        vector_components=("uo", "vo"),
+        label="Currents (Copernicus)",
+        units="m/s",
+        kind="vector",
+        colormap="speed",
+        caption="How fast the water moves, and which way, at any depth.",
+        **_GLORYS,
+    ),
+    MapDataset(
+        id="cmems_forecast_temperature",
+        base="https://data.marine.copernicus.eu",
+        dataset_id="cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m",
+        variable="thetao",
+        label="Temperature forecast",
+        provider="Copernicus Marine analysis & forecast",
+        attribution=(
+            "Generated using E.U. Copernicus Marine Service Information; "
+            "Global Ocean Physics Analysis and Forecast, doi.org/10.48670/moi-00016"
+        ),
+        doi="10.48670/moi-00016",
+        protocol="cmems",
+        units="°C",
+        kind="volume",
+        colormap="thermal",
+        caption="The operational forecast — today, and ten days ahead.",
+        axis_order=("time", "depth", "latitude", "longitude"),
+        depth_dim="depth",
+        lat_range=(-80.0, 90.0),
+        lon_range=(-180.0, 179.9167),
+        native_shape=(2041, 4320),
+        time_range=("2022-06-01", "2026-09-13"),
+        cadence="daily",
+        cadence_days=1.0,
+        default_stride=5,
+    ),
+)
+
+if COPERNICUS_AVAILABLE:
+    MAP_DATASETS = MAP_DATASETS + CMEMS_DATASETS
+    MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}

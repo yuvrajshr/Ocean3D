@@ -7,7 +7,7 @@
 
 import { useMemo } from "react";
 
-import { DIVERGING, toCssGradient, type ColormapName } from "../viz/colormaps";
+import { encodeRange, toCssGradient, type ColormapName } from "../viz/colormaps";
 
 interface ColorbarProps {
   label: string;
@@ -47,12 +47,10 @@ export function Colorbar({
 }: ColorbarProps) {
   const gradient = useMemo(() => toCssGradient(colormap), [colormap]);
 
-  const [lo, hi] = useMemo<[number, number]>(() => {
-    if (!range) return [0, 1];
-    if (!DIVERGING.has(colormap)) return range;
-    const extent = Math.max(Math.abs(range[0]), Math.abs(range[1])) || 1;
-    return [-extent, extent];
-  }, [range, colormap]);
+  const [lo, hi] = useMemo<[number, number]>(
+    () => (range ? encodeRange(range, colormap) : [0, 1]),
+    [range, colormap],
+  );
 
   const ticks = useMemo(() => (range ? niceTicks(lo, hi) : []), [range, lo, hi]);
 

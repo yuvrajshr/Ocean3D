@@ -14,3 +14,9 @@ xarray>=2024.9
 netCDF4>=1.7
 numpy>=2.0
 pandas>=2.2
+
+# Copernicus Marine (GLORYS). The only upstream here that is not plain HTTP:
+# CMEMS is a Zarr store reached through Mercator Ocean's toolbox. Optional at
+# runtime - without credentials in backend/.env the Copernicus layers simply do
+# not appear, and every other source still works.
+copernicusmarine>=2.4

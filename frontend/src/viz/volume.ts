@@ -14,7 +14,7 @@
 
 import * as THREE from "three";
 
-import { buildLut, DIVERGING, LUT_SIZE, type ColormapName } from "./colormaps";
+import { buildLut, encodeRange, LUT_SIZE, type ColormapName } from "./colormaps";
 import { depthToNorm, MAX_DEPTH, resampleToNormAxis } from "./depth";
 
 /** Vertical layers in the 3D texture, evenly spaced on the square-root axis. */
@@ -69,14 +69,9 @@ export function buildVolumeTexture(
   const [nDepth, nLat, nLon] = geometry.shape as [number, number, number];
   const layers = nDepth > 1 ? DEPTH_LAYERS : 1;
 
-  let [lo, hi] = valueRange;
-  if (DIVERGING.has(colormap)) {
-    // A diverging map that is not centred on zero puts "no difference" at a
-    // coloured position, which reads as a signal. Centre it.
-    const extent = Math.max(Math.abs(lo), Math.abs(hi)) || 1;
-    lo = -extent;
-    hi = extent;
-  }
+  // encodeRange lives in colormaps.ts so the 2D map cannot encode a diverging
+  // field differently from this texture. See its comment.
+  const [lo, hi] = encodeRange(valueRange, colormap);
   const span = hi - lo || 1;
 
   const columnStride = nLat * nLon;

@@ -15,6 +15,7 @@ from ..config import HAZARD_VARIABLES, VARIABLES, VariableSpec
 from ..erddap_client import UpstreamUnavailable
 from ..ingestion import erddap_grid
 from ..models.schemas import GridAxes, ModelFieldMeta
+from ..scaling import percentile_range
 
 router = APIRouter()
 
@@ -76,25 +77,18 @@ def field_meta(
     lat, lon = _bounds(lat_min, lat_max, lon_min, lon_max)
     result = _load(spec, time, lat, lon)
 
-    finite = result.values[np.isfinite(result.values)]
-    if finite.size == 0:
+    # The scale rule lives in scaling.py so the 2D map cannot compute a
+    # different range for the same field than this endpoint reports.
+    scale = percentile_range(result.values)
+    if scale is None:
         raise HTTPException(
             404,
             f"No {spec.label.lower()} data in this window. The analysis has no "
             "coverage here — try a wider area or another date.",
         )
-
-    # Stretch the colour scale over the 2nd-98th percentile rather than the true
-    # extremes. Some of these fields carry genuine outliers — geostrophic
-    # currents diverge as 1/f toward the equator, and chlorophyll is strongly
-    # skewed with most values below 1 mg/m3 — and a min/max scale lets a single
-    # extreme cell wash out all the structure everyone actually needs to see.
-    # The true range is still reported, and the UI says when clipping applied.
-    low, high = (float(v) for v in np.percentile(finite, [2, 98]))
-    true_low, true_high = float(np.nanmin(finite)), float(np.nanmax(finite))
-    if not np.isfinite(low) or not np.isfinite(high) or high <= low:
-        low, high = true_low, true_high
-    clipped = low > true_low or high < true_high
+    low, high = scale.low, scale.high
+    true_low, true_high = scale.true_low, scale.true_high
+    clipped = scale.clipped
 
     query = f"variable={variable}&time={time}"
     if lat and lon:

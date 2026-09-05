@@ -100,3 +100,36 @@ export function toCssGradient(name: ColormapName, steps = 24): string {
 
 /** Diverging maps must be centred on zero or the residual sign reads wrong. */
 export const DIVERGING: ReadonlySet<ColormapName> = new Set(["balance", "delta"]);
+
+/**
+ * The value range actually encoded into a LUT, after any diverging re-centring.
+ *
+ * This lived inline in two places — `volume.ts`'s texture upload and
+ * `Colorbar.tsx`'s tick labels — and a third copy was about to be written for
+ * the 2D map's rasterizer. Three copies of "what colour is this value" is how
+ * the same reading ends up a different colour in two views, which is the exact
+ * failure context.md §10 records twice. One definition, imported everywhere.
+ */
+export function encodeRange(
+  range: [number, number],
+  colormap: ColormapName,
+): [number, number] {
+  if (!DIVERGING.has(colormap)) return range;
+  // A diverging map that is not centred on zero puts "no difference" at a
+  // coloured position, which reads as a signal. Centre it.
+  const extent = Math.max(Math.abs(range[0]), Math.abs(range[1])) || 1;
+  return [-extent, extent];
+}
+
+/** Value to 0..1 against an already-encoded range. Non-finite in, NaN out. */
+export function normaliseValue(value: number, encoded: [number, number]): number {
+  const span = encoded[1] - encoded[0] || 1;
+  return Number.isFinite(value) ? (value - encoded[0]) / span : NaN;
+}
+
+/** Value to a LUT index, or -1 for no data. The single definition of the mapping. */
+export function lutIndex(value: number, encoded: [number, number]): number {
+  const t = normaliseValue(value, encoded);
+  if (!Number.isFinite(t)) return -1;
+  return Math.max(0, Math.min(LUT_SIZE - 1, Math.round(t * (LUT_SIZE - 1))));
+}

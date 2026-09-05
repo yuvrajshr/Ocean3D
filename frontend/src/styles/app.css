@@ -810,3 +810,468 @@
   .header__spacer { display: none; }
   .header__group { width: 100%; justify-content: space-between; }
 }
+
+
+/* ==================================================================== map */
+/* The 2D map view. Everything here extends the locked system in
+   context.md 5.1: six tokens only, hairline dividers, square housings, and
+   2px radius on controls alone. A layer is a HOUSING, not a card - both
+   reference tools draw rounded shadowed cards, which is the SaaS-card kit
+   CLAUDE.md Step 4 names. */
+
+/* Wider left rail than the column view, because a layer housing carries its
+   own colorbar. Must stay AFTER --explore and --globe: all three are
+   single-class selectors, so source order decides which wins. */
+.console__main--map { grid-template-columns: 280px minmax(0, 1fr) 104px; }
+
+.panel__note {
+  margin: 0;
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+}
+
+/* The 3D canvas stays mounted so OceanScene keeps its context; it is simply
+   not the thing being looked at while the map is up. */
+.viewport__canvas--idle { visibility: hidden; }
+.viewport__overlay--hidden { display: none; }
+
+.map {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  background: var(--surface-viewport);
+}
+.map:active { cursor: grabbing; }
+.map--area { cursor: crosshair; }
+.map--area:active { cursor: crosshair; }
+
+.map__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.map__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map__grid-label,
+.map__extent-label {
+  font-family: var(--font-readout);
+  font-size: 10px;
+  letter-spacing: var(--tracking-readout);
+}
+.map__extent-label { font-size: 10px; font-weight: var(--weight-medium); }
+
+.map__hud {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  background: rgb(var(--abyss-rgb) / 0.72);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-size: var(--size-caption);
+  pointer-events: none;
+}
+
+.map__area-action {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 260px;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--shadow-floating);
+}
+.map__area-action p { margin: 0; font-size: var(--size-caption); color: var(--text-muted); }
+.map__area-action button {
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  background: var(--control-idle);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--size-label);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+.map__area-action button:hover { background: var(--control-hover); }
+.map__area-warn { color: var(--advisory); }
+
+/* ------------------------------------------------------------ layer stack */
+
+.layer-stack { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+
+.layer-stack__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+}
+.layer-stack__head .panel__heading { margin: 0; flex: 1 1 auto; }
+
+.layer-stack__add {
+  background: var(--surface-inset);
+  color: var(--text-primary);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-size: var(--size-caption);
+  padding: 2px var(--space-1);
+}
+.layer-stack__add:disabled { color: var(--text-faint); }
+
+.layer-stack__empty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+  line-height: var(--leading-body);
+}
+
+.layer-stack__list { list-style: none; margin: 0; padding: 0; }
+
+/* A housing: flat, square, hairline-separated. No shadow, no radius. */
+.layer-card {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  border-left: 2px solid transparent;
+}
+.layer-card--active { border-left-color: var(--current); background: var(--surface-inset); }
+.layer-card--dim { opacity: 0.55; }
+
+.layer-card__head { display: flex; align-items: center; gap: var(--space-2); }
+
+.layer-card__eye {
+  background: none; border: 0; padding: 2px; cursor: pointer; line-height: 0;
+}
+.layer-card__dot {
+  display: block; width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid var(--hairline-strong);
+}
+.layer-card__dot--on { background: var(--bioluminescence); border-color: var(--bioluminescence); }
+
+.layer-card__title {
+  flex: 1 1 auto;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--size-label);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.layer-card__order { display: flex; gap: 2px; }
+.layer-card__order button,
+.layer-card__close {
+  background: none; border: 0; padding: 0 3px; cursor: pointer;
+  color: var(--text-faint); font-size: var(--size-caption); line-height: 1;
+}
+.layer-card__order button:hover:not(:disabled),
+.layer-card__close:hover { color: var(--text-primary); }
+.layer-card__order button:disabled { opacity: 0.3; cursor: default; }
+
+/* Always visible, never a tooltip: this is what keeps a global map honest. */
+.layer-card__source {
+  margin: var(--space-1) 0 0;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.layer-card__state {
+  margin: 2px 0 var(--space-2);
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+}
+.layer-card__offset {
+  margin-left: var(--space-1);
+  padding: 0 3px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  color: var(--advisory);
+  font-size: 10px;
+}
+.layer-card__warn { color: var(--advisory); }
+
+.layer-bar { margin-bottom: var(--space-2); }
+.layer-bar__ramp {
+  height: 10px;
+  border: 1px solid var(--hairline);
+}
+.layer-bar__scale {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.layer-bar__scale span:nth-child(2) { color: var(--text-faint); }
+.layer-bar__scale span:last-child { text-align: right; }
+.layer-bar__note { margin: 2px 0 0; font-size: 10px; color: var(--text-faint); }
+.layer-bar__pending { color: var(--text-faint); }
+
+.layer-card__credit {
+  margin: 0 0 var(--space-2);
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.layer-card__controls { display: flex; align-items: center; gap: var(--space-2); }
+.layer-card__opacity { display: flex; align-items: center; gap: var(--space-1); flex: 1 1 auto; }
+.layer-card__opacity input { flex: 1 1 auto; min-width: 0; accent-color: var(--current); }
+.layer-card__opacity .readout { font-size: 10px; color: var(--text-muted); min-width: 30px; }
+
+.layer-card__toggle {
+  background: var(--control-idle);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  padding: 1px var(--space-1);
+  cursor: pointer;
+}
+.layer-card__toggle[aria-pressed="true"] {
+  background: var(--control-on);
+  border-color: var(--control-on);
+  color: var(--text-on-accent);
+}
+
+/* -------------------------------------------------------------- tool rail */
+
+.panel--map-tools { display: flex; flex-direction: column; }
+
+.tool-rail {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--hairline);
+}
+.tool-rail__button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-1);
+  background: var(--control-idle);
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--size-caption);
+  cursor: pointer;
+}
+.tool-rail__button:hover { background: var(--control-hover); color: var(--text-primary); }
+.tool-rail__button[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); }
+.tool-rail__glyph { font-family: var(--font-readout); font-size: 13px; }
+
+/* ------------------------------------------------------------ depth ruler */
+
+.map-depth { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.map-depth__track { position: relative; flex: 1 1 auto; min-height: 120px; margin-left: 2px; }
+
+.map-depth__stop {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-faint);
+}
+.map-depth__tick {
+  display: block;
+  width: 10px;
+  height: 1px;
+  background: var(--hairline-strong);
+}
+.map-depth__stop--on .map-depth__tick { width: 18px; background: var(--bioluminescence); }
+.map-depth__label { font-size: 10px; }
+.map-depth__stop--on .map-depth__label { color: var(--text-primary); }
+.map-depth__stop:hover .map-depth__label { color: var(--text-primary); }
+
+.map-depth__cursor {
+  position: absolute;
+  left: 0;
+  width: 22px;
+  height: 1px;
+  background: var(--bioluminescence);
+  pointer-events: none;
+}
+
+.map-depth__readout {
+  padding: var(--space-2) var(--space-1);
+  border-top: 1px solid var(--hairline);
+  color: var(--text-primary);
+  font-size: var(--size-readout);
+  text-align: center;
+}
+
+/* --------------------------------------------------------------- timeline */
+
+.map-timeline { gap: var(--space-2); }
+
+.map-timeline__rail {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-inset);
+  cursor: pointer;
+}
+
+.map-timeline__year {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* One tick row per visible layer, so three cadences read as three cadences
+   rather than being averaged into one. */
+.map-timeline__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  bottom: 3px;
+}
+
+.map-timeline__tick {
+  position: absolute;
+  top: 2px;
+  width: 1px;
+  height: 5px;
+  background: rgb(var(--foam-rgb) / 0.38);
+}
+.map-timeline__at {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 7px;
+  background: var(--bioluminescence);
+  transform: translateX(-1px);
+}
+
+.map-timeline__thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--foam);
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+
+.map-timeline__readout {
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  font-size: var(--size-caption);
+  color: var(--text-muted);
+}
+.map-timeline__readout strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  font-size: var(--size-readout);
+}
+
+/* ----------------------------------------------------------- point panel */
+/* The one floating element on this view, reusing the profile panel's exact
+   treatment so the product keeps three z-planes and not four. */
+
+.point-panel {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 356px;
+  max-height: calc(100% - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--shadow-floating);
+  z-index: var(--z-floating);
+}
+
+.point-panel__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: var(--space-2);
+}
+.point-panel__id { flex: 1 1 auto; font-size: var(--size-readout); color: var(--text-primary); }
+
+.point-panel__value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+}
+.point-panel__label { font-size: var(--size-label); color: var(--text-muted); }
+.point-panel__number { font-size: var(--size-readout-lg); color: var(--text-primary); }
+.point-panel__number em { font-style: normal; font-size: var(--size-caption); color: var(--text-muted); }
+.point-panel__meta { margin: 2px 0 var(--space-3); font-size: 10px; color: var(--text-faint); }
+
+.point-panel__chart { border-top: 1px solid var(--hairline); padding-top: var(--space-2); margin-top: var(--space-2); }
+.point-panel__chart-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--size-caption);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+.point-panel__stats { margin: 2px 0 0; font-size: 10px; color: var(--text-faint); }
+.point-panel__empty { margin: var(--space-3) 0; font-size: var(--size-caption); color: var(--text-muted); }
+.point-panel__source { margin: var(--space-3) 0 0; font-size: 10px; color: var(--text-faint); }
+
+.point-panel__load {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--control-idle);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--size-caption);
+  cursor: pointer;
+}
+.point-panel__load:hover:not(:disabled) { background: var(--control-hover); }
+.point-panel__load:disabled { color: var(--text-faint); cursor: default; }
+
+.pp-axis { stroke: var(--hairline-strong); stroke-width: 1; }
+.pp-grid { stroke: var(--hairline); stroke-width: 1; }
+.pp-line { fill: none; stroke: var(--bioluminescence); stroke-width: 1.4; }
+.pp-cursor { stroke: var(--foam); stroke-width: 1; opacity: 0.5; }
+.pp-dot { fill: var(--foam); }
+.pp-tick {
+  fill: var(--text-faint);
+  font-family: var(--font-readout);
+  font-size: 9px;
+}
+
+@media (max-width: 900px) {
+  .console__main--map { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .console__main--map .panel--right { display: none; }
+  .point-panel { top: auto; bottom: var(--space-2); right: var(--space-2); left: var(--space-2); width: auto; }
+}

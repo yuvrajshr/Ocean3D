@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CACHE_DIR
-from .routers import catalog, field, instruments, terrain
+from .routers import catalog, field, instruments, map as map_router, terrain
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,13 +40,24 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET"],
     allow_headers=["*"],
-    expose_headers=["X-Field-Shape", "X-Field-Provenance"],
+    # X-Terrain-Shape and the X-Map-* headers must be listed too: a header the
+    # browser cannot read is the same as one that was never sent.
+    expose_headers=[
+        "X-Field-Shape",
+        "X-Field-Provenance",
+        "X-Terrain-Shape",
+        "X-Map-Shape",
+        "X-Map-Stride",
+        "X-Map-Planes",
+        "X-Map-Provenance",
+    ],
 )
 
 app.include_router(catalog.router, prefix="/api", tags=["catalog"])
 app.include_router(field.router, prefix="/api", tags=["field"])
 app.include_router(instruments.router, prefix="/api", tags=["instruments"])
 app.include_router(terrain.router, prefix="/api", tags=["terrain"])
+app.include_router(map_router.router, prefix="/api", tags=["map"])
 
 
 @app.get("/")

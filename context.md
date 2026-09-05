@@ -222,6 +222,15 @@ only.
    globe never rotates on its own. It turns when dragged and is otherwise still. An
    idly-spinning Earth is the generic data-viz tell `CLAUDE.md` Step 4 names, and it is the
    one part of this principle that survives the globe becoming somewhere you can go.
+   **The map is the landing view** (2026-09-05). The app now opens on the 2D map
+   rather than by diving. What survives the reversal, and it is most of it: the
+   load-in descent is still the product's one orchestrated motion moment, it
+   still plays on map→column and globe→column, `prefers-reduced-motion` still
+   cuts it both ways, and the globe still never rotates on its own. What changed
+   is only which view is first. The earlier reasoning — "a forecaster's data is
+   in the water column, not on the sphere" — argued against a *locator* as the
+   default; a plan view carrying real measured fields is not a locator.
+
 4. **Two audiences, one system.** "Ops mode ⟷ Explore" is a single toggle, top-right, not a
    separate skin: Explore mode hides advanced controls (isosurface, colorbar editing) and
    adds one short caption per selected variable, in the same visual language.
@@ -236,6 +245,16 @@ only.
    A data volume hanging in a void reads as a chart of the ocean; a data volume inside the
    sea reads as the ocean. This principle governs the viewport only — the surrounding
    chrome stays an instrument (Principle 2).
+
+   **The viewport opens under the surface** (2026-09-04). The camera sits about 86 m down,
+   looking slightly down onto the analysis, which fills a little over half the frame. Above
+   the water the same framing is impossible: eye height is
+   `target.y + distance·sin(elevation)`, so getting the box large enough to read means a
+   smaller distance, and staying dry at that distance needs a *higher* angle — which shows
+   the column's warm lid and hides the thermocline, the exact thing the elevation was
+   lowered to avoid. Being under also earns the scene its atmosphere: light shafts and
+   marine snow are gated on the camera being submerged and so had never once been visible.
+   Dragging up still returns to the basin overview, so the whole-box view survives on demand.
 7. **The basemap is imagery; everything drawn on it is data.** The globe is a photograph of
    the Earth — NASA Blue Marble, shaded relief and bathymetry baked in — and it is allowed
    to be beautiful because it is a *basemap*, the one thing in the product that encodes
@@ -245,6 +264,13 @@ only.
    regional box and a global-looking data layer would claim otherwise. The same split that
    governs the viewport (Principle 6) governs the globe: the *place* may be photographic,
    the *data* stays measured.
+
+   **Amended 2026-09-05.** A field *may* be drawn at global extent when it comes
+   from a genuinely global upstream that is named on screen. The prohibition was
+   never against global pixels; it was against claiming coverage we do not have.
+   Drawing HYCOM's global temperature and labelling it "HYCOM GLBv0.08 · 0.08° ·
+   daily" claims exactly what is true. The sphere rule is unchanged: the globe
+   still carries no field at all.
 8. **The viewport may carry instrument markings — but only ones the console already states.**
    Chrome was DOM-only until now. The water column now also carries a *lattice*: hairline
    gridlines on the analysis box's faces at exactly the depths `viz/depth.ts` hands the depth
@@ -267,6 +293,42 @@ only.
    ramp and is therefore nearly black against nearly black water. A dark casing cannot
    separate dark from dark — tried first, and it made a correctly-coloured ribbon invisible.
 
+9. **A plan view is a chart table, and every layer states its own resolution.**
+   The 2D map runs full-bleed to all four edges and docks its instruments at the
+   same three edges the column view uses, so switching views reads as one console
+   rather than two apps. Four new structural devices come with it, each earning
+   its place:
+
+   **The layer stack.** Chrome may now be stacked and reordered, and a colorbar
+   may live inside a layer's own housing instead of the right rail — with three
+   layers there cannot be one shared colorbar. A housing is a flat band the full
+   width of the rail, separated by hairlines, square-cornered and shadowless.
+   Both reference tools draw these as rounded cards with drop shadows; that is
+   the SaaS-card kit `CLAUDE.md` Step 4 names, and it is rejected here.
+
+   **Every layer names its dataset, grid spacing and cadence, always visible and
+   always in IBM Plex Mono — never a tooltip.** This is not decoration. It is the
+   mechanism that lets a global map coexist with Principle 7: a reader can always
+   tell which upstream a pixel came from and how coarse it is. The same rule
+   governs the provenance chip, which names the upstream actually in use rather
+   than assuming INCOIS.
+
+   **Motion may be continuous when the motion *is* the measurement.** Current
+   streamlines advect through the real u/v field, so what moves on screen is what
+   the water does. That is a different thing from a decorative hover-fade, and it
+   is the single exception to the "motion is spent once" rule. Under
+   `prefers-reduced-motion` the traces **freeze rather than vanish** — the paths
+   carry direction, and only the animation is motion.
+
+   **A pixel may show its own grid.** Sampling is nearest-neighbour, so past a
+   zoom threshold the reader sees true grid cells rather than an interpolated
+   smoothness the data does not have. Bilinear scaling would also interpolate
+   *between* LUT entries and invent colours that are not in the cmocean ramp.
+
+   The map's stacked canvases (basemap, data, flow) and its SVG overlay are all
+   internals of `--z-viewport`. They are **not** a fourth chrome z-plane; the
+   three-plane rule governs the console, not one plane's construction.
+
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
 refracted through the surface; caustics on the seafloor *only in shallow water, faded out by
@@ -281,9 +343,13 @@ volume fades into the surrounding water but keeps a hairline frame and a stated 
 "which part of this is measured, and which part is rendered water?" always has an answer a
 judge can get in one glance.
 
-Sky and water colours are derived from the six existing tokens (`thermocline` at the horizon
-to `abyss` at the zenith, `current` for sub-surface scatter) — this principle adds no new
-colour to the system.
+Sky and water colours are all explicit multiples of the six tokens, so the palette rule stays
+visible in the source rather than being asserted here. As of 2026-09-04: horizon
+`current × 0.42`, mid-sky `thermocline × 0.80`, zenith `abyss`, near-surface water
+`current × 0.62`, deep water `thermocline × 0.28`. They live in one factory
+(`skyUniforms()` in `viz/ocean.ts`) because the sky and the sea surface are separate materials
+that both call `skyColour()` — a value added to only one uploads as zero and that material
+renders black. This principle adds no new colour to the system.
 
 ### 5.2 Self-critique against generic defaults
 
@@ -480,9 +546,11 @@ Ocean3D/
 │           ├── scene.ts    (composition, camera, entry gesture, view switching, picking)
 │           ├── volume.ts   (raymarched 3D texture of the analysis)
 │           ├── terrain.ts  (ETOPO relief mesh, photic-zone fade)
-│           ├── ocean.ts    (sky, sea surface, marine snow, light shafts)
+│           ├── ocean.ts    (sky, sea surface, marine snow, light shafts, skyUniforms)
 │           ├── globe.ts    (Blue Marble basemap, analysis outline, float markers)
-│           ├── water.ts    (shared water-optics GLSL)
+│           ├── water.ts    (shared water-optics GLSL; SCATTER_COLOR)
+│           ├── lattice.ts  ← RENDER_ORDER for the WHOLE column. Read before adding
+│           │                 anything to the 3D. Also: box gridlines + depth labels.
 │           ├── effects.ts  (layer-selective bloom)
 │           └── colormaps.ts (cmocean lookup tables)
 ├── backend/
@@ -743,6 +811,155 @@ each — component, decision, one-line reason, date.)*
   345,600 gradients once globally and again per layer measured at **77.5 ms per field load** —
   a visible hitch every time the timeline steps. The histogram is one linear pass: **35.5 ms
   median, 19.3 ms warm.** Measured, not estimated._
+- _2026-09-04 — **The atmosphere was drawing ON TOP of the data, and had been all along.**
+  `ocean.ts` numbered the sea surface 6, marine snow 7 and light shafts 8; the `RENDER_ORDER`
+  table added earlier the same day numbered ribbon 6, stems 7, markers 8 without reading that
+  file. Both stacks are children of `worldGroup` with `depthWrite: false`, so the sea plane
+  composited over every pixel of the analysis at **α ≈ 0.66**: a cmocean deep red of
+  (0.40, 0.05, 0.10) reached the screen as (0.17, 0.15, 0.21). Two rounds of shader tuning went
+  into a field that was being veiled a moment after it rendered, and the promise `volume.ts`
+  makes in its own comments — that nothing shifts a data colour — was being broken one file
+  over. Fix: every renderOrder in the column now lives in that one table, background included,
+  with scenery on negative numbers. **If a renderOrder is written anywhere else, the table is
+  already wrong.**_
+- _2026-09-04 — The sky is a depth ramp continued through the waterline, not a bright dome.
+  `skyColour` ran a bright horizon plus a haze term symmetric about `dir.y = 0`, so with the
+  camera near eye level most of the frame came back at ~(0.11, 0.40, 0.50) — the brightest
+  large area in the image was the background, above the data. It now darkens with depth below
+  the waterline (§5.1 Principle 1 made literal) and the horizon band is narrow and one-sided.
+  This is also why the light shafts looked mis-tuned at α 0.055: against the old ground they
+  were a 10% perturbation, i.e. nothing. Against the new one they barely needed raising._
+- _2026-09-04 — **REVERSES "Camera default is an elevated 3/4 view above the waterline."** The
+  default view is now submerged, ~86 m down, with the analysis filling ~58% of frame height
+  instead of 25%. The old entry's reasoning — a forecaster needs the whole basin — is paid down
+  rather than dismissed: dragging up still returns to that overview, and the entry gesture now
+  ends by diving *through* the surface rather than hovering above it. The `fitScale` cap came
+  down 2.4 → 1.6 in the same change, because at 2.4 a narrow viewport lifts the eye back above
+  the water and silently flips the whole design's regime._
+- _2026-09-04 — Terrain dissolves radially in the analysis box's own half-widths (superellipse,
+  p = 4). ETOPO is requested 25°×25° against an 18°×17° analysis, so it overhung the data by
+  ~1.4× and ended in a hard lit rectangle that read as torn paper rather than seabed. A circle
+  would clip the box's corners and a `max()` reproduces the rectangle it is hiding. Both
+  branches take the fade — the land branch previously returned alpha 1.0 and kept its edge._
+- _2026-09-04 — Markers are dimmed below the colormap. At full token brightness a resting
+  marker renders at foam (0.918, 0.953, 0.945), level with the top of every cmocean ramp, so
+  chrome outshone the data it points at. Resting states are scaled (foam ×0.62, featured
+  bioluminescence ×0.78); only the selected marker is allowed to be the brightest chrome. The
+  bloom composite was also unclamped `base + glow`, so a marker landed near 2.0 and clipped to
+  a flat white disc — that is what made them read as lens flares._
+- _2026-09-04 — **The light shafts were upside down.** `vertical = pow(1.0 - vUv.y, 2.1)`, but
+  `PlaneGeometry` puts `uv.y = 1` at the TOP row and the shafts hang from the waterline — so
+  the expression put zero brightness exactly where sunlight enters and full brightness at the
+  deep end, contradicting the comment directly above it. This is why raising their alpha never
+  helped: the lit end was buried in the dark. Now `pow(vUv.y, 1.7)`, α 0.055 → 0.20, and the
+  planes billboard to the camera azimuth (as flat planes with a fixed random yaw, about a
+  third of them were edge-on and invisible at any moment)._
+- _2026-09-04 — **Land never went through the water.** Every other surface in `terrain.ts`
+  composites through `applyWater`; the land branch returned its lit colour directly, so coast
+  drew at full contrast however much sea lay between it and the eye. Above water that passed;
+  from below it made the coastline read as hard cardboard slabs pasted over the scene. Land now
+  fogs like everything else, at depth 0._
+- _2026-09-04 — `SCATTER_COLOR` raised to (0.062, 0.24, 0.305) to match the new near-surface
+  water. Fog can only hide something if it fades it into the colour it is seen AGAINST: at the
+  old (0.036, 0.125, 0.176) the terrain fully fogged to roughly half the background's
+  brightness and so still read as a dark silhouette. This is the same failure the §10 entry on
+  "deep water fades INTO the water colour, not to black" describes — the target simply drifted
+  out of step when the background changed. **If `uNearSurface` moves, this moves with it.**_
+- _2026-09-04 — The underwater ramp has to complete inside the visible band. The first attempt
+  ran `smoothstep(0.02, 0.34)` then `smoothstep(0.30, 0.90)` between three near-black colours;
+  with a 42° fov the lower frame only spans `d ≈ 0..0.47`, so the second stop never engaged and
+  the whole thing read as a flat dark void — a different failure from the flat bright void it
+  replaced, but the same shape of mistake. A gradient needs luminance range, not just a ramp._
+
+- _2026-09-05 — **A 2D map view, and its data comes from new global upstreams.** The
+  references supplied (Copernicus MyOcean Pro, NASA Worldview) are global; INCOIS's own
+  grid is a regional box, so a world map needed a second upstream. HYCOM GLBv0.08 via
+  APDRC (`hawaii_soest_6a0a_5127_d118`) supplies it: global 0.08°, **40 depth levels to
+  5000 m**, daily 1994–2015, with `water_temp`, `salinity`, `water_u`, `water_v`. One
+  dataset therefore serves the coloured field, the depth slider, the profile, the
+  depth-time section and the streamlines. Global chlorophyll comes from
+  `noaacwNPPVIIRSSQchlaDaily` at `coastwatch.noaa.gov` (4 km, 2012→present). Both reach
+  the app through the existing `griddap_url(base=...)` path already proven by ETOPO._
+- _2026-09-05 — **`coastwatch.pfeg.noaa.gov` and `upwell.pfeg.noaa.gov` are dead hosts.**
+  NOAA retired the PFEG ERDDAP; `/griddap/<dataset>` is refused there while
+  `coastwatch.noaa.gov` and `www.ncei.noaa.gov` answer normally. `TERRAIN_BASE` pointed at
+  the dead host, so terrain had been loading only from the disk cache and a fresh clone
+  would have silently lost the seafloor. Repointed to NCEI's ArcGIS ImageServer
+  (`ETOPO1_bedrock`), which returns real Float32 metres as a tiled GeoTIFF; decoded with
+  struct + numpy rather than adding Pillow for forty lines of header. **Arbitrary boxes now
+  work**, which the area→3D bridge needs and the old fixed dataset could not do._
+- _2026-09-05 — **The value→colour mapping is now defined once.** The diverging re-centring
+  lived inline in BOTH `viz/volume.ts` and `components/Colorbar.tsx`, and the map's
+  rasterizer would have been a third copy — which is how the same value ends up a different
+  colour in the map and in the water column. Extracted to `encodeRange` / `normaliseValue` /
+  `lutIndex` in `viz/colormaps.ts`; both existing call sites rewired, pixel-identical._
+- _2026-09-05 — **The map rasterizes on the CPU, not in a shader.** §10 already records two
+  incidents of a GPU path silently shifting a cmocean value away from its colorbar. Writing
+  LUT bytes straight into an `ImageData` removes the whole class: no colour-space conversion,
+  no premultiplied alpha, no filtering mode. It is also the only version that can be tested —
+  the harness runs SwiftShader and says nothing about shading, whereas `raster.ts` is pure and
+  asserted byte-for-byte. Cost is not the constraint: colouring is keyed on the data, so pan
+  and zoom never re-colour anything, they blit a bitmap that already exists._
+- _2026-09-05 — `imageSmoothingEnabled = false` on every map canvas. Bilinear scaling
+  interpolates between LUT entries and produces RGB triples that are not in the cmocean ramp,
+  and bleeds land colour across coastlines. Blocky at low zoom is the honest result: it shows
+  the real grid._
+- _2026-09-05 — **The map's land comes from the data's own no-data mask**, not from a
+  bathymetry asset. Same reasoning as the 2026-09-01 entry for the 3D view, and at a global
+  grid it is a finer coastline than a strided ETOPO file would give, for no extra request._
+- _2026-09-05 — Point readouts are one request, not four. A depth × time block at a cell is a
+  superset of all four panels: values are one cell, the profile a column, the series a row,
+  the section the block. Measured 5–9 s cold for 40 levels × 31 days and instant once cached,
+  which is worth it against a panel that shows one chart and then rearranges itself._
+- _2026-09-05 — Mixed cadences are shown, not smoothed. There is exactly one clock; each layer
+  resolves it to its own **nearest** step and states the offset (`−3 d`) in its housing when it
+  exceeds half a cadence. The timeline draws one tick row per visible layer, so a daily field
+  and a monthly field visibly differ. A layer outside its coverage greys and its fetch is
+  skipped rather than silently drawing nothing._
+- _2026-09-05 — The depth ruler is **removed from the DOM** for a surface field, not disabled.
+  A greyed ruler still asserts that a depth exists to slice. This is the 2026-09-04
+  "depth markings are suppressed for surface variables" rule made structural._
+- _2026-09-05 — The provenance chip names the upstream actually in use. `"Live · INCOIS
+  ERDDAP"` was hardcoded, so a HYCOM or VIIRS layer was credited to INCOIS. Provenance is the
+  one thing this app must not get wrong, and a hardcoded source string cannot stay right._
+
+- _2026-09-05 — **Copernicus Marine adopted as a third upstream, on a third protocol.**
+  GLORYS12V1 (`cmems_mod_glo_phy_my_0.083deg_P1D-m`) is global 0.083°, **50 levels to 5728 m,
+  daily 1993 → 2026-06**, and the analysis/forecast product reaches **ten days past today** —
+  strictly better than HYCOM on resolution, depth and recency, so it is now the map's default
+  layer. Two measured constraints shape the implementation: CMEMS has **no server-side
+  striding** (a global slice is the full 17 MB whatever we draw) and carries **~11 s of fixed
+  per-request overhead**. So the backend downsamples after the fetch and caches the
+  *downsampled* array: 11.6 s cold, **0.03 s cached**. Credentials live in `backend/.env`
+  (gitignored); without them the Copernicus layers simply do not appear and every other source
+  still works. `copernicusmarine` is the only non-HTTP dependency in the project._
+- _2026-09-05 — The Copernicus credit line and product DOI render inside the layer housing, not
+  in a footer. It is a licence condition (§5.5), so it ships attached to the layer it describes
+  rather than somewhere a reader can scroll past._
+- _2026-09-05 — **A truncated time axis is a display sample, not the real steps.** CMEMS is
+  daily over 12,227 days; the timeline receives every 7th stamp so the rail stays ~36 KB.
+  `resolveLayerTime` was snapping to that sample and reporting a "−4 d" offset on a product
+  that has a step for every single day. Truncated axes now resolve arithmetically instead. The
+  offset chip must only ever report an offset the data actually has._
+
+- _2026-09-05 — **The map draws coastlines and national borders.** Reference geography, not
+  decoration: it is what lets a reader say "that warm tongue is off Somalia" rather than
+  "somewhere". Same class of mark as the graticule the map already draws, so §5.1 Principle 7
+  is not touched — that bars painting a *field* at a coverage we lack, not orientation marks.
+  **Strokes only.** The filled land is still the data's own no-data mask (§10, 2026-09-01), so
+  a coastline can never hide an ocean cell or invent one: the mask governs what is true, the
+  lines govern what is legible. Natural Earth, public domain, bundled in `public/` by
+  `scripts/fetch-geography.mjs` because the deployment target cannot call out. Two levels —
+  110m (117 KB) at world zoom, 50m (1.1 MB) past 2.5x world-fit; shipping only the fine set
+  would draw far more segments than the screen can resolve on every pan. No labels: names over
+  the field would compete with the one thing §5.1 says nothing should._
+- _2026-09-05 — The coastline is drawn with a **dark casing**, and this inverts §5.1 Principle
+  8's corollary. There a dark data mark was lost against dark water, so the casing was `foam`.
+  Here a light stroke is lost against the bright end of a cmocean ramp — the tropics run
+  near-yellow and a 62% foam line disappears into them while reading perfectly at the poles. A
+  dark sheath one step wider separates it from bright ocean; the light core separates it from
+  near-black land. The casing encodes nothing and cannot tint the field: it is drawn on the
+  basemap canvas, beneath the data, never over it._
 
 ---
 

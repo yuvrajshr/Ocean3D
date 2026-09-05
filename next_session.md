@@ -38,6 +38,61 @@ commits**. Committing is the user's call; they have not asked for it.
 
 ---
 
+## 1b. The 2D map view (added 2026-09-05)
+
+A third view, reached from the header toggle, and **now the landing view**. It is a global
+equirectangular ocean map modelled on Copernicus MyOcean Pro and NASA Worldview.
+
+**It has its own canvas and never touches `viz/scene.ts`.** The 3D camera rig, the entry
+gesture and the bloom composer are untouched by this work — that was the point of giving it
+a separate renderer.
+
+**New global upstreams** (all public, no key, reached through the existing ERDDAP client):
+- `hawaii_soest_6a0a_5127_d118` @ APDRC — HYCOM GLBv0.08. Global 0.08°, **40 depth levels to
+  5000 m**, daily 1994–2015, `water_temp` / `salinity` / `water_u` / `water_v`. One dataset
+  drives the field, the depth slider, the profile, the depth-time section and the streamlines.
+- `noaacwNPPVIIRSSQchlaDaily` @ `coastwatch.noaa.gov` — global 4 km chlorophyll, 2012→present.
+
+**What is built:** up to three stacked layers with per-layer visibility, opacity, log scale
+and inline colorbar; a free timeline over the union of layer coverage with one tick row per
+layer; a discrete-stop depth ruler; a point tool with four readouts from one request; an area
+tool that rebuilds the 3D column around a dragged box; animated streamlines.
+
+**New files:** `frontend/src/map/` (projection, raster, streamlines, state, MapView,
+LayerStack, MapDepthRuler, MapTimeline, PointReadout, map.test.ts),
+`backend/app/ingestion/erddap_map.py`, `backend/app/routers/map.py`, `backend/app/scaling.py`,
+`backend/tests/test_map.py`, `shot-map.mjs`.
+
+**Frontend now has tests.** `vitest` is a devDependency and `npm test` runs 18 of them over
+`projection.ts`, `raster.ts` and the colour encoding. There were none before.
+
+### Traps found while building this — read before touching the map
+
+1. **`*.pfeg.noaa.gov` is dead.** NOAA retired the PFEG ERDDAP. `TERRAIN_BASE` pointed at it,
+   so terrain was loading only from the disk cache and a fresh clone would have lost the
+   seafloor silently. Now NCEI's ArcGIS ImageServer, decoded as a tiled Float32 GeoTIFF with
+   struct + numpy (no new dependency). Arbitrary boxes work now; the old one could not.
+2. **The value→colour mapping was duplicated** in `viz/volume.ts` and `Colorbar.tsx`. It is now
+   `encodeRange`/`lutIndex` in `viz/colormaps.ts`. **Do not write a third copy** — that is how
+   the same value becomes two colours in two views.
+3. **Latitude direction differs per server.** VIIRS stores it descending, HYCOM ascending. A
+   griddap range written in the wrong direction returns 404, and a raster written in the wrong
+   direction is a plausible-looking upside-down ocean. Both are normalised at the boundary and
+   both are asserted in tests.
+4. **`imageSmoothingEnabled = false` is load-bearing**, not a style choice. Bilinear scaling
+   interpolates between LUT entries and invents colours outside the cmocean ramp.
+5. **`:nth-child` on the timeline rows counted the year labels too.** Row offsets are inline now.
+6. **The provenance chip had "INCOIS ERDDAP" hardcoded**, so a HYCOM layer was credited to
+   INCOIS. It reads the active layer's provider now.
+7. **`enterColumn()` early-returns when the scene is already in "column".** The scene has no
+   idea the map exists, so its own view never leaves "column" while the map is up — diving
+   from the map hit that guard, never fired `onEntryComplete`, and left the view toggle
+   disabled for good. `App.handleView` routes to `startEntry()` (the same descent, no guard)
+   unless the scene is genuinely on the globe. **Verify a Map → Column → Globe → Map round
+   trip after touching view switching**, not just one hop.
+8. The point block is expensive in its TIME extent, not its depth extent: 40 levels × 31 days
+   is 5–9 s cold, 40 × 60 was ~50 s. Keep the window near a month.
+
 ## 2. Running it
 
 Two processes. Backend first — the browser cannot reach ERDDAP directly (no CORS headers),
