@@ -319,6 +319,13 @@ class MapDataset:
     # "erddap" reaches the server with a griddap URL; "cmems" goes through the
     # Copernicus Marine toolbox, which subsets server-side and has no stride.
     protocol: str = "erddap"
+    # Which VariableSpec key this dataset is a source for. A layer in the UI is a
+    # *variable*, not a dataset: adding "Temperature" gives the 3D column INCOIS's
+    # analysis and the 2D map whichever global product serves it best. This field
+    # is what lets one layer resolve to a different source per view.
+    variable_key: str = ""
+    # Lower wins when several datasets satisfy the same variable.
+    preference: int = 100
     # Licence attribution that MUST appear wherever the layer does.
     doi: str = ""
 
@@ -345,6 +352,8 @@ _HYCOM = dict(
 MAP_DATASETS: tuple[MapDataset, ...] = (
     MapDataset(
         id="hycom_temperature",
+        variable_key="temperature",
+        preference=2,
         variable="water_temp",
         label="Temperature",
         units="°C",
@@ -355,6 +364,8 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="hycom_salinity",
+        variable_key="salinity",
+        preference=2,
         variable="salinity",
         label="Salinity",
         units="PSU",
@@ -365,6 +376,8 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="hycom_currents",
+        variable_key="currents",
+        preference=2,
         variable="water_u",
         vector_components=("water_u", "water_v"),
         label="Currents",
@@ -377,6 +390,8 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="viirs_chlorophyll",
+        variable_key="chlorophyll",
+        preference=1,
         base=MAP_ERDDAP_COASTWATCH,
         dataset_id="noaacwNPPVIIRSSQchlaDaily",
         variable="chlor_a",
@@ -434,6 +449,8 @@ _GLORYS = dict(
 CMEMS_DATASETS: tuple[MapDataset, ...] = (
     MapDataset(
         id="cmems_temperature",
+        variable_key="temperature",
+        preference=1,
         variable="thetao",
         label="Temperature (Copernicus)",
         units="°C",
@@ -444,6 +461,8 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="cmems_salinity",
+        variable_key="salinity",
+        preference=1,
         variable="so",
         label="Salinity (Copernicus)",
         units="PSU",
@@ -454,6 +473,8 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="cmems_currents",
+        variable_key="currents",
+        preference=1,
         variable="uo",
         vector_components=("uo", "vo"),
         label="Currents (Copernicus)",
@@ -465,6 +486,8 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
     ),
     MapDataset(
         id="cmems_forecast_temperature",
+        variable_key="temperature_forecast",
+        preference=1,
         base="https://data.marine.copernicus.eu",
         dataset_id="cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m",
         variable="thetao",
@@ -495,3 +518,72 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
 if COPERNICUS_AVAILABLE:
     MAP_DATASETS = MAP_DATASETS + CMEMS_DATASETS
     MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}
+
+
+# The hazard fields have no global equivalent, so the map serves them from
+# INCOIS directly. Regional (30.5-119.5E, +/-29.5), 1 deg, 10-daily, and the
+# map simply draws nothing outside that box -- which is the honest result.
+_INCOIS_VA = dict(
+    base=ERDDAP_BASE,
+    dataset_id=VALUE_ADDED_DATASET,
+    provider="INCOIS value-added products",
+    attribution="INCOIS, Ministry of Earth Sciences",
+    protocol="erddap",
+    axis_order=("time", "latitude", "longitude"),
+    depth_dim=None,
+    lat_range=GRID_LAT_RANGE,
+    lon_range=GRID_LON_RANGE,
+    native_shape=(60, 90),
+    time_range=VALUE_ADDED_TIME_RANGE,
+    cadence="10-daily",
+    cadence_days=10.0,
+    regional=True,
+    units_declared_by_us=True,
+    preference=1,
+    default_stride=1,
+)
+
+INCOIS_MAP_DATASETS: tuple[MapDataset, ...] = (
+    MapDataset(
+        id="incois_d26",
+        variable_key="d26",
+        variable="D26",
+        label="Depth of the 26 °C isotherm",
+        units="m",
+        kind="surface",
+        colormap="thermal",
+        caption="How deep the water stays above 26 °C. Cyclones feed on this layer.",
+        **_INCOIS_VA,
+    ),
+    MapDataset(
+        id="incois_heat_content",
+        variable_key="heat_content",
+        variable="HTCNT",
+        label="Upper ocean heat content",
+        units="kJ/cm²",
+        kind="surface",
+        colormap="thermal",
+        caption="The fuel available to a cyclone passing overhead.",
+        **_INCOIS_VA,
+    ),
+    MapDataset(
+        id="incois_mixed_layer_depth",
+        variable_key="mixed_layer_depth",
+        variable="MLD",
+        label="Mixed layer depth",
+        units="m",
+        kind="surface",
+        colormap="delta",
+        caption="How deep the wind has stirred the surface water.",
+        **_INCOIS_VA,
+    ),
+)
+
+MAP_DATASETS = MAP_DATASETS + INCOIS_MAP_DATASETS
+MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}
+
+
+def map_dataset_for(variable_key: str) -> MapDataset | None:
+    """The best map source for a UI layer, or None if the map cannot draw it."""
+    candidates = [d for d in MAP_DATASETS if d.variable_key == variable_key]
+    return min(candidates, key=lambda d: d.preference) if candidates else None

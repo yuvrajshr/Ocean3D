@@ -329,6 +329,23 @@ only.
    internals of `--z-viewport`. They are **not** a fourth chrome z-plane; the
    three-plane rule governs the console, not one plane's construction.
 
+10. **Layer stack hierarchy: Uppermost active layer rules the water column.** The layers panel
+    manages an ordered oceanographic stack (surface to subsurface). The 3D water column
+    renders the single uppermost active (visible/eye-on) layer in the stack. Toggling an upper
+    layer's eye off immediately reveals the next active layer below it. If all layers are
+    hidden or deleted, the 3D volume and timeline scrubber gracefully step down to avoid
+    displaying phantom data or desynchronized dates.
+11. **Side-by-side right HUD architecture.** Right-hand floating tools are arranged in non-colliding
+    lateral coordinate lanes: `ToolDock` at `right: 16px` (Points inspector & 3D projection
+    toggle), `DepthSlider` at `right: 84px` (vertical water column ruler), and floating flyout
+    drawers (e.g. Points profiling list) offset at `right: calc(100% + 78px)` (~150px from edge).
+    Instruments never overlap, collide, or obscure each other.
+12. **Vertical depth discretization matches physical sampling.** The vertical depth slider is
+    an instrument reflecting the true 24-level vertical grid of the INCOIS ERDDAP analysis
+    (0.5 m surface down to 2000 m floor). Real-time hover callouts display oceanographic
+    physical zones (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) so depth
+    selection is grounded in ocean physics.
+
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
 refracted through the surface; caustics on the seafloor *only in shallow water, faded out by
@@ -960,6 +977,39 @@ each — component, decision, one-line reason, date.)*
   dark sheath one step wider separates it from bright ocean; the light core separates it from
   near-black land. The casing encodes nothing and cannot tint the field: it is drawn on the
   basemap canvas, beneath the data, never over it._
+
+- _2026-09-04 — **Interactive Layer Stack Hierarchy & Uppermost Active Layer Rendering (§5.1, Principle 12).**
+- _2026-09-04 — **Data Catalogue Modal Streamlining.**
+- _2026-09-04 — **ToolDock & Development Testing Badges.**
+- _2026-09-05 — **Side-by-Side Right HUD Architecture & Non-Conflicting Layout (§5.1, Principle 11).**
+- _2026-09-05 — **Vertical Depth Slider with 24-Level Physical Discretization (§5.1, Principle 12).**
+
+- _2026-09-05 — **The side-panel branch merged.** Its five decisions follow, renumbered:
+  both branches independently added a §5.1 Principle 8, so the layer-stack, HUD-layout and
+  depth-discretization principles moved to 10, 11 and 12. Nothing was dropped from either
+  side; CONTRIBUTING §13 anticipated exactly this collision._
+
+- _2026-09-05 — **A layer is a VARIABLE, not a dataset.** Merging the side panel raised the
+  question of what "Add layer" means when two views draw from different upstreams. Answer:
+  the catalogue offers variables, and each view resolves one to whichever source serves it
+  best — the 3D column gets INCOIS's analysis, the map gets Copernicus, VIIRS or INCOIS by
+  `preference`. `MapDataset.variable_key` is what makes that resolution possible, and
+  `map_dataset_for()` is the single place it happens. The alternative, listing every dataset
+  separately, doubles the catalogue and lets a user add a layer one view cannot draw._
+- _2026-09-05 — The layer card must describe **the source the active view is drawing**, not a
+  fixed one. It hardcoded "10-Daily Analysis" and read a single `fieldMeta`, so on the map it
+  credited INCOIS for a Copernicus field, showed the 3D field's date, and printed temperature's
+  range under chlorophyll's units. Now `fieldMetaByKey` and `sourceLabelByKey` give every card
+  its own range, date and provider. A stack drawn from three servers needs three labels._
+- _2026-09-05 — The data catalogue's variable chips were `<div onClick>`: not focusable, no
+  role, no pressed state. Converted to real buttons with `aria-pressed`. CLAUDE.md's quality
+  floor makes keyboard operability non-negotiable, and it is also why the add-layer flow could
+  not be driven by the verification harness._
+- _2026-09-05 — Two factual errors fixed in the merged catalogue: it used the key `mld` where
+  the backend serves `mixed_layer_depth` (so adding that layer produced a key nothing serves),
+  and it described the INCOIS product as "0.083° × 50 levels, 1–20 Oct 2013". The real grid is
+  1° with 24 levels running 2004 to 2026; 0.083°/50 is Copernicus's spec, which the map uses
+  and the column does not._
 
 ---
 

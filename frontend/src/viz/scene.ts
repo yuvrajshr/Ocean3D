@@ -572,8 +572,11 @@ export class OceanScene {
     this.volumeGroup.add(edges);
   }
 
-  /** Clears only the field. Markers, lattice and ribbon are siblings and survive. */
-  private clearVolume(): void {
+  /** Clears only the field. Markers, lattice and ribbon are siblings and survive.
+   *
+   *  Public because the layer panel calls it directly to drop a field when a
+   *  layer is switched off, rather than round-tripping through a re-fetch. */
+  clearVolume(): void {
     for (const child of [...this.volumeGroup.children]) {
       this.volumeGroup.remove(child);
       const mesh = child as THREE.Mesh;

@@ -217,6 +217,11 @@ export interface MapLayerInfo {
   cadence_days: number;
   has_vectors: boolean;
   regional: boolean;
+  /** The UI variable this dataset is a source for. A layer is a variable; each
+   *  view resolves it to whichever dataset serves that view best. */
+  variable_key: string;
+  /** Lower wins when several datasets satisfy the same variable. */
+  preference: number;
 }
 
 export interface MapTimeAxis {

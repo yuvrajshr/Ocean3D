@@ -101,6 +101,8 @@ class MapLayerInfo(BaseModel):
     cadence_days: float
     has_vectors: bool
     regional: bool
+    variable_key: str
+    preference: int
 
 
 class GridDescriptor(BaseModel):
@@ -183,6 +185,8 @@ def catalogue() -> list[MapLayerInfo]:
             cadence_days=ds.cadence_days,
             has_vectors=ds.vector_components is not None,
             regional=ds.regional,
+            variable_key=ds.variable_key,
+            preference=ds.preference,
         )
         for ds in MAP_DATASETS
     ]

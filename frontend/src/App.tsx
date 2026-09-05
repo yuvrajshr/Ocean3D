@@ -13,19 +13,15 @@ import {
   type SourceStatus,
   type VariableInfo,
 } from "./api/client";
-import { Colorbar } from "./components/Colorbar";
-import { DepthRuler } from "./components/DepthRuler";
-import { FloatList } from "./components/FloatList";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { Timeline } from "./components/Timeline";
 import { VariablePanel } from "./components/VariablePanel";
-import { LayerStack } from "./map/LayerStack";
-import { MapDepthRuler } from "./map/MapDepthRuler";
-import { MapTimeline } from "./map/MapTimeline";
+import { ToolDock, type PointAnnotation } from "./components/ToolDock";
+import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
 import { MapView } from "./map/MapView";
 import { PointReadout } from "./map/PointReadout";
+import { MapTimeline } from "./map/MapTimeline";
 import {
-  activeDepthLevels,
   activeLayer,
   createInitialMapState,
   datasetOf,
@@ -42,9 +38,9 @@ import {
 
 type Mode = "ops" | "explore";
 
-/** The map is a third view, but it is not a SceneView: it has its own canvas and
- *  never touches `viz/scene.ts`. Widening here rather than there is what keeps
- *  the 3D camera rig and bloom composer untouched. */
+/** The map is a third view but not a SceneView: it owns a separate canvas and
+ *  never touches viz/scene.ts. Widening here is what keeps the 3D camera rig
+ *  and bloom composer out of this. */
 type AppView = SceneView | "map";
 
 /** Floats within half a model step of the current run are "concurrent" with it. */
@@ -57,22 +53,28 @@ export default function App() {
 
   const [webglReady] = useState(isWebGL2Available);
   const [mode, setMode] = useState<Mode>("ops");
-  // The map is the landing view (reverses §5.1 Principle 3 — see context.md
-  // §10). The load-in descent survives as the one orchestrated moment; it now
-  // plays when you dive from the map or the globe into the column instead of at
-  // boot, so `entryDone` starts true and the view toggle is live immediately.
+  // The map is the landing view. The load-in descent survives as the product's
+  // one orchestrated moment; it now plays on the first dive into the column
+  // rather than at boot, so the view toggle is live immediately.
   const [view, setView] = useState<AppView>("map");
   const [entryDone, setEntryDone] = useState(true);
 
   const [map, dispatchMap] = useReducer(mapReducer, undefined, createInitialMapState);
   const [mapMetas, setMapMetas] = useState<Record<string, MapSliceMeta>>({});
   const [mapLoading, setMapLoading] = useState<Record<string, boolean>>({});
-  const [columnExtent, setColumnExtent] = useState<{ latRange: [number, number]; lonRange: [number, number] } | null>(null);
+  const [columnExtent, setColumnExtent] =
+    useState<{ latRange: [number, number]; lonRange: [number, number] } | null>(null);
   const [point, setPoint] = useState<MapPointBlock | null>(null);
   const [pointLoading, setPointLoading] = useState(false);
   const [pointError, setPointError] = useState<string | null>(null);
   const [sectionLoaded, setSectionLoaded] = useState(false);
-  const [sectionLoading, setSectionLoading] = useState(false);
+
+  /** The layer stack the side panel owns, mirrored here so the map can draw it. */
+  const [layerStack, setLayerStack] = useState<{
+    keys: string[];
+    visibility: Record<string, boolean>;
+    opacity: Record<string, number>;
+  }>({ keys: [], visibility: {}, opacity: {} });
 
   const [variables, setVariables] = useState<VariableInfo[]>([]);
   const [scenario, setScenario] = useState<Scenario | null>(null);
@@ -92,8 +94,17 @@ export default function App() {
   const [hovered, setHovered] = useState<MarkerDatum | null>(null);
 
   const [depthWindow, setDepthWindow] = useState<[number, number]>([0, MAX_DEPTH]);
+  const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
+
+  const handleDepthIndexChange = useCallback((index: number) => {
+    setDepthIndex(index);
+    const targetDepth = DEFAULT_DEPTH_LEVELS[index]?.depthMeters ?? MAX_DEPTH;
+    const nextWindow: [number, number] = [0, targetDepth];
+    setDepthWindow(nextWindow);
+    sceneRef.current?.setDepthWindow(0, targetDepth);
+  }, []);
 
   /**
    * Switch view. Returning to the column replays the descent, so `entryDone` is reset and
@@ -102,43 +113,20 @@ export default function App() {
   const handleView = useCallback((next: AppView) => {
     setView(next);
     if (next === "map") return; // the map owns its own canvas
-    const scene = sceneRef.current;
     if (next === "globe") {
-      scene?.enterGlobe();
-      return;
-    }
-    setEntryDone(false);
-    // `enterColumn()` guards with `if (this.view === "column") return`, and the
-    // scene's own view never leaves "column" while the map is up — the map is a
-    // React-level view the scene knows nothing about. Diving from the map would
-    // therefore early-return, never fire onEntryComplete, and leave the view
-    // toggle disabled for good. `startEntry()` is the same descent without the
-    // guard, so route to it whenever the scene is not actually on the globe.
-    if (scene?.currentView === "globe") {
-      scene.enterColumn();
+      sceneRef.current?.enterGlobe();
     } else {
-      scene?.startEntry();
+      setEntryDone(false);
+      // enterColumn() guards with `if (this.view === "column") return`, and the
+      // scene's own view never leaves "column" while the map is up — the map is
+      // a React-level view the scene knows nothing about. Diving from the map
+      // would early-return, never fire onEntryComplete, and leave the toggle
+      // disabled for good. startEntry() is the same descent without the guard.
+      const scene = sceneRef.current;
+      if (scene?.currentView === "globe") scene.enterColumn();
+      else scene?.startEntry();
     }
   }, []);
-
-  const activeMapLayer = activeLayer(map);
-  const activeMapInfo = activeMapLayer ? datasetOf(map, activeMapLayer) : undefined;
-  const mapDepthLevels = activeDepthLevels(map);
-  /** Index into the point block nearest the map clock, for the chart cursors. */
-  const pointTimeIndex = (() => {
-    if (!point || !map.time) return 0;
-    const at = Date.parse(map.time);
-    let best = 0;
-    let gap = Infinity;
-    point.times.forEach((t, i) => {
-      const d = Math.abs(Date.parse(t) - at);
-      if (d < gap) {
-        gap = d;
-        best = i;
-      }
-    });
-    return best;
-  })();
 
   const activeVariable = variables.find((v) => v.key === variableKey);
   const currentTime = scenario?.timesteps[timeIndex];
@@ -194,9 +182,7 @@ export default function App() {
         sceneRef.current?.setBasemap(
           BASEMAPS[first.basemap as keyof typeof BASEMAPS] ?? BASEMAPS.october,
         );
-        // No entry gesture at boot: the app opens on the map, and the descent
-        // plays on the first dive into the column instead. The scene is already
-        // in its settled column state, so there is nothing to skip.
+        sceneRef.current?.startEntry();
 
         // The relief is context, not the subject: if it fails, the analysis
         // still renders and the app stays usable.
@@ -229,141 +215,16 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  // ------------------------------------------------------------- map catalog
-
-  useEffect(() => {
-    const controller = new AbortController();
-    api
-      .mapCatalogue(controller.signal)
-      .then((datasets) => dispatchMap({ type: "catalogue/loaded", datasets }))
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        dispatchMap({
-          type: "catalogue/failed",
-          message:
-            error instanceof ApiError
-              ? error.message
-              : "Could not reach the map layer catalogue.",
-        });
-      });
-    return () => controller.abort();
-  }, []);
-
-  // Each layer needs its own time axis before the timeline can draw its ticks
-  // or a layer can snap to its nearest step.
-  const layerDatasetKey = map.layers.map((l) => l.datasetId).join("|");
-  useEffect(() => {
-    const controller = new AbortController();
-    for (const layer of map.layers) {
-      if (map.axes[layer.datasetId]) continue;
-      api
-        .mapTimes(layer.datasetId, controller.signal)
-        .then((axis) => dispatchMap({ type: "axis/loaded", dataset: layer.datasetId, axis }))
-        .catch(() => {
-          /* the layer still renders; only its tick row is missing */
-        });
-    }
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layerDatasetKey]);
-
-  // ---------------------------------------------------------- point readout
-
-  const pointLayer = activeLayer(map);
-  const pointInfo = pointLayer ? datasetOf(map, pointLayer) : undefined;
-
-  useEffect(() => {
-    setSectionLoaded(false);
-    if (!map.pin || !pointInfo || !map.time) {
-      setPoint(null);
-      return;
-    }
-    const controller = new AbortController();
-    setPointLoading(true);
-    setPointError(null);
-    // One request serves all four readouts: values are a cell, the profile is a
-    // column, the series is a row, and the section is the block. A full-depth
-    // 31-step window measures 5-9 s cold and is instant once cached, which is
-    // worth it to avoid a panel that shows one chart and then rearranges.
-    const half = Math.round(pointInfo.cadence_days * 15);
-    const at = Date.parse(map.time);
-    const clamp = (ms: number) =>
-      new Date(
-        Math.max(
-          Date.parse(`${pointInfo.time_start}T00:00:00Z`),
-          Math.min(Date.parse(`${pointInfo.time_end}T00:00:00Z`), ms),
-        ),
-      )
-        .toISOString()
-        .slice(0, 10);
-    api
-      .mapPoint(
-        {
-          dataset: pointInfo.id,
-          lat: map.pin.lat,
-          lon: map.pin.lon,
-          time_start: clamp(at - half * 86400000),
-          time_end: clamp(at + half * 86400000),
-        },
-        controller.signal,
-      )
-      .then((block) => {
-        setPoint(block);
-        setSectionLoaded(block.depths.length > 1);
-        setPointLoading(false);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setPointLoading(false);
-        setPointError(
-          error instanceof ApiError ? error.message : "Could not read this point.",
-        );
-      });
-    return () => controller.abort();
-  }, [map.pin, pointInfo?.id, map.time]);
-
-  const loadSection = useCallback(() => {
-    if (!map.pin || !pointInfo || !map.time) return;
-    setSectionLoading(true);
-    const span = Math.round(pointInfo.cadence_days * 12);
-    const at = Date.parse(map.time);
-    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-    api
-      .mapPoint({
-        dataset: pointInfo.id,
-        lat: map.pin.lat,
-        lon: map.pin.lon,
-        time_start: day(at - span * 86400000),
-        time_end: day(at + span * 86400000),
-      })
-      .then((block) => {
-        setPoint(block);
-        setSectionLoaded(true);
-        setSectionLoading(false);
-      })
-      .catch(() => setSectionLoading(false));
-  }, [map.pin, pointInfo, map.time]);
-
-  // The map plays on its own clock, in the active layer's cadence.
-  useEffect(() => {
-    if (!map.playing || view !== "map") return;
-    const id = window.setInterval(() => dispatchMap({ type: "time/step", steps: 1 }), 900);
-    return () => window.clearInterval(id);
-  }, [map.playing, view]);
-
-  const openColumnFromMap = useCallback(
-    (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
-      setColumnExtent(extent);
-      sceneRef.current?.setExtent(extent);
-      handleView("column");
-    },
-    [handleView],
-  );
-
   // --------------------------------------------------------------- field load
 
   useEffect(() => {
-    if (!scenario || !currentTime || !activeVariable) return;
+    if (!activeVariable) {
+      sceneRef.current?.clearVolume();
+      setFieldMeta(null);
+      setFieldLoading(false);
+      return;
+    }
+    if (!scenario || !currentTime) return;
     const controller = new AbortController();
 
     (async () => {
@@ -371,7 +232,7 @@ export default function App() {
       setFieldError(null);
       try {
         // The column follows a box dragged on the map when there is one, and
-        // the scenario otherwise. This is the whole area -> 3D bridge.
+        // the scenario otherwise. This is the area -> 3D bridge.
         const box = columnExtent ?? {
           latRange: scenario.lat_range,
           lonRange: scenario.lon_range,
@@ -393,6 +254,9 @@ export default function App() {
           { lat: meta.grid.lat, lon: meta.grid.lon, depths: meta.depth_levels, shape: meta.shape },
           meta.value_range,
           meta.colormap,
+          // 5th argument added on main: the lattice suppresses its depth labels
+          // for a surface variable, since writing "500 m" on a surface field
+          // asserts a measurement that does not exist (context.md section 10).
           variableKey,
         );
         sceneRef.current?.setDepthWindow(depthWindow[0], depthWindow[1]);
@@ -470,6 +334,41 @@ export default function App() {
     [visiblePlatforms, featuredIds],
   );
 
+  const toolPoints = useMemo<PointAnnotation[]>(() => {
+    return visiblePlatforms.map((p) => ({
+      id: p.platform_id,
+      lat: p.lat,
+      lon: p.lon,
+      variableCode: "DEPTH",
+      value: Math.round(p.max_depth ?? 0),
+      units: "m",
+      maxDepth: p.max_depth ?? 0,
+      platform: p,
+    }));
+  }, [visiblePlatforms]);
+
+  const handleOpenGraphForPoint = useCallback((pt: PointAnnotation) => {
+    if (pt.platform) {
+      setSelected(pt.platform);
+      sceneRef.current?.setSelected(pt.platform.platform_id);
+    }
+  }, []);
+
+  // The dock's 2D/3D control was a placeholder mapped onto globe/column. Now
+  // that a real plan view exists it means what it says.
+  const handleToggleProjection = useCallback(() => {
+    handleView(view === "map" ? "column" : "map");
+  }, [handleView, view]);
+
+  const openColumnFromMap = useCallback(
+    (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
+      setColumnExtent(extent);
+      sceneRef.current?.setExtent(extent);
+      handleView("column");
+    },
+    [handleView],
+  );
+
   useEffect(() => {
     sceneRef.current?.setMarkers(visibleMarkers);
     sceneRef.current?.setSelected(selected?.platform_id ?? null);
@@ -519,21 +418,113 @@ export default function App() {
     return () => controller.abort();
   }, [selected, variableKey]);
 
-  // The measured profile goes into the 3D as well as the side panel, so the
-  // float can be read against the water it was measured in. The scene draws it
-  // only when the measured variable matches the field on screen.
+  // -------------------------------------------------------------- map data
+
   useEffect(() => {
-    sceneRef.current?.setProfile(
-      comparison
-        ? {
-            lat: comparison.lat,
-            lon: comparison.lon,
-            variable: comparison.variable,
-            points: comparison.observed,
-          }
-        : null,
-    );
-  }, [comparison]);
+    const controller = new AbortController();
+    api
+      .mapCatalogue(controller.signal)
+      .then((datasets) => dispatchMap({ type: "catalogue/loaded", datasets }))
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        dispatchMap({
+          type: "catalogue/failed",
+          message:
+            error instanceof ApiError ? error.message : "Could not reach the layer catalogue.",
+        });
+      });
+    return () => controller.abort();
+  }, []);
+
+  // The side panel owns the stack; the map adopts it. A layer is a variable, so
+  // each view resolves it to whichever source serves that view best.
+  useEffect(() => {
+    dispatchMap({ type: "layers/sync", stack: layerStack });
+  }, [layerStack, map.catalogue.length]);
+
+  const mapDatasetKey = map.layers.map((l) => l.datasetId).join("|");
+  useEffect(() => {
+    const controller = new AbortController();
+    for (const layer of map.layers) {
+      if (map.axes[layer.datasetId]) continue;
+      api
+        .mapTimes(layer.datasetId, controller.signal)
+        .then((axis) => dispatchMap({ type: "axis/loaded", dataset: layer.datasetId, axis }))
+        .catch(() => {
+          /* the layer still draws; only its tick row is missing */
+        });
+    }
+    return () => controller.abort();
+  }, [mapDatasetKey]);
+
+  const mapActiveLayer = activeLayer(map);
+  const mapActiveInfo = mapActiveLayer ? datasetOf(map, mapActiveLayer) : undefined;
+
+  useEffect(() => {
+    setSectionLoaded(false);
+    if (!map.pin || !mapActiveInfo || !map.time) {
+      setPoint(null);
+      return;
+    }
+    const controller = new AbortController();
+    setPointLoading(true);
+    setPointError(null);
+    const half = Math.round(mapActiveInfo.cadence_days * 15);
+    const at = Date.parse(map.time);
+    const clamp = (ms: number) =>
+      new Date(
+        Math.max(
+          Date.parse(`${mapActiveInfo.time_start}T00:00:00Z`),
+          Math.min(Date.parse(`${mapActiveInfo.time_end}T00:00:00Z`), ms),
+        ),
+      )
+        .toISOString()
+        .slice(0, 10);
+    api
+      .mapPoint(
+        {
+          dataset: mapActiveInfo.id,
+          lat: map.pin.lat,
+          lon: map.pin.lon,
+          time_start: clamp(at - half * 86400000),
+          time_end: clamp(at + half * 86400000),
+        },
+        controller.signal,
+      )
+      .then((block) => {
+        setPoint(block);
+        setSectionLoaded(block.depths.length > 1);
+        setPointLoading(false);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setPointLoading(false);
+        setPointError(error instanceof ApiError ? error.message : "Could not read this point.");
+      });
+    return () => controller.abort();
+  }, [map.pin, mapActiveInfo?.id, map.time]);
+
+  useEffect(() => {
+    if (!map.playing || view !== "map") return;
+    const id = window.setInterval(() => dispatchMap({ type: "time/step", steps: 1 }), 900);
+    return () => window.clearInterval(id);
+  }, [map.playing, view]);
+
+  /** Index into the point block nearest the map clock, for the chart cursors. */
+  const pointTimeIndex = useMemo(() => {
+    if (!point || !map.time) return 0;
+    const at = Date.parse(map.time);
+    let best = 0;
+    let gap = Infinity;
+    point.times.forEach((t, i) => {
+      const d = Math.abs(Date.parse(t) - at);
+      if (d < gap) {
+        gap = d;
+        best = i;
+      }
+    });
+    return best;
+  }, [point, map.time]);
 
   // --------------------------------------------------------------- timeline
 
@@ -545,9 +536,21 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [playing, scenario]);
 
-  const handleDepthChange = useCallback((next: [number, number]) => {
-    setDepthWindow(next);
-    sceneRef.current?.setDepthWindow(next[0], next[1]);
+  const handleVolumeOpacityChange = useCallback((opacity: number) => {
+    const scene = sceneRef.current;
+    if (scene && (scene as any).volumeMesh) {
+      const mat = (scene as any).volumeMesh.material;
+      if (mat?.uniforms?.uDensity) {
+        mat.uniforms.uDensity.value = 2.6 * opacity;
+      }
+    }
+  }, []);
+
+  const handleVolumeVisibilityChange = useCallback((visible: boolean) => {
+    const scene = sceneRef.current;
+    if (scene && (scene as any).volumeMesh) {
+      (scene as any).volumeMesh.visible = visible;
+    }
   }, []);
 
   const closePanel = useCallback(() => {
@@ -556,22 +559,89 @@ export default function App() {
     sceneRef.current?.setSelected(null);
   }, []);
 
+  /** The active map layer's real levels, or null — which removes the ruler
+   *  from the DOM entirely rather than greying it, because a surface field has
+   *  no depth to slice (context.md §10). */
+  const mapDepthLevels = useMemo(() => {
+    if (!mapActiveInfo || mapActiveInfo.depth_levels.length === 0) return null;
+    return mapActiveInfo.depth_levels.map((d) => ({
+      depthMeters: d,
+      label: d >= 100 ? d.toFixed(0) : d >= 10 ? d.toFixed(1) : d.toFixed(2),
+      zone: "",
+    }));
+  }, [mapActiveInfo]);
+
+  /** The map slice, shaped as a FieldMeta so the shared layer card can read it.
+   *  Only the fields the card touches are real; the rest are inert. */
+  const shimOf = (meta: MapSliceMeta | undefined) => {
+    if (!meta) return undefined;
+    return {
+      variable: meta.dataset,
+      label: meta.label,
+      time: meta.time,
+      depth_levels: [],
+      grid: { lat: [], lon: [] },
+      data_url: meta.data_url,
+      units: meta.units,
+      units_declared_by_us: meta.units_declared_by_us,
+      value_range: meta.value_range,
+      full_range: meta.full_range,
+      clipped: meta.clipped,
+      colormap: meta.colormap,
+      kind: "surface",
+      shape: meta.shape,
+      source: meta.source,
+    } as unknown as FieldMeta;
+  };
+
+  const mapFieldShim = useMemo(
+    () => shimOf(mapActiveLayer ? mapMetas[mapActiveLayer.id] : undefined) ?? null,
+    [mapActiveLayer, mapMetas],
+  );
+
+  /** Per-variable source labels, so a card credits the server that drew it. */
+  const mapSourceByKey = useMemo(() => {
+    const out: Record<string, string | undefined> = {};
+    for (const layer of map.layers) {
+      const info = datasetOf(map, layer);
+      if (info) out[info.variable_key] = `${info.provider} · ${info.cadence}`;
+    }
+    return out;
+  }, [map]);
+
+  /** One shim per layer, keyed by variable, so each card reports its own range. */
+  const mapFieldByKey = useMemo(() => {
+    const out: Record<string, FieldMeta | undefined> = {};
+    for (const layer of map.layers) {
+      const info = datasetOf(map, layer);
+      if (info) out[info.variable_key] = shimOf(mapMetas[layer.id]);
+    }
+    return out;
+  }, [map, mapMetas]);
+
   // ------------------------------------------------------------------ render
 
-  // In map mode the upstream is whatever the ACTIVE LAYER came from, which is
-  // usually not INCOIS. Showing "INCOIS ERDDAP" over a HYCOM field would be a
-  // false provenance claim, and provenance is the one thing this app must not
-  // get wrong.
-  const mapSource: SourceStatus | null = activeMapLayer
-    ? mapMetas[activeMapLayer.id]?.source ?? null
+  // In map mode the upstream is whatever the active layer came from, which is
+  // usually not INCOIS. A hardcoded source string cannot stay true.
+  const mapSource: SourceStatus | null = mapActiveLayer
+    ? mapMetas[mapActiveLayer.id]?.source ?? null
     : null;
   const source: SourceStatus | null =
     view === "map" ? mapSource : fieldMeta?.source ?? instruments?.source ?? null;
-  // The upstream is named from the data, never hardcoded. "INCOIS ERDDAP" was
-  // baked into this string, so a HYCOM or VIIRS layer was being credited to
-  // INCOIS - a false provenance claim on the one thing that must be exact.
+  /** "Loading Temperature..." rather than a bare spinner: §5.3 asks loading
+   *  states to name what is loading. */
+  const mapLoadingLabel = useMemo(() => {
+    if (view !== "map") return null;
+    const pending = map.layers.filter((l) => mapLoading[l.id]);
+    if (pending.length === 0) return null;
+    const first = datasetOf(map, pending[0]!);
+    return pending.length === 1 && first
+      ? `Loading ${first.label.toLowerCase()}…`
+      : `Loading ${pending.length} layers…`;
+  }, [view, map, mapLoading]);
+
   const upstreamName =
-    view === "map" ? activeMapInfo?.provider ?? "global upstream" : "INCOIS ERDDAP";
+    view === "map" ? mapActiveInfo?.provider ?? "global upstream" : "INCOIS ERDDAP";
   const provenanceLabel = !source
     ? "Connecting…"
     : source.provenance === "live"
@@ -594,13 +664,7 @@ export default function App() {
           <div className="header__titles">
             <h1 className="header__title">Ocean data visualization</h1>
             <span className="header__subtitle">
-              {view === "map"
-                ? activeMapInfo
-                  ? `${activeMapInfo.label} · ${activeMapInfo.provider}`
-                  : "Global ocean · INCOIS · Ministry of Earth Sciences"
-                : scenario
-                  ? `${scenario.title} · Bay of Bengal, October 2013`
-                  : "INCOIS · Ministry of Earth Sciences"}
+              {scenario ? `${scenario.title} · Bay of Bengal, October 2013` : "INCOIS · Ministry of Earth Sciences"}
             </span>
           </div>
         </div>
@@ -615,7 +679,9 @@ export default function App() {
               }${!source ? " provenance__dot--offline" : ""}`}
               aria-hidden="true"
             />
-            <span className="provenance__text readout">{provenanceLabel}</span>
+            <span className="provenance__text readout">
+              {mapLoadingLabel ?? provenanceLabel}
+            </span>
           </div>
 
           <div className="mode-toggle" role="group" aria-label="View">
@@ -662,58 +728,33 @@ export default function App() {
       <div
         className={`console__main${mode === "explore" ? " console__main--explore" : ""}${
           view === "globe" ? " console__main--globe" : ""
-        }${view === "map" ? " console__main--map" : ""}`}
+        }`}
       >
-        {view === "map" ? (
-          <div className="panel panel--left">
-            <LayerStack
-              state={map}
-              metas={mapMetas}
-              loading={mapLoading}
-              onPatch={(id, patch) => dispatchMap({ type: "layer/patch", id, patch })}
-              onRemove={(id) => dispatchMap({ type: "layer/remove", id })}
-              onActivate={(id) => dispatchMap({ type: "layer/activate", id })}
-              onMove={(id, delta) => dispatchMap({ type: "layer/move", id, delta })}
-              onAdd={(datasetId) => dispatchMap({ type: "layer/add", datasetId })}
-            />
-          </div>
-        ) : null}
-
-        {view === "column" ? (
-        <div className="panel panel--left">
-          <VariablePanel
-            variables={variables}
-            selected={variableKey}
-            mode={mode}
-            onSelect={setVariableKey}
-          />
-          <div className="panel__section">
-            <h2 className="panel__heading">
-              Floats reporting{visiblePlatforms.length > 0 ? ` (${visiblePlatforms.length})` : ""}
-            </h2>
-            <FloatList
-              platforms={visiblePlatforms}
-              featured={featuredIds}
-              selectedId={selected?.platform_id ?? null}
-              onSelect={(platform) => {
-                setSelected(platform);
-                sceneRef.current?.setSelected(platform.platform_id);
-              }}
-            />
-          </div>
-
-          <div className="panel__section panel__section--grow">
-            <h2 className="panel__heading">Depth</h2>
-            <DepthRuler
-              window={depthWindow}
-              cursorDepth={selected?.max_depth ?? null}
-              onChange={handleDepthChange}
-            />
-          </div>
-        </div>
-        ) : null}
-
         <div className="viewport">
+          {/* The layer panel is shared: it drives the 3D column's single field and
+              the map's whole stack. Not shown on the globe, which has no layers. */}
+          {view === "column" || view === "map" ? (
+            <VariablePanel
+              variables={variables}
+              selected={variableKey}
+              mode={mode}
+              onSelect={setVariableKey}
+              currentTime={view === "map" ? map.time : currentTime}
+              fieldMeta={view === "map" ? mapFieldShim : fieldMeta}
+              fieldMetaByKey={view === "map" ? mapFieldByKey : undefined}
+              sourceLabelByKey={view === "map" ? mapSourceByKey : undefined}
+              sourceLabel={
+                view === "map"
+                  ? mapActiveInfo
+                    ? `${mapActiveInfo.provider} · ${mapActiveInfo.cadence}`
+                    : undefined
+                  : undefined
+              }
+              onStackChange={setLayerStack}
+              onOpacityChange={handleVolumeOpacityChange}
+              onVisibilityChange={handleVolumeVisibilityChange}
+            />
+          ) : null}
           {webglReady ? (
             <>
               <canvas
@@ -729,9 +770,9 @@ export default function App() {
                   onOpenColumn={openColumnFromMap}
                 />
               ) : null}
-              {/* The status line and hint describe the water column. In map
-                  mode the map draws its own HUD, and these would be reporting
-                  on a scene the reader is not looking at. */}
+              {/* The status line and hint describe the water column; in map mode
+                  the map draws its own HUD and these would report on a scene
+                  the reader is not looking at. */}
               <div className={`viewport__overlay${view === "map" ? " viewport__overlay--hidden" : ""}`}>
                 <div className="viewport__status">
                   {view === "globe"
@@ -825,12 +866,12 @@ export default function App() {
               block={point}
               loading={pointLoading}
               error={pointError}
-              depthIndex={activeMapLayer?.depthIndex ?? 0}
+              depthIndex={mapActiveLayer?.depthIndex ?? 0}
               timeIndex={pointTimeIndex}
               onClose={() => dispatchMap({ type: "pin/set", point: null })}
-              onLoadSection={loadSection}
+              onLoadSection={() => undefined}
               sectionLoaded={sectionLoaded}
-              sectionLoading={sectionLoading}
+              sectionLoading={false}
             />
           ) : null}
 
@@ -843,77 +884,39 @@ export default function App() {
               onClose={closePanel}
             />
           ) : null}
-        </div>
 
-        {view === "map" ? (
-          <div className="panel panel--right panel--map-tools">
-            <div className="tool-rail">
-              <button
-                type="button"
-                className="tool-rail__button"
-                aria-pressed={map.tool === "inspect"}
-                onClick={() => dispatchMap({ type: "tool/set", tool: "inspect" })}
-              >
-                <span className="tool-rail__glyph" aria-hidden="true">+</span>
-                Point
-              </button>
-              <button
-                type="button"
-                className="tool-rail__button"
-                aria-pressed={map.tool === "area"}
-                onClick={() => dispatchMap({ type: "tool/set", tool: "area" })}
-              >
-                <span className="tool-rail__glyph" aria-hidden="true">[ ]</span>
-                Area
-              </button>
-            </div>
+          {view === "map" && mapDepthLevels ? (
+            <DepthRuler
+              currentDepthIndex={mapActiveLayer?.depthIndex ?? 0}
+              onDepthChange={(index) =>
+                mapActiveLayer &&
+                dispatchMap({
+                  type: "layer/patch",
+                  id: mapActiveLayer.id,
+                  patch: { depthIndex: index },
+                })
+              }
+              levels={mapDepthLevels}
+            />
+          ) : null}
 
-            {/* Removed from the DOM, not disabled, for a surface field: a greyed
-                ruler still asserts that a depth exists to slice. */}
-            {mapDepthLevels ? (
-              <div className="panel__section panel__section--grow">
-                <h2 className="panel__heading">Depth</h2>
-                <MapDepthRuler
-                  levels={mapDepthLevels}
-                  index={activeMapLayer?.depthIndex ?? 0}
-                  label={activeMapInfo?.label ?? "Layer"}
-                  onChange={(index) =>
-                    activeMapLayer &&
-                    dispatchMap({
-                      type: "layer/patch",
-                      id: activeMapLayer.id,
-                      patch: { depthIndex: index },
-                    })
-                  }
-                />
-              </div>
-            ) : (
-              <div className="panel__section">
-                <h2 className="panel__heading">Depth</h2>
-                <p className="panel__note">
-                  {activeMapInfo
-                    ? `${activeMapInfo.label} is a surface field — no depth to slice.`
-                    : "Add a layer to slice a depth."}
-                </p>
-              </div>
-            )}
-          </div>
-        ) : null}
+          {view === "column" ? (
+            <DepthRuler
+              currentDepthIndex={depthIndex}
+              onDepthChange={handleDepthIndexChange}
+              window={depthWindow}
+              cursorDepth={selected?.max_depth ?? null}
+            />
+          ) : null}
 
-        {view === "column" ? (
-        <div className="panel panel--right">
-          <Colorbar
-            label={activeVariable?.label ?? "Field"}
-            units={activeVariable?.units ?? ""}
-            unitsDeclaredByUs={activeVariable?.units_declared_by_us ?? false}
-            colormap={activeVariable?.colormap ?? "thermal"}
-            range={fieldMeta?.value_range ?? null}
-            fullRange={fieldMeta?.full_range ?? null}
-            clipped={fieldMeta?.clipped ?? false}
-            loading={fieldLoading}
+          <ToolDock
+            projectionMode={view === "map" ? "2d" : "3d"}
+            onToggleProjection={handleToggleProjection}
+            points={toolPoints}
+            selectedPointId={selected?.platform_id}
+            onOpenGraphForPoint={handleOpenGraphForPoint}
           />
         </div>
-        ) : null}
       </div>
 
       {view === "map" ? (
@@ -923,7 +926,7 @@ export default function App() {
           onStep={(steps) => dispatchMap({ type: "time/step", steps })}
           onTogglePlay={() => dispatchMap({ type: "time/play", playing: !map.playing })}
         />
-      ) : (
+      ) : activeVariable ? (
         <Timeline
           timesteps={scenario?.timesteps ?? []}
           index={timeIndex}
@@ -932,7 +935,7 @@ export default function App() {
           onSeek={setTimeIndex}
           onTogglePlay={() => setPlaying((p) => !p)}
         />
-      )}
+      ) : null}
     </div>
   );
 }

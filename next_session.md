@@ -14,7 +14,7 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 **The app is built and working end to end on live INCOIS data.** Backend and frontend both
 run, the demo narrative is real and verified, and the full verification suite passes.
 
-The work so far, in four phases:
+The work so far, in five phases:
 1. Research + full-stack build (backend, API, React/Three.js console, profile comparison).
 2. A visual rebuild after feedback that the 3D view "looked like a chunk floating in space" —
    added sky, sea surface, ETOPO seafloor, and water optics.
@@ -23,6 +23,13 @@ The work so far, in four phases:
 4. **The globe session.** Given four NASA SVS "Perpetual Ocean" reference frames, replaced
    that globe with real NASA Blue Marble imagery and made the globe a view you can return
    to, via a header toggle and by clicking the analysis extent on the sphere.
+5. **The GIS Panels, Catalogue, Right-Hand HUD & Depth Slider session (`sidePannel` branch).**
+   - Built the multi-layer GIS stack manager in `VariablePanel.tsx` governed by the uppermost
+     active layer rule (revealing sub-layers when upper eyes toggle off, clearing volume when 0 layers).
+   - Created `DataCatalogueModal.tsx` focusing on Physical Variables and Cyclone hazards with 1-click add-to-map.
+   - Introduced `ToolDock.tsx` on the right side for in-situ float point inspection with 1-click graph overlays.
+   - Redesigned `DepthRuler.tsx` into a modern vertical pill slider (`depth-ruler.css`) calibrated to INCOIS
+     ERDDAP's 24 vertical depth levels with oceanographic zone callouts and non-conflicting lateral layout.
 
 Phase 4 **deliberately reversed two locked decisions** — "the globe is a graticule, not a
 textured Earth" and "the globe is never a destination". Both reversals, and the parts of

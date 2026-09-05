@@ -73,6 +73,23 @@ export type MapAction =
   | { type: "layer/move"; id: string; delta: number }
   | { type: "layer/patch"; id: string; patch: Partial<Omit<MapLayer, "id" | "datasetId">> }
   | { type: "layer/activate"; id: string }
+  | {
+      /**
+       * Adopt the layer stack the side panel owns.
+       *
+       * A layer in the UI is a *variable*, not a dataset. This resolves each
+       * variable to whichever map dataset serves it best (Copernicus over
+       * HYCOM over INCOIS, by `preference`) and rebuilds the map's layers to
+       * match — so "Add layer" in the panel lands on the map too, and the 3D
+       * column's topmost-visible rule stays untouched.
+       */
+      type: "layers/sync";
+      stack: {
+        keys: string[];
+        visibility: Record<string, boolean>;
+        opacity: Record<string, number>;
+      };
+    }
   | { type: "time/set"; time: string }
   | { type: "time/step"; steps: number }
   | { type: "time/play"; playing: boolean }
@@ -204,6 +221,16 @@ export function timelineBounds(state: MapState): { start: string; end: string } 
   return { start, end };
 }
 
+/** The best map dataset for a UI variable, or undefined if the map cannot draw it. */
+export function sourceForVariable(
+  catalogue: MapLayerInfo[],
+  variableKey: string,
+): MapLayerInfo | undefined {
+  const candidates = catalogue.filter((d) => d.variable_key === variableKey);
+  if (candidates.length === 0) return undefined;
+  return candidates.reduce((best, d) => (d.preference < best.preference ? d : best));
+}
+
 function makeLayer(info: MapLayerInfo): MapLayer {
   return {
     id: nextId(),
@@ -220,25 +247,11 @@ function makeLayer(info: MapLayerInfo): MapLayer {
 
 export function mapReducer(state: MapState, action: MapAction): MapState {
   switch (action.type) {
-    case "catalogue/loaded": {
-      const next: MapState = { ...state, catalogue: action.datasets, error: null };
-      if (next.layers.length === 0 && action.datasets.length > 0) {
-        // Prefer Copernicus: it is the only source here with depth that reaches
-        // the present day, and depth is what distinguishes this from a flat
-        // satellite map. Falls back through HYCOM to whatever exists, so the map
-        // still opens when there are no Copernicus credentials.
-        const first =
-          action.datasets.find((d) => d.id === "cmems_temperature") ??
-          action.datasets.find((d) => d.id === "hycom_temperature") ??
-          action.datasets[0]!;
-        const layer = makeLayer(first);
-        next.layers = [layer];
-        next.activeLayerId = layer.id;
-        // "Latest available data" for the opening layer.
-        next.time = state.time || `${first.time_end}T00:00:00Z`;
-      }
-      return next;
-    }
+    case "catalogue/loaded":
+      // Deliberately does not seed a layer. The side panel owns the stack and
+      // pushes it here via layers/sync; seeding one would race that and briefly
+      // show a layer the panel does not list.
+      return { ...state, catalogue: action.datasets, error: null };
 
     case "catalogue/failed":
       return { ...state, error: action.message };
@@ -280,6 +293,39 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
 
     case "layer/activate":
       return { ...state, activeLayerId: action.id };
+
+    case "layers/sync": {
+      if (state.catalogue.length === 0) return state;
+      const { keys, visibility, opacity } = action.stack;
+      const layers: MapLayer[] = [];
+      for (const key of keys) {
+        const info = sourceForVariable(state.catalogue, key);
+        if (!info) continue; // the map has no source for this variable
+        // Reuse the existing layer so its depth, colour scale and log setting
+        // survive a visibility toggle rather than resetting.
+        const existing = state.layers.find((l) => l.datasetId === info.id);
+        layers.push({
+          ...(existing ?? makeLayer(info)),
+          visible: visibility[key] !== false,
+          opacity: opacity[key] ?? 1,
+        });
+      }
+      if (layers.length === 0) {
+        return { ...state, layers: [], activeLayerId: null };
+      }
+      const stillActive = layers.some((l) => l.id === state.activeLayerId);
+      const topVisible = layers.find((l) => l.visible) ?? layers[0]!;
+      return {
+        ...state,
+        layers,
+        activeLayerId: stillActive ? state.activeLayerId : topVisible.id,
+        // The clock has to land inside the new top layer's coverage, or the
+        // map asks for a date the product does not have and draws nothing.
+        time: state.time || `${
+          datasetOf({ ...state, layers } as MapState, topVisible)?.time_end ?? ""
+        }T00:00:00Z`,
+      };
+    }
 
     case "time/set":
       return { ...state, time: action.time };
