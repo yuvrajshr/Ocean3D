@@ -49,9 +49,26 @@ export const BASEMAPS = {
 
 export const DEFAULT_BASEMAP = BASEMAPS.october;
 
+/** Derived, not downloaded — see fetch-textures.mjs for why and how. Same for both
+ * basemap months, since geography doesn't change between them. */
+export const OCEAN_MASK_URL = "/world.ocean-mask.2048x1024.jpg";
+
+/** NASA's Blue Marble cloud composite — see fetch-textures.mjs for sourcing/credit. */
+export const CLOUDS_URL = "/world.clouds.2048x1024.jpg";
+
+/** Classic DMSP city-lights composite — see fetch-textures.mjs for the fuller credit
+ * this one specifically requires (different from, and in addition to, the Blue Marble one). */
+export const NIGHT_LIGHTS_URL = "/world.night-lights.2048x1024.jpg";
+
 export const GLOBE_RADIUS = 1.35;
-const OUTLINE_RADIUS = GLOBE_RADIUS * 1.012;
+// Ordered outward from the surface: clouds sit just above it, floats and their
+// stems above the clouds, the region outline above that — each layer clear of
+// the one below rather than sharing a radius and risking z-fighting.
+const CLOUD_RADIUS = GLOBE_RADIUS * 1.006;
 const MARKER_RADIUS = GLOBE_RADIUS * 1.008;
+const OUTLINE_RADIUS = GLOBE_RADIUS * 1.012;
+
+const GLOBE_SUN_DIRECTION = new THREE.Vector3(0.4, 0.5, 0.75).normalize();
 
 /**
  * Place a lat/lon on the sphere.
@@ -82,9 +99,18 @@ export function globeToLatLon(point: THREE.Vector3): { lat: number; lon: number 
 const SPHERE_VERTEX = /* glsl */ `
   out vec3 vNormalObject;
   out vec3 vViewNormal;
+  out vec3 vViewDirObject;
   void main() {
     vNormalObject = normalize(position);
     vViewNormal = normalize(normalMatrix * normal);
+    // Camera position carried into object space (rather than doing the
+    // specular math in world space) so it uses the same fixed, un-rotated
+    // frame as uSunDirection below — the day/night terminator already
+    // relies on that object-space convention (see globeRotationY's own
+    // comment for why), and the specular highlight has to agree with it or
+    // the glint would sit at the wrong place relative to the lit hemisphere.
+    vec3 cameraPositionObject = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz;
+    vViewDirObject = normalize(cameraPositionObject - position);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -93,10 +119,15 @@ const SPHERE_FRAGMENT = /* glsl */ `
   precision highp float;
   in vec3 vNormalObject;
   in vec3 vViewNormal;
+  in vec3 vViewDirObject;
   out vec4 fragColor;
 
   uniform sampler2D uBasemap;
   uniform float uHasBasemap;
+  uniform sampler2D uSpecularMask;
+  uniform float uHasSpecularMask;
+  uniform sampler2D uNightLights;
+  uniform float uHasNightLights;
   uniform vec3 uSunDirection;
   uniform vec3 uUnlit;
   uniform vec3 uRim;
@@ -104,6 +135,9 @@ const SPHERE_FRAGMENT = /* glsl */ `
   uniform float uLift;
   uniform float uGain;
   uniform float uOpacity;
+  uniform float uSpecularStrength;
+  uniform float uSpecularShininess;
+  uniform float uNightLightsStrength;
 
   const float PI = 3.141592653589793;
 
@@ -140,6 +174,24 @@ const SPHERE_FRAGMENT = /* glsl */ `
     float day = smoothstep(-0.75, 0.65, dot(n, normalize(uSunDirection)));
     vec3 colour = surface * mix(uNightFloor, 1.0, day) * uGain;
 
+    // City lights on the night side. Same uv as the basemap, so no new
+    // coordinate mapping; (1.0 - day) confines it to the dark hemisphere —
+    // the same terminator the basemap's own dimming already uses, so lights
+    // switch on exactly where the surface dims, not at a mismatched edge.
+    vec3 lights = texture(uNightLights, uv).rgb * uHasNightLights;
+    colour += lights * uNightLightsStrength * (1.0 - day);
+
+    // Ocean sun-glint. A Blinn-Phong-style highlight, masked to water only
+    // (the derived specular mask — see fetch-textures.mjs) and confined to
+    // the lit hemisphere, since there is no glint to see on the night side.
+    // Colour is a fixed warm-white, not a token: cosmetic grade on imagery
+    // that encodes nothing, same category as uLift/uGain above.
+    vec3 reflectDir = reflect(-normalize(uSunDirection), n);
+    float specAngle = max(dot(reflectDir, normalize(vViewDirObject)), 0.0);
+    float specular = pow(specAngle, uSpecularShininess) * texture(uSpecularMask, uv).r
+      * uHasSpecularMask * day;
+    colour += vec3(1.0, 0.98, 0.92) * specular * uSpecularStrength;
+
     // Atmosphere: brightest at the limb, where a real line of sight passes through the
     // most air.
     float rim = pow(1.0 - abs(dot(normalize(vViewNormal), vec3(0.0, 0.0, 1.0))), 3.0);
@@ -168,9 +220,20 @@ export interface GlobeOptions {
   basemapUrl: string;
   /** From `renderer.capabilities.getMaxAnisotropy()` — the reference view is oblique. */
   maxAnisotropy?: number;
+  /** Path to the derived ocean/land mask under `public/` (see fetch-textures.mjs). Optional —
+   * a missing mask just means no specular glint, not a broken globe. */
+  specularMaskUrl?: string;
+  /** Path to the night-lights composite under `public/`. Optional — a missing texture
+   * just means a plain dark night side, not a broken globe. */
+  nightLightsUrl?: string;
 }
 
-export function buildGlobe({ basemapUrl, maxAnisotropy = 1 }: GlobeOptions): Globe {
+export function buildGlobe({
+  basemapUrl,
+  maxAnisotropy = 1,
+  specularMaskUrl,
+  nightLightsUrl,
+}: GlobeOptions): Globe {
   const group = new THREE.Group();
 
   const material = new THREE.ShaderMaterial({
@@ -180,8 +243,12 @@ export function buildGlobe({ basemapUrl, maxAnisotropy = 1 }: GlobeOptions): Glo
     uniforms: {
       uBasemap: { value: null },
       uHasBasemap: { value: 0 },
+      uSpecularMask: { value: null },
+      uHasSpecularMask: { value: 0 },
+      uNightLights: { value: null },
+      uHasNightLights: { value: 0 },
       uOpacity: { value: 1 },
-      uSunDirection: { value: new THREE.Vector3(0.4, 0.5, 0.75).normalize() },
+      uSunDirection: { value: GLOBE_SUN_DIRECTION.clone() },
       // Deep ocean, so an un-textured globe still reads as Earth rather than as a bug.
       uUnlit: { value: new THREE.Color(0.055, 0.19, 0.26) },
       uRim: { value: new THREE.Color(...TOKEN_RGB.current) },
@@ -192,6 +259,9 @@ export function buildGlobe({ basemapUrl, maxAnisotropy = 1 }: GlobeOptions): Glo
       // Shadow lift, applied in linear space before lighting. See the shader.
       uLift: { value: 1.5 },
       uGain: { value: 1.04 },
+      uSpecularStrength: { value: 0.55 },
+      uSpecularShininess: { value: 28 },
+      uNightLightsStrength: { value: 1.4 },
     },
     transparent: true,
   });
@@ -204,6 +274,52 @@ export function buildGlobe({ basemapUrl, maxAnisotropy = 1 }: GlobeOptions): Glo
   const loader = new THREE.TextureLoader();
   let texture: THREE.Texture | null = null;
   let loadedUrl: string | null = null;
+  let specularTexture: THREE.Texture | null = null;
+  let nightLightsTexture: THREE.Texture | null = null;
+
+  // Fire-and-forget, unlike the basemap: a missing specular mask degrades to
+  // no glint, not a blocked entry gesture, so this never gates `ready`.
+  if (specularMaskUrl) {
+    loader.load(specularMaskUrl, (loaded) => {
+      loaded.flipY = false;
+      // A data mask, not a colour image — sRGB decoding would skew the 0-1
+      // ramp the shader reads as a literal multiplier.
+      loaded.colorSpace = THREE.NoColorSpace;
+      loaded.anisotropy = maxAnisotropy;
+      loaded.wrapS = THREE.RepeatWrapping;
+      loaded.wrapT = THREE.ClampToEdgeWrapping;
+      loaded.minFilter = THREE.LinearMipmapLinearFilter;
+      loaded.magFilter = THREE.LinearFilter;
+      loaded.needsUpdate = true;
+
+      specularTexture = loaded;
+      material.uniforms.uSpecularMask!.value = loaded;
+      material.uniforms.uHasSpecularMask!.value = 1;
+    });
+  }
+
+  // Also fire-and-forget — a missing night-lights texture degrades to a
+  // plain dark night side, which is exactly what the globe already showed
+  // before this layer existed.
+  if (nightLightsUrl) {
+    loader.load(nightLightsUrl, (loaded) => {
+      loaded.flipY = false;
+      // Displayed as actual colour (warm city-light glow), unlike the
+      // specular mask and clouds — sRGB, matching the basemap's own
+      // treatment, not NoColorSpace.
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      loaded.anisotropy = maxAnisotropy;
+      loaded.wrapS = THREE.RepeatWrapping;
+      loaded.wrapT = THREE.ClampToEdgeWrapping;
+      loaded.minFilter = THREE.LinearMipmapLinearFilter;
+      loaded.magFilter = THREE.LinearFilter;
+      loaded.needsUpdate = true;
+
+      nightLightsTexture = loaded;
+      material.uniforms.uNightLights!.value = loaded;
+      material.uniforms.uHasNightLights!.value = 1;
+    });
+  }
 
   const setBasemap = (url: string): Promise<void> => {
     if (url === loadedUrl) return Promise.resolve();
@@ -256,6 +372,129 @@ export function buildGlobe({ basemapUrl, maxAnisotropy = 1 }: GlobeOptions): Glo
     setBasemap,
     dispose() {
       sphere.geometry.dispose();
+      material.dispose();
+      texture?.dispose();
+      specularTexture?.dispose();
+      nightLightsTexture?.dispose();
+    },
+  };
+}
+
+const CLOUD_VERTEX = /* glsl */ `
+  out vec3 vNormalObject;
+  void main() {
+    // Same object-space normal trick as SPHERE_VERTEX, so this layer's uv
+    // mapping matches the basemap's exactly — the clouds have to sit over
+    // the correct geography, not just anywhere on the sphere.
+    vNormalObject = normalize(position);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const CLOUD_FRAGMENT = /* glsl */ `
+  precision highp float;
+  in vec3 vNormalObject;
+  out vec4 fragColor;
+
+  uniform sampler2D uClouds;
+  uniform float uHasClouds;
+  uniform vec3 uSunDirection;
+  uniform float uNightFloor;
+  uniform float uOpacity;
+
+  const float PI = 3.141592653589793;
+
+  void main() {
+    vec3 n = normalize(vNormalObject);
+    float lon = atan(n.z, n.x);
+    float lat = asin(clamp(n.y, -1.0, 1.0));
+    vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
+
+    // The classic NASA cloud composite is a luminance image — bright where
+    // there is cloud, dark where sky is clear — used here as both the white
+    // tint and the alpha, rather than needing a real alpha channel.
+    float intensity = texture(uClouds, uv).r * uHasClouds;
+
+    float day = smoothstep(-0.75, 0.65, dot(n, normalize(uSunDirection)));
+    vec3 colour = vec3(1.0) * mix(uNightFloor, 1.0, day);
+
+    fragColor = vec4(colour, intensity * uOpacity);
+  }
+`;
+
+export interface CloudLayer {
+  mesh: THREE.Mesh;
+  /** Resolves once the cloud texture has loaded, or immediately if it never does — a
+   * missing cloud layer degrades to no clouds, not a broken globe. */
+  ready: Promise<void>;
+  dispose(): void;
+}
+
+/**
+ * A thin static shell of clouds just above the surface — the single biggest
+ * "this is a static model, not a living planet" gap identified against
+ * Google Earth. Static by deliberate choice (not independently drifting):
+ * consistent with the globe never moving on its own, and simpler.
+ *
+ * A dedicated shader rather than a stock material + alphaMap: Three.js's
+ * alphaMap reads a texture's own alpha channel, which a plain RGB JPEG
+ * doesn't have — sampling luminance for both tint and alpha needs a custom
+ * fragment shader, the same reason the main sphere and specular mask do.
+ */
+export function buildClouds(cloudsUrl: string, maxAnisotropy = 1): CloudLayer {
+  const material = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: CLOUD_VERTEX,
+    fragmentShader: CLOUD_FRAGMENT,
+    uniforms: {
+      uClouds: { value: null },
+      uHasClouds: { value: 0 },
+      uSunDirection: { value: GLOBE_SUN_DIRECTION.clone() },
+      // Clouds stay faintly visible on the night side rather than vanishing
+      // outright — consistent with the main sphere's own uNightFloor, and
+      // an abrupt disappearance at the terminator would read as a bug.
+      uNightFloor: { value: 0.35 },
+      uOpacity: { value: 0.8 },
+    },
+    transparent: true,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(CLOUD_RADIUS, 96, 64), material);
+
+  const loader = new THREE.TextureLoader();
+  let texture: THREE.Texture | null = null;
+
+  const ready = new Promise<void>((resolve) => {
+    loader.load(
+      cloudsUrl,
+      (loaded) => {
+        loaded.flipY = false;
+        // A luminance/data texture here (see the shader), not a colour
+        // image — same reasoning as the specular mask's NoColorSpace.
+        loaded.colorSpace = THREE.NoColorSpace;
+        loaded.anisotropy = maxAnisotropy;
+        loaded.wrapS = THREE.RepeatWrapping;
+        loaded.wrapT = THREE.ClampToEdgeWrapping;
+        loaded.minFilter = THREE.LinearMipmapLinearFilter;
+        loaded.magFilter = THREE.LinearFilter;
+        loaded.needsUpdate = true;
+
+        texture = loaded;
+        material.uniforms.uClouds!.value = loaded;
+        material.uniforms.uHasClouds!.value = 1;
+        resolve();
+      },
+      undefined,
+      () => resolve(),
+    );
+  });
+
+  return {
+    mesh,
+    ready,
+    dispose() {
+      mesh.geometry.dispose();
       material.dispose();
       texture?.dispose();
     },
@@ -353,4 +592,77 @@ export function globeFloatMarkers(
     }),
   );
   return points;
+}
+
+
+/** Far outside the globe view's max camera distance (9) — negligible
+ * parallax as the camera orbits, so the field reads as fixed background
+ * rather than something orbiting along with the viewer. */
+const STARFIELD_RADIUS = 45;
+
+/** A uniform random direction on the unit sphere (not `Math.random()` per
+ * axis then normalized, which clusters toward the corners of the cube it
+ * samples from — this is the standard unbiased spherical distribution). */
+function randomOnSphere(radius: number): THREE.Vector3 {
+  const u = Math.random();
+  const v = Math.random();
+  const theta = 2 * Math.PI * u;
+  const phi = Math.acos(2 * v - 1);
+  return new THREE.Vector3(
+    radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.sin(phi) * Math.sin(theta),
+    radius * Math.cos(phi),
+  );
+}
+
+function starLayer(count: number, size: number, opacity: number, warmth: number): THREE.Points {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const color = new THREE.Color();
+
+  for (let i = 0; i < count; i++) {
+    randomOnSphere(STARFIELD_RADIUS).toArray(positions, i * 3);
+
+    // Mostly white with a slight, varied tint — real starfields aren't a
+    // uniform grey dust; a touch of blue-white/warm-white variety is most
+    // of the difference between "scattered dots" and "a sky full of stars."
+    const hue = Math.random() < warmth ? 0.08 + Math.random() * 0.05 : 0.58 + Math.random() * 0.08;
+    const lightness = 0.7 + Math.random() * 0.3;
+    color.setHSL(hue, 0.35, lightness);
+    color.toArray(colors, i * 3);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      size,
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    }),
+  );
+}
+
+/**
+ * The globe against space, not a flat void — the missing piece that makes a
+ * lit sphere read as a planet rather than a rendered prop on a page.
+ *
+ * Two point layers rather than one uniform field: a dense, dim background
+ * layer and a sparser, brighter foreground layer, giving the size/brightness
+ * variety a single fixed-size THREE.Points otherwise can't (stock
+ * PointsMaterial has no per-vertex size without a custom shader — this stays
+ * within the plan's "no custom shader needed" scope for this layer while
+ * still avoiding a uniform dust of identical dots).
+ */
+export function buildStarfield(): THREE.Group {
+  const group = new THREE.Group();
+  group.add(starLayer(3200, 1.1, 0.55, 0.12));
+  group.add(starLayer(220, 2.1, 0.85, 0.12));
+  return group;
 }
