@@ -61,6 +61,11 @@ export default function App() {
   const [depthWindow, setDepthWindow] = useState<[number, number]>([0, MAX_DEPTH]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
+  // Shown briefly when a globe fly-to lands outside the analysis extent —
+  // there's real detail to find only inside it (the dive), so this is an
+  // honest "nothing measured here" rather than implying more coverage exists.
+  const [emptyRegionHint, setEmptyRegionHint] = useState(false);
+  const emptyRegionHintTimer = useRef<number | null>(null);
 
   /**
    * Switch view. Returning to the column replays the descent, so `entryDone` is reset and
@@ -90,6 +95,13 @@ export default function App() {
     scene.onEntryComplete = () => setEntryDone(true);
     // The scene can change view on its own — clicking the region on the globe dives in.
     scene.onViewChange = setView;
+    scene.onEmptyRegionClick = () => {
+      setEmptyRegionHint(true);
+      // Reset rather than stack, so repeated outside-box clicks don't cause
+      // the hint to flicker off mid-read from an earlier timer firing.
+      if (emptyRegionHintTimer.current !== null) window.clearTimeout(emptyRegionHintTimer.current);
+      emptyRegionHintTimer.current = window.setTimeout(() => setEmptyRegionHint(false), 2500);
+    };
 
     // Exposed so the screenshot harness can read a real frame rate. CLAUDE.md
     // treats a janky 3D scene as a bug, which means it has to be measured
@@ -103,6 +115,7 @@ export default function App() {
       observer.disconnect();
       scene.dispose();
       sceneRef.current = null;
+      if (emptyRegionHintTimer.current !== null) window.clearTimeout(emptyRegionHintTimer.current);
     };
   }, [webglReady]);
 
@@ -520,6 +533,12 @@ export default function App() {
                 <div className="viewport__hover" style={{ left: "50%", top: "12%" }}>
                   {hovered.platformId} · {Math.round(hovered.maxDepth)} m
                 </div>
+              ) : null}
+
+              {emptyRegionHint ? (
+                <p className="viewport__hint">
+                  No measurement here — the analysis covers the Bay of Bengal box.
+                </p>
               ) : null}
 
               {bootError ? (

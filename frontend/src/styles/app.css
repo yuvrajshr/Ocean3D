@@ -457,7 +457,10 @@
   z-index: var(--z-viewport);
 }
 
-.viewport__canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+/* touch-action: none hands 100% of touch gesturing to our own pointer-event
+   camera controls — without it, mobile browsers also try to interpret drags
+   as page pan and double-tap/pinch as page zoom, fighting the 3D camera. */
+.viewport__canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .viewport__canvas:active { cursor: grabbing; }
 
 .viewport__overlay {
@@ -512,6 +515,28 @@
   font-size: var(--size-readout);
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+/* A brief, non-blocking sentence — not a literal readout, so --font-ui
+   rather than .viewport__hover's mono. Shown when a globe fly-to lands
+   outside the analysis extent. Centred and wrapping, unlike .viewport__hover's
+   fixed one-line anchor. */
+.viewport__hint {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  max-width: 34ch;
+  text-align: center;
+  pointer-events: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--size-caption);
+  line-height: 1.4;
+  color: var(--text-primary);
 }
 
 .viewport__message {
