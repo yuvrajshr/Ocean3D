@@ -197,12 +197,24 @@ export class OceanScene {
   private static readonly MAX_ENTRY_STEP = 1 / 45;
 
   private azimuth = -0.62;
-  // Lower than a plan view on purpose: the thermocline is vertical structure,
-  // and looking down at the column only shows its warm surface.
-  private elevation = 0.28;
-  private distance = 4.4;
+  // BELOW the waterline, by about 86 m, and close enough that the analysis
+  // fills ~58% of frame height instead of 25%.
+  //
+  // This reverses §10's "elevated 3/4 view above the waterline". The geometry
+  // left no third option: eye height is target.y + distance*sin(elevation), so
+  // getting the box large enough to read means a smaller distance, and staying
+  // dry at that distance would need a HIGHER angle — which shows the column's
+  // warm lid and hides the thermocline, the exact thing §10 lowered the
+  // elevation to avoid. Closer and lower is underwater.
+  //
+  // What survives the reversal: dragging up still returns to the basin
+  // overview, so a forecaster keeps the whole-box view on demand. What it buys:
+  // the light shafts and marine snow, which are gated on being underwater and
+  // so had never once been visible in the default frame.
+  private elevation = 0.1;
+  private distance = 2.35;
   private fitScale = 1;
-  private readonly target = new THREE.Vector3(0, -0.32, 0);
+  private readonly target = new THREE.Vector3(0, -0.44, 0);
   private dragging = false;
   private lastPointer = { x: 0, y: 0 };
 
@@ -299,8 +311,13 @@ export class OceanScene {
 
     // Field of view is vertical, so a tall narrow viewport crops horizontally
     // and the basin runs off the sides. Pull further out to compensate.
-    const TARGET_ASPECT = 1.35;
-    this.fitScale = Math.min(2.4, Math.max(1, TARGET_ASPECT / this.camera.aspect));
+    // The cap MUST stay low now the default view is submerged. fitScale
+    // multiplies distance, and eye height is target.y + distance*fitScale*
+    // sin(elevation): at the old 2.4 cap that reaches +0.12 on a narrow
+    // viewport — above the water — and the whole design silently flips regime.
+    // At 1.6 the worst case is -0.065, still under.
+    const TARGET_ASPECT = 1.7;
+    this.fitScale = Math.min(1.6, Math.max(1, TARGET_ASPECT / this.camera.aspect));
   }
 
   // ------------------------------------------------------------------- globe
@@ -429,11 +446,12 @@ export class OceanScene {
     this.startEntry();
   }
 
+  /** Must land exactly where the entry gesture ends, or a globe round trip jumps. */
   private resetColumnCamera(): void {
     this.azimuth = -0.62;
-    this.elevation = 0.28;
-    this.distance = 4.4;
-    this.target.set(0, -0.32, 0);
+    this.elevation = 0.1;
+    this.distance = 2.35;
+    this.target.set(0, -0.44, 0);
   }
 
   // -------------------------------------------------------------- atmosphere
@@ -455,6 +473,19 @@ export class OceanScene {
     }
     this.terrainMesh = buildTerrainMesh(field, this.geo);
     this.worldGroup.add(this.terrainMesh);
+    this.applyTerrainBounds();
+  }
+
+  /**
+   * The relief dissolves in the analysis box's own half-widths, so the uniform
+   * has to follow the extent rather than being baked at build time. Called from
+   * both setTerrain and setExtent, because either can arrive first.
+   */
+  private applyTerrainBounds(): void {
+    const material = this.terrainMesh?.material as THREE.ShaderMaterial | undefined;
+    const uniform = material?.uniforms.uBoxHalf;
+    if (!uniform) return;
+    (uniform.value as THREE.Vector2).set(this.boxSize.x / 2, this.boxSize.z / 2);
   }
 
   // ------------------------------------------------------------------ volume
@@ -466,6 +497,7 @@ export class OceanScene {
     this.boxSize = new THREE.Vector3(span.width, ANALYSIS_HEIGHT, span.depth);
     this.refreshGlobeMarks();
     this.rebuildLattice();
+    this.applyTerrainBounds();
   }
 
   /**
@@ -707,7 +739,8 @@ export class OceanScene {
     // makes the shader look for a geometry colour attribute that does not exist
     // here, and every marker renders black.
     const mesh = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(0.02, 16, 12),
+      // Was 0.02, sized for a camera 1.9x further out. Same apparent size.
+      new THREE.SphereGeometry(0.011, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
       markers.length,
     );
@@ -720,7 +753,7 @@ export class OceanScene {
       const p = this.geoToWorld(marker.lat, marker.lon, 0);
       matrix.makeTranslation(p.x, p.y, p.z);
       mesh.setMatrixAt(index, matrix);
-      mesh.setColorAt(index, new THREE.Color(marker.featured ? TOKEN.bioluminescence : TOKEN.foam));
+      mesh.setColorAt(index, this.markerColour(index, marker, new THREE.Color()));
 
       const bottom = this.geoToWorld(marker.lat, marker.lon, Math.min(marker.maxDepth, ANALYSIS_MAX_DEPTH));
       stemPoints.push(p.x, p.y, p.z, bottom.x, bottom.y, bottom.z);
@@ -740,7 +773,7 @@ export class OceanScene {
 
     const stems = new THREE.LineSegments(
       new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(stemPoints, 3)),
-      new THREE.LineBasicMaterial({ color: TOKEN.bioluminescence, transparent: true, opacity: 0.24 }),
+      new THREE.LineBasicMaterial({ color: TOKEN.bioluminescence, transparent: true, opacity: 0.2 }),
     );
     stems.renderOrder = RENDER_ORDER.stems;
     stems.visible = !this.entryActive;
@@ -753,15 +786,29 @@ export class OceanScene {
     this.refreshMarkerColors();
   }
 
+  /**
+   * Markers are instruments, not data, so they must sit below the colormap in
+   * the frame's value order. At full token brightness a resting marker renders
+   * at foam (0.918, 0.953, 0.945) — level with the top of every cmocean ramp —
+   * so it competed with the field it exists to point at. Resting states are
+   * dimmed; only the selected one is allowed to be the brightest chrome.
+   *
+   * Both the initial colouring and every refresh go through here, so they
+   * cannot drift apart.
+   */
+  private markerColour(index: number, marker: MarkerDatum, into: THREE.Color): THREE.Color {
+    if (index === this.selectedIndex) return into.setHex(TOKEN.advisory);
+    if (index === this.hoveredIndex) return into.setHex(TOKEN.bioluminescence);
+    if (marker.featured) return into.setHex(TOKEN.bioluminescence).multiplyScalar(0.78);
+    return into.setHex(TOKEN.foam).multiplyScalar(0.62);
+  }
+
   private refreshMarkerColors(): void {
     const mesh = this.markerMesh;
     if (!mesh?.instanceColor) return;
     const colour = new THREE.Color();
     this.markers.forEach((marker, index) => {
-      if (index === this.selectedIndex) colour.setHex(TOKEN.advisory);
-      else if (index === this.hoveredIndex) colour.setHex(TOKEN.bioluminescence);
-      else colour.setHex(marker.featured ? TOKEN.bioluminescence : TOKEN.foam);
-      mesh.setColorAt(index, colour);
+      mesh.setColorAt(index, this.markerColour(index, marker, colour));
     });
     mesh.instanceColor.needsUpdate = true;
   }
@@ -970,18 +1017,26 @@ export class OceanScene {
       this.worldGroup.visible = true;
       this.globeGroup.scale.setScalar(1 + k * 1.8);
       setGlobeOpacity(this.globeGroup, 1 - k);
-      this.distance = 3.5 + k * 0.7;
-      this.elevation = 0.49;
+      // Ends on 3.3 / 0.40 / -0.70, which is exactly where the settle begins.
+      // The old curve handed off at 4.2 and resumed at 4.1 — a small jump that
+      // was invisible only because the settle was so gentle.
+      this.distance = 3.5 - k * 0.2;
+      this.elevation = 0.49 - k * 0.09;
       this.azimuth = -0.8 + k * 0.1;
     } else {
-      // Settle into the working view, above the waterline.
+      // Settle into the working view — and, now, THROUGH the surface. Eye
+      // height runs from +1.14 to -0.21 across this phase, so the gesture's
+      // last beat is a real dive rather than a hover above the water.
+      //
+      // These four must land exactly on resetColumnCamera(), or returning from
+      // the globe jumps.
       const k = ease((t - 0.72) / 0.28);
       this.globeGroup.visible = false;
       this.worldGroup.visible = true;
-      this.distance = 4.1 + k * 0.3;
-      this.elevation = 0.49 - k * 0.21;
-      this.azimuth = -0.7 - k * -0.08;
-      this.target.y = -0.14 - k * 0.18;
+      this.distance = 3.3 - k * 0.95;
+      this.elevation = 0.4 - k * 0.3;
+      this.azimuth = -0.7 + k * 0.08;
+      this.target.y = -0.14 - k * 0.3;
     }
 
     // Turn the study region to face the camera. Done after the phase branches
@@ -1063,6 +1118,9 @@ export class OceanScene {
     setUniform(this.marineSnow?.material as THREE.Material, "uTime", time);
     this.lightShafts?.children.forEach((shaft) => {
       setUniform((shaft as THREE.Mesh).material as THREE.Material, "uTime", time);
+      // Turn broadside to the camera, with a fixed per-shaft offset so they do
+      // not read as one card pivoting. See buildLightShafts.
+      shaft.rotation.y = this.azimuth + ((shaft.userData.jitter as number) ?? 0);
     });
 
     if (this.volumeMesh) {

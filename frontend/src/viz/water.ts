@@ -35,7 +35,14 @@
 export const ABSORPTION = { r: 0.0062, g: 0.0034, b: 0.0021 } as const;
 
 /** Colour the water itself scatters back, from the `current` token. */
-export const SCATTER_COLOR = { r: 0.036, g: 0.125, b: 0.176 } as const;
+/**
+ * What distant things fade INTO. It has to match the water they are seen
+ * against, or fog cannot hide anything: terrain fully fogged to a colour half
+ * as bright as its background still reads as a dark silhouette, which is
+ * exactly how the continental slope kept reappearing after it was "hidden".
+ * Kept in step with `uNearSurface` in ocean.ts — if one moves, so does this.
+ */
+export const SCATTER_COLOR = { r: 0.062, g: 0.24, b: 0.305 } as const;
 
 export const TOKEN_RGB = {
   abyss: [0.02, 0.043, 0.071],

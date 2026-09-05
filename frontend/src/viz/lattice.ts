@@ -34,8 +34,28 @@ import type { Extent, GeoFrame } from "./geo";
  * The lattice MUST sort before the volume. The volume runs `depthWrite: false`
  * and so never occludes anything; ordered after it, a grid geometrically behind
  * the data would draw on top of it.
+ *
+ * The same trap already cost this project its whole look once. `ocean.ts` had
+ * the sea surface at 6, marine snow at 7 and light shafts at 8; this table was
+ * written with ribbon 6, stems 7, markers 8 without reading that file, so the
+ * entire atmosphere collided with the data and drew AFTER it. The sea plane
+ * composited over every pixel of the volume at ~66% opacity, which turned a
+ * cmocean deep red into grey-blue and silently broke the promise volume.ts
+ * makes in its own comments — that nothing shifts a data colour. Two rounds of
+ * shader tuning went into a field that was being veiled a moment after it
+ * rendered.
+ *
+ * So: EVERY renderOrder in the column lives here, background included. If a
+ * number is written anywhere else, this table is already wrong.
  */
 export const RENDER_ORDER = {
+  // --- background: everything below the line is scenery BEHIND the data ---
+  sky: -10,
+  terrain: -8,
+  seaSurface: -6,
+  marineSnow: -4,
+  lightShafts: -3,
+  // --- the data, and the instruments that read it ---
   lattice: 1,
   volume: 2,
   frame: 4,

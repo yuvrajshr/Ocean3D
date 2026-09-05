@@ -59,12 +59,32 @@ const FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform float uMaxLandElevation;
   uniform float uCausticStrength;
+  uniform vec2  uBoxHalf;
 
   ${WATER_GLSL}
 
   void main() {
     vec3 normal = normalize(vNormal);
     float lambert = max(dot(normal, normalize(uSunDirection)), 0.0);
+
+    // Dissolve the relief radially, measured in the analysis box's own
+    // half-widths.
+    //
+    // The terrain is requested 25 x 25 degrees against an analysis of 18 x 17,
+    // so the ground overhangs the data by ~1.4x on every side and used to end
+    // in a hard lit rectangle. A lit rectangle floating in dark water does not
+    // read as a seabed; it reads as a torn sheet of paper. Fading before the
+    // mesh reaches its own border means the reader never sees where the grid
+    // stops -- it simply runs out into the water.
+    //
+    // Superellipse rather than a circle, which would clip the corners of the
+    // box itself, and rather than a max(), which reproduces the very rectangle
+    // it is trying to hide.
+    vec2 q = abs(vWorld.xz) / uBoxHalf;
+    vec2 q2 = q * q;
+    float reach = sqrt(sqrt(q2.x * q2.x + q2.y * q2.y));
+    float edgeFade = 1.0 - smoothstep(0.98, 1.26, reach);
+    if (edgeFade <= 0.002) discard;
 
     if (vElevation > 0.0) {
       // --- Land -------------------------------------------------------
@@ -73,7 +93,18 @@ const FRAGMENT = /* glsl */ `
       float h = clamp(vElevation / uMaxLandElevation, 0.0, 1.0);
       vec3 base = mix(uLandLow, uLandHigh, pow(h, 0.6));
       vec3 lit = base * (0.35 + 0.65 * lambert);
-      fragColor = vec4(lit, 1.0);
+
+      // Land goes through the water too. It never did, so it drew at full
+      // contrast however much sea lay between it and the eye — which is why
+      // the coast read as hard cardboard slabs pasted over the scene once the
+      // camera went under. Depth is 0 because land is at or above the
+      // waterline; the fog term is the whole point.
+      float landFog = 1.0 - exp(-uWaterDensity * waterPath(uCameraPos, vWorld));
+      lit = applyWater(lit, 0.0, landFog);
+
+      // Land takes the same edge fade. It used to return alpha 1.0 and so kept
+      // its torn border; the western land at lon 75 was the worst offender.
+      fragColor = vec4(lit, edgeFade);
       return;
     }
 
@@ -103,7 +134,9 @@ const FRAGMENT = /* glsl */ `
     // is not drawn. The fade is gradual, so there is no cut line: the shelf and
     // upper slope stay legible and the abyssal plain becomes open water, which
     // is exactly what a diver, a camera or an echo of daylight would find.
-    float visibility = 1.0 - smoothstep(250.0, 900.0, depthMetres);
+    // Tightened from 250/900 now the water behind it is dark: less of the
+    // abyssal plain needs to show for the basin to read.
+    float visibility = (1.0 - smoothstep(200.0, 700.0, depthMetres)) * edgeFade;
     if (visibility <= 0.002) discard;
 
     fragColor = vec4(shaded, visibility);
@@ -205,7 +238,13 @@ export function buildTerrainMesh(field: TerrainField, geo: GeoFrame): THREE.Mesh
       uCameraPos: { value: new THREE.Vector3() },
       uTime: { value: 0 },
       uMaxLandElevation: { value: Math.max(field.maxElevation, 1) },
-      uCausticStrength: { value: 0.5 },
+      // Lowered from 0.5: caustics were competing with a bright background.
+      // Against a dark one they shout.
+      uCausticStrength: { value: 0.35 },
+      // Half-extent of the analysis box, so the relief can dissolve in the
+      // box's own units. Set by the scene, which owns the extent — see
+      // applyTerrainBounds(). Placeholder until then.
+      uBoxHalf: { value: new THREE.Vector2(1, 1) },
     },
     side: THREE.FrontSide,
     transparent: true,
@@ -213,7 +252,8 @@ export function buildTerrainMesh(field: TerrainField, geo: GeoFrame): THREE.Mesh
   });
 
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.renderOrder = 0;
+  // Behind the data, and behind the sea surface (RENDER_ORDER in viz/lattice.ts).
+  mesh.renderOrder = -8;
   mesh.frustumCulled = true;
   return mesh;
 }

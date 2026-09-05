@@ -27,7 +27,7 @@ const COMBINE_SHADER = {
   uniforms: {
     baseTexture: { value: null as THREE.Texture | null },
     bloomTexture: { value: null as THREE.Texture | null },
-    bloomStrength: { value: 1.0 },
+    bloomStrength: { value: 0.9 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -44,7 +44,12 @@ const COMBINE_SHADER = {
     void main() {
       vec4 base = texture2D(baseTexture, vUv);
       vec4 glow = texture2D(bloomTexture, vUv);
-      gl_FragColor = base + glow * bloomStrength;
+      // Clamped. This was an unbounded base + glow * strength: a foam marker at
+      // 0.92 plus a full-strength glow landed near 2.0 and clipped to a flat
+      // white disc, which is what made the markers read as lens flares rather
+      // than instruments. The clamp does not stop bloom bleeding onto
+      // neighbouring pixels; only the smaller radius bounds that.
+      gl_FragColor = vec4(min(base.rgb + glow.rgb * bloomStrength, vec3(1.0)), base.a);
     }
   `,
 };
@@ -69,8 +74,11 @@ export class OceanEffects {
     this.bloomComposer.addPass(
       new UnrealBloomPass(
         new THREE.Vector2(size.x, size.y),
-        1.15, // strength
-        0.62, // radius
+        // Was 1.15 / 0.62. The markers are chrome — they encode position, not a
+        // value — and at that strength they were the brightest thing in the
+        // frame, above the data they exist to point at.
+        0.5, // strength
+        0.35, // radius
         0.0, // threshold: zero is correct here, because only the markers are
         //                  in this render at all — the layer does the selecting
       ),
@@ -78,7 +86,11 @@ export class OceanEffects {
 
     const combinePass = new ShaderPass(
       new THREE.ShaderMaterial({
-        uniforms: COMBINE_SHADER.uniforms,
+        // Cloned, not shared. COMBINE_SHADER is module-level and ShaderMaterial
+        // does not copy the object it is handed, so two scenes (hot reload, a
+        // second canvas) would share one bloomTexture and the last one to
+        // construct would win.
+        uniforms: THREE.UniformsUtils.clone(COMBINE_SHADER.uniforms),
         vertexShader: COMBINE_SHADER.vertexShader,
         fragmentShader: COMBINE_SHADER.fragmentShader,
         defines: {},
