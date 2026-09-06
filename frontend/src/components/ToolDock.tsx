@@ -25,6 +25,7 @@ import {
   Map,
   Activity,
   Radio,
+  Sparkles,
 } from "lucide-react";
 import "../styles/tool-dock.css";
 
@@ -52,6 +53,9 @@ export interface ToolDockProps {
   onOpenGraphForPoint?: (point: PointAnnotation) => void;
   showGrid?: boolean;
   onToggleGrid?: () => void;
+  /** The assistant sits first in the dock; the panel itself lives in App. */
+  assistantOpen?: boolean;
+  onToggleAssistant?: () => void;
 }
 
 export function ToolDock({
@@ -64,6 +68,8 @@ export function ToolDock({
   onOpenGraphForPoint,
   showGrid: _externalShowGrid,
   onToggleGrid: _onToggleGrid,
+  assistantOpen = false,
+  onToggleAssistant,
 }: ToolDockProps) {
   // Internal state fallbacks if not supplied externally
   const [internalTool, setInternalTool] = useState<ToolMode>("none");
@@ -121,6 +127,26 @@ export function ToolDock({
   return (
     <div id="ocean3d-tool-dock">
       <div className="tool-dock-bar">
+        {/* Ocean assistant — first in the dock. Unlike the tools below it does
+            not open a dock drawer; the panel is a wider surface owned by App,
+            because analysis answers need room to read. */}
+        {onToggleAssistant ? (
+          <>
+            <button
+              type="button"
+              id="btn-tool-assistant"
+              onClick={onToggleAssistant}
+              className={`tool-dock-btn ${assistantOpen ? "tool-dock-btn--active" : ""}`}
+              title="Ask the ocean assistant"
+              aria-pressed={assistantOpen}
+            >
+              <Sparkles className="w-5 h-5" style={{ width: 20, height: 20 }} />
+              <span className="tool-dock-btn-label">Ask</span>
+            </button>
+            <div className="tool-dock-divider" />
+          </>
+        ) : null}
+
         {/* Points Tool (Functional for Argo float points) */}
         <button
           type="button"

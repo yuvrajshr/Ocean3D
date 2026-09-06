@@ -38,3 +38,5 @@ Thumbs.db
 *.env
 !*.env.example
 backend/.env
+backend/app/assistant_store/*
+!backend/app/assistant_store/.gitignore

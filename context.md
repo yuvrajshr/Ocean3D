@@ -363,6 +363,32 @@ only.
     (0.5 m surface down to 2000 m floor). Real-time hover callouts display oceanographic
     physical zones (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) so depth
     selection is grounded in ocean physics.
+13. **An assistant may state a measurement only if it fetched one, and the interface
+    proves which.** The ocean assistant (2026-09-06) is the first thing in the product
+    that can produce a sentence rather than a rendering, which makes it the first thing
+    that can be confidently wrong. Three rules keep it inside the system:
+
+    **Provenance is rendered from tool calls, not from prose.** The citation line under
+    an answer is built from the reads that actually executed, so an answer that fetched
+    nothing has nothing to cite and is marked *"General knowledge — not from your data"*
+    in `advisory` amber, paired with words rather than carrying meaning by colour. The
+    model is asked to obey the rule in its prompt; the interface does not depend on it
+    having obeyed.
+
+    **A readout stays a readout.** Dataset, date, depth and units in the citation line
+    are IBM Plex Mono, the same role §5.1 gives every literal value elsewhere. The
+    medium changed, not the rule.
+
+    **It may act, and it may always be undone.** The assistant changes the workspace
+    without asking first, because a reader who says "add chlorophyll" wants chlorophyll
+    added. That is only reasonable because every message that changed something carries
+    a one-click undo restoring the exact prior state.
+
+    *This principle also admits the one structural device it needs: a wide floating
+    panel, 420 px, on the existing floating-console z-plane — not a fourth level.* It is
+    a genuine exception to §5.1's rule that nothing competes with the viewport, taken
+    knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
+    closes when dismissed, and the viewport is never obscured while it is shut.
 
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
@@ -1074,6 +1100,44 @@ each — component, decision, one-line reason, date.)*
   not move: cmocean still owns data colour, no chrome colour encodes a value, readouts stay
   mono, and every layer still states its source and range. The rounding is a container
   decision and buys no licence over how a measurement is drawn._
+
+- _2026-09-06 — **An AI assistant, and the grounding rule is structural rather than
+  prompted.** The assistant can answer about the water and drive the app ("add the
+  chlorophyll layer and hide temperature"). The danger it introduces is specific: a
+  plausible invented sea temperature inside an INCOIS-branded tool is worse than no
+  assistant. So the panel builds its citation line from the tool calls that actually
+  ran, never from the prose — an answer that fetched nothing has nothing to cite and is
+  visibly marked as general knowledge. The prompt states the rule too, but the interface
+  does not rely on the model having followed it. See §5.1 Principle 13._
+- _2026-09-06 — **Gemini, and the API is not the one in anyone's memory.** `gemini-3.8-flash`
+  through `google-genai` 2.22, which is `client.interactions.create(...)` returning an
+  `Interaction` with `steps` and `output_text` — a `function_call` step answered by a
+  `function_result` entry. This replaced the `generate_content` surface; verified against
+  the installed package and the live docs, not recalled. Key in gitignored `backend/.env`,
+  server-side only (§5.5). `store=False`, so no transcript persists on Google's servers —
+  the defensible choice for a government deliverable. Without a key the dock button states
+  the reason and everything else works, the same degradation the Copernicus layers have._
+- _2026-09-06 — **The tool loop is split, because half of it cannot run on the server.**
+  Read tools execute in the backend against the endpoints the UI already uses. Action
+  tools mutate React state in a browser, so they are *validated* server-side against a
+  state snapshot the client sends with every message, then returned for the client to
+  apply. That is what lets the model be told the truth about whether an action succeeded —
+  it learns "that would need more than 3 layers" rather than assuming it worked._
+- _2026-09-06 — **`zoom_to_region` resolves a fixed table and nothing else.** A model
+  supplying its own bounding box for a place name is the most dangerous kind of wrong
+  here, because a plausible-looking box is indistinguishable from a correct one on screen._
+- _2026-09-06 — **SQLite, not Supabase, for conversations and cached analyses.** Asked for
+  Supabase first, then delegated the choice. §1 requires deployability on INCOIS
+  infrastructure and a hosted database is an outbound dependency a government network may
+  refuse; §4 already sanctions "SQLite for demo". Behind a `ConversationStore` protocol —
+  the same shape as `DataSource` — so a later swap is a class, not a rewrite. The
+  `analysis_cache` table is also the free-tier mitigation: a repeated question skips both
+  the upstream and the model._
+- _2026-09-06 — **The assistant writes layers through `setLayerStack`, never the map
+  reducer.** `layerStack` in `App.tsx` is the source of truth; an effect syncs it into the
+  reducer with `layers/sync`, which derives `map.layers`. Dispatching `layer/add` directly
+  appears to work and is silently overwritten on the next sync. Recorded because it is
+  invisible until it bites, which is what `next_session.md` §6 is for._
 
 ---
 

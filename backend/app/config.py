@@ -59,6 +59,31 @@ COPERNICUS_AVAILABLE = bool(COPERNICUS_USERNAME and COPERNICUS_PASSWORD)
 # not ship (context.md 5.5).
 COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 
+# ---------------------------------------------------------------- assistant
+
+# The ocean assistant. Server-side only: the key never reaches the browser,
+# exactly like the Copernicus credentials above. Without a key the assistant
+# simply does not appear and every other part of the app still works, which is
+# the same degradation the Copernicus layers already have.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+
+# Conversations and the analysis cache. SQLite rather than a hosted database:
+# context.md 1 requires the app be deployable on INCOIS infrastructure, and 4
+# already sanctions "SQLite for demo". Lives beside the disk cache and is
+# gitignored the same way.
+ASSISTANT_DB = BACKEND_ROOT / "app" / "assistant_store" / "assistant.db"
+
+# How long a cached tool result stays fresh. Ocean analyses for a past date do
+# not change, so this is generous; it exists to stop a repeated question
+# spending free-tier quota, not to guarantee recency.
+ASSISTANT_CACHE_TTL_SECONDS = 60 * 60 * 24
+
+# A hard ceiling on tool-calling rounds per message. Without it a confused
+# model can loop until the quota is gone.
+ASSISTANT_MAX_STEPS = 6
+
 
 @dataclass(frozen=True)
 class VariableSpec:

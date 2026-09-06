@@ -1,0 +1,227 @@
+/**
+ * The assistant panel.
+ *
+ * Drawn in the floating console's slate-and-cyan palette (context.md §5.1.2),
+ * not the six named tokens — because the dock it opens from and the layer
+ * panel beside it are already slate+cyan, and a third palette in the same
+ * corner would be worse than the two the project already has open as a
+ * question in §11. Same radii (12px shell, 8px blocks, 4px controls), same two
+ * shadow families (neutral elevation, cyan glow for an active control).
+ *
+ * It sits on the floating-panel z-plane, the same one as the dock and the
+ * layer panel. It does not introduce a fourth level.
+ */
+
+.assistant-panel {
+  position: absolute;
+  top: 16px;
+  right: 96px;
+  bottom: 16px;
+  width: 420px;
+  max-width: calc(100vw - 130px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(11, 18, 32, 0.97);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  z-index: 40;
+}
+
+.assistant-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+}
+
+.assistant-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.assistant-panel__close {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.assistant-panel__close:hover { background: #1e293b; color: #e2e8f0; }
+.assistant-panel__close:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }
+
+.assistant-panel__log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* An invitation with a next step, not an apology (§5.3). */
+.assistant-panel__empty {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.assistant-panel__empty strong { color: #cbd5e1; font-weight: 600; }
+.assistant-panel__examples {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assistant-panel__example {
+  text-align: left;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  background: #0f172a;
+  color: #cbd5e1;
+  border-radius: 4px;
+  padding: 7px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.assistant-panel__example:hover { border-color: #22d3ee; color: #e2e8f0; }
+.assistant-panel__example:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }
+
+.assistant-msg { display: flex; flex-direction: column; gap: 6px; }
+.assistant-msg__body {
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.assistant-msg--user .assistant-msg__body {
+  align-self: flex-end;
+  max-width: 88%;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.assistant-msg--assistant .assistant-msg__body { color: #cbd5e1; }
+.assistant-msg--failed .assistant-msg__body { color: #e8a23d; }
+
+/* Provenance. Mono because it is a literal readout — dataset, date, depth —
+   and §5.1 assigns those to IBM Plex Mono wherever they appear. */
+.assistant-cite {
+  border-top: 1px solid rgba(51, 65, 85, 0.5);
+  padding-top: 6px;
+}
+.assistant-cite__summary {
+  font-family: var(--font-readout, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: #64748b;
+  cursor: pointer;
+  list-style: none;
+}
+.assistant-cite__summary::-webkit-details-marker { display: none; }
+.assistant-cite__summary:hover { color: #94a3b8; }
+.assistant-cite[open] .assistant-cite__summary { color: #94a3b8; }
+.assistant-cite__list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.assistant-cite__row {
+  font-family: var(--font-readout, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: #94a3b8;
+  background: #0f172a;
+  border-radius: 4px;
+  padding: 5px 7px;
+}
+
+/* The honest marker on an answer with nothing to cite. Amber is `advisory`,
+   which means "pay attention" — an unsourced claim in a data tool is exactly
+   that — and it is paired with words, never carrying the meaning by colour. */
+.assistant-msg__ungrounded {
+  font-size: 10.5px;
+  color: #e8a23d;
+  font-family: var(--font-readout, ui-monospace, monospace);
+}
+
+.assistant-msg__undo {
+  align-self: flex-start;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  background: transparent;
+  color: #22d3ee;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.assistant-msg__undo:hover { background: #1e293b; }
+.assistant-msg__undo:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }
+
+.assistant-panel__status {
+  font-family: var(--font-readout, ui-monospace, monospace);
+  font-size: 11px;
+  color: #22d3ee;
+}
+
+.assistant-panel__form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid rgba(51, 65, 85, 0.6);
+}
+.assistant-panel__input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+}
+.assistant-panel__input:focus-visible { outline: 2px solid #22d3ee; outline-offset: 0; }
+.assistant-panel__input::placeholder { color: #64748b; }
+
+.assistant-panel__send {
+  border: 0;
+  border-radius: 4px;
+  background: #06b6d4;
+  color: #020617;
+  padding: 0 12px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+.assistant-panel__send:disabled { background: #1e293b; color: #64748b; cursor: not-allowed; }
+.assistant-panel__send:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }
+
+.assistant-panel__unavailable {
+  padding: 16px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .assistant-panel { left: 16px; right: 16px; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-panel * { transition: none !important; animation: none !important; }
+}

@@ -18,6 +18,12 @@ import { Timeline } from "./components/Timeline";
 import { VariablePanel } from "./components/VariablePanel";
 import { ToolDock, type PointAnnotation } from "./components/ToolDock";
 import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
+import { AssistantPanel } from "./assistant/AssistantPanel";
+import {
+  applyLayerAction,
+  type AppSnapshot,
+  type AssistantAction,
+} from "./assistant/actions";
 import { MapView } from "./map/MapView";
 import { PointReadout } from "./map/PointReadout";
 import { MapTimeline } from "./map/MapTimeline";
@@ -96,6 +102,7 @@ export default function App() {
   const [depthWindow, setDepthWindow] = useState<[number, number]>([0, MAX_DEPTH]);
   const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [exaggeration, setExaggeration] = useState(0);
 
   const handleDepthIndexChange = useCallback((index: number) => {
@@ -127,6 +134,109 @@ export default function App() {
       else scene?.startEntry();
     }
   }, []);
+
+  // ----------------------------------------------------------- assistant
+  //
+  // The assistant reaches app state through exactly these three functions, and
+  // nowhere else. Layers go through `setLayerStack` — NOT dispatchMap — because
+  // the stack is the source of truth and an effect below syncs it into the map
+  // reducer; dispatching at the reducer would be overwritten on the next sync.
+
+  /** What the assistant is told is currently on screen. Actions are validated against it. */
+  const assistantState = useCallback(
+    () => ({
+      view,
+      mode,
+      layers: layerStack.keys.map((key) => ({
+        key,
+        visible: layerStack.visibility[key] ?? true,
+        opacity: layerStack.opacity[key] ?? 1,
+      })),
+      time: map.time ?? "",
+      depth_index: depthIndex,
+      depth_m: DEFAULT_DEPTH_LEVELS[depthIndex]?.depthMeters ?? 0,
+    }),
+    [view, mode, layerStack, map.time, depthIndex],
+  );
+
+  /** Apply a batch of actions, returning the state as it was immediately before. */
+  const applyAssistantActions = useCallback(
+    (actions: AssistantAction[]): AppSnapshot | undefined => {
+      if (actions.length === 0) return undefined;
+      const before: AppSnapshot = {
+        layerStack,
+        view,
+        time: map.time ?? "",
+        depthIndex,
+      };
+
+      for (const action of actions) {
+        switch (action.type) {
+          case "set_layers":
+            setLayerStack((stack) => applyLayerAction(stack, action));
+            break;
+          case "set_view":
+            handleView(action.view as AppView);
+            break;
+          case "set_time":
+            dispatchMap({ type: "time/set", time: action.time });
+            break;
+          case "set_depth": {
+            // Nearest real level, not an interpolation: the depth ruler is an
+            // instrument and only has the levels the grid actually has.
+            let nearest = 0;
+            let best = Infinity;
+            DEFAULT_DEPTH_LEVELS.forEach((level, i) => {
+              const d = Math.abs(level.depthMeters - action.depth_m);
+              if (d < best) {
+                best = d;
+                nearest = i;
+              }
+            });
+            handleDepthIndexChange(nearest);
+            break;
+          }
+          case "zoom_to_region": {
+            const [south, north] = action.lat_range;
+            const [west, east] = action.lon_range;
+            dispatchMap({
+              type: "area/begin",
+              corner: { lat: south, lon: west },
+            });
+            dispatchMap({ type: "area/update", corner: { lat: north, lon: east } });
+            dispatchMap({ type: "area/commit" });
+            break;
+          }
+          case "set_pin":
+            dispatchMap({ type: "pin/set", point: { lat: action.lat, lon: action.lon } });
+            break;
+          case "set_area":
+            dispatchMap({
+              type: "area/begin",
+              corner: { lat: action.lat_range[0], lon: action.lon_range[0] },
+            });
+            dispatchMap({
+              type: "area/update",
+              corner: { lat: action.lat_range[1], lon: action.lon_range[1] },
+            });
+            dispatchMap({ type: "area/commit" });
+            break;
+        }
+      }
+      return before;
+    },
+    [layerStack, view, map.time, depthIndex, handleView, handleDepthIndexChange],
+  );
+
+  const undoAssistant = useCallback(
+    (snapshot: AppSnapshot) => {
+      setLayerStack(snapshot.layerStack);
+      if (snapshot.view !== view) handleView(snapshot.view as AppView);
+      if (snapshot.time) dispatchMap({ type: "time/set", time: snapshot.time });
+      handleDepthIndexChange(snapshot.depthIndex);
+    },
+    [view, handleView, handleDepthIndexChange],
+  );
 
   const activeVariable = variables.find((v) => v.key === variableKey);
   const currentTime = scenario?.timesteps[timeIndex];
@@ -913,6 +1023,16 @@ export default function App() {
             points={toolPoints}
             selectedPointId={selected?.platform_id}
             onOpenGraphForPoint={handleOpenGraphForPoint}
+            assistantOpen={assistantOpen}
+            onToggleAssistant={() => setAssistantOpen((open) => !open)}
+          />
+
+          <AssistantPanel
+            open={assistantOpen}
+            onClose={() => setAssistantOpen(false)}
+            onActions={applyAssistantActions}
+            onUndo={undoAssistant}
+            getState={assistantState}
           />
         </div>
       </div>
