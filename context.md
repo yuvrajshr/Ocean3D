@@ -1155,6 +1155,22 @@ each — component, decision, one-line reason, date.)*
   not. A 429 is surfaced as "the free Gemini quota is used up for the moment" with the
   retry delay Gemini itself names, and nothing else in the app is affected._
 
+- _2026-09-06 — **The assistant answers beyond the ocean, and Google Search grounding is
+  wired but unusable on a free key.** It first refused "what is a barrel of oil worth"
+  with "I can only assist with oceanographic data" — untrue and the worst answer it can
+  give. Two causes: the prompt scoped it, and a current price is genuinely not in any
+  model's weights, so widening the prompt alone would have produced a stale figure stated
+  as current. Both fixed: the prompt now allows general knowledge, and `google_search` is
+  in the tool list with web sources rendering as clickable citations, marked `kind="web"`
+  and styled apart from measured ones — a page Google returned is not the ocean analysis.
+  **Measured: grounding is billed separately and is NOT in the free tier.** Every request
+  carrying the tool returns 429 "check your plan and billing details" while the identical
+  request without it succeeds, so adding it unconditionally would have broken every
+  question including ocean ones. The client strips search and retries on a quota error,
+  remembers the result for the process, and `GEMINI_SEARCH=off` skips the probe. Enable
+  billing and live answers begin with no code change; until then it says "I cannot check
+  a live value from here" and dates what it does remember._
+
 ---
 
 ## 11. Open questions for the team
@@ -1182,6 +1198,19 @@ each — component, decision, one-line reason, date.)*
   console's palette is adopted into `tokens.css` and the viewport follows it. Leaving both is
   the one option that is actively wrong, because a reader cannot learn what a colour means
   when the same role has two values. See §5.1.2.
+- **New, still open (assistant, one-line decision):** **enable billing on the Google Cloud
+  project, or accept that the assistant cannot look anything up.** Google Search grounding
+  is implemented and inert on a free key (§10, 2026-09-06). With billing it answers live
+  questions with real cited sources; without it, it honestly declines and dates what it
+  remembers. Nothing else changes either way. Free-tier generation is **20 requests per
+  minute per model**, and one answer costs two, so roughly ten questions a minute — fine
+  for a demo, tight if judges pass a laptop around.
+- **New, still open (assistant, unverified):** two paths have never been run end to end
+  because the per-minute quota ran out during testing: a **general-knowledge question**
+  ("who was Alan Turing"), and the **ocean measurement path since search grounding was
+  added**. The oil-price question did exercise the strip-and-retry fallback successfully,
+  so the mechanism works; what is unconfirmed is that the ocean path still cites correctly
+  through it. Run both first thing next session — they are two questions and one minute.
 - **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
   far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
   against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality

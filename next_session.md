@@ -9,32 +9,51 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ---
 
-## 0. Start here — state as of 2026-09-05
+## 0. Start here — state as of 2026-09-06
 
-**Everything is on `main` and pushed.** `origin/main` = `1309a55`. Working tree clean.
-The side-panel branch is merged and contained in main; the worktree used to review it is gone.
+**`main` is pushed and clean** (`origin/main` = `7700f6a`, the globe merge). Two further
+commits landed on `main` after it — the hint-box removal and the map longitude clamp — and
+**the AI assistant is on an unpushed branch, `feature/ai-assistant` (3 commits).**
 
-Suite green: **23/23 backend, 18/18 frontend**, typecheck clean, build clean, zero console
-errors in the browser.
+Suite green: **52/52 backend, 28/28 frontend**, typecheck clean, build clean, zero console
+errors.
 
 **Run it:** backend `uvicorn app.main:app --port 8000`, frontend `npm run dev` → :5173.
-Nothing else needs starting. `npm install` first if you are pulling for the first time —
-`lucide-react` is new.
+`npm install` and `pip install -r requirements.txt` first if pulling fresh — `lucide-react`
+and `google-genai` are new.
 
-### What to work on tomorrow, in the order I would do it
+**The assistant needs a key.** `GEMINI_API_KEY` in `backend/.env` (gitignored; see
+`.env.example`). Without one the dock button states the reason and everything else works.
+Free-tier generation is **20 requests/minute per model** and one answer costs two.
 
-1. **Look at it on a real GPU.** Still the oldest open item and still the single largest
-   unknown. Every visual decision in this project — water fog, the globe's shadow lift, the
-   submerged camera, the streamline density — was tuned against SwiftShader at 1-4 fps. The
-   map's CPU raster path is immune to this, but the 3D column is not.
+### What to work on next, in the order I would do it
 
-2. **Resolve the two-palette split (§11, §5.1.2).** The 3D viewport uses the six named
-   tokens; the merged floating console uses slate+cyan that `tokens.css` does not define, and
-   two of those colours duplicate roles the tokens already fill. Pick one direction and make
-   it true everywhere. This is the biggest *design* debt and it is newly created, so it is
-   fresh in everyone's head.
+0. **Finish two assistant checks — one minute, do it first.** Ask it "who was Alan Turing"
+   (a general-knowledge question) and "what is the sea surface temperature at 15 N, 88 E"
+   (an ocean one, which must still render a citation). Both are unverified only because the
+   per-minute quota ran out mid-testing; everything else in the feature was confirmed live.
 
-3. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
+1. **Decide on Google Search billing.** Grounding is wired and inert on a free key
+   (`context.md` §10, 2026-09-06). Enable billing on the Google Cloud project and the
+   assistant answers live questions with cited sources; leave it and it declines honestly.
+   One decision, no code either way.
+
+2. **Merge or PR `feature/ai-assistant`.** It touches `App.tsx`, `app.css`, `ToolDock.tsx`
+   and `VariablePanel.tsx` — four of the five files `CONTRIBUTING.md` names as real
+   collision points. The longer it sits unmerged the worse that gets, so land it before
+   anyone else starts frontend work.
+
+3. **Look at it on a real GPU.** Still the oldest open item and still the single largest
+   unknown. Every visual decision — water fog, the globe's shadow lift, the submerged
+   camera, streamline density — was tuned against SwiftShader at 1-4 fps. The map's CPU
+   raster path is immune; the 3D column is not.
+
+4. **Resolve the two-palette split (§11, §5.1.2).** The 3D viewport uses the six named
+   tokens; the floating console uses slate+cyan that `tokens.css` does not define, and two
+   of those colours duplicate roles the tokens already fill. The assistant panel followed
+   the console, so the inconsistency is now larger, not smaller. Biggest design debt.
+
+5. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
    stride, so zooming in shows ~0.4° cells under a 50 m coastline. `derive_stride` already
    takes a bbox; the work is refetching on zoom-settle without giving up "pan never
    refetches". Most visible quality win available.
@@ -160,6 +179,64 @@ LayerStack, MapDepthRuler, MapTimeline, PointReadout, map.test.ts),
    trip after touching view switching**, not just one hop.
 8. The point block is expensive in its TIME extent, not its depth extent: 40 levels × 31 days
    is 5–9 s cold, 40 × 60 was ~50 s. Keep the window near a month.
+
+## 1c. The AI assistant (added 2026-09-06, branch `feature/ai-assistant`)
+
+A Gemini-backed assistant, first icon in the right dock ("Ask"), opening a 420 px floating
+panel. It answers questions about the water from real data, answers general questions from
+its own knowledge, and **drives the app** — "add the chlorophyll layer and hide temperature"
+applies as two state changes with one-click undo.
+
+```
+backend/app/assistant/   gemini_client.py (the only place that talks to Gemini)
+                         tools.py (declarations + action validation)
+                         reads.py (read tools, each returning provenance)
+                         prompt.py · store.py (SQLite behind a protocol)
+backend/app/routers/assistant.py    SSE: status → answer → done
+frontend/src/assistant/  AssistantPanel.tsx · useAssistant.ts · actions.ts
+```
+
+**How grounding is enforced, and why it is not just prompt wording.** Read tools return
+values *with* provenance; the panel builds its citation line from the calls that actually
+ran, never from the prose. An answer that fetched nothing has nothing to cite and shows
+"General knowledge — not from your data". Web sources (when search is enabled) are marked
+`kind="web"` and styled apart, because a page Google returned is not the ocean analysis.
+
+**The tool loop is split.** Read tools run on the backend. Action tools cannot — they mutate
+React state — so they are validated server-side against a state snapshot the client sends
+with every message, then returned for the client to apply. That is what lets the model be
+told the truth ("that would need more than 3 layers") instead of assuming success.
+
+### Traps, in the same spirit as §6
+
+1. **Writing a layer from outside has TWO wrong seams and both fail silently.**
+   `dispatchMap({type:"layer/add"})` is overwritten by the `layers/sync` effect. And
+   `setLayerStack` alone changes nothing on screen: **`VariablePanel` owns the stack in its
+   own `useState`** and only mirrors it up, so `App.tsx`'s `layerStack` is downstream, not
+   the source. The working seam sets the mirror *and* hands the panel a stack via the
+   `externalStack` prop, whose **nonce** marks a fresh instruction — a nonce rather than
+   value equality, so undoing back to a stack you were already in still applies. Both
+   failures look identical from outside: the assistant cheerfully reports a change that
+   did not happen. This cost a full debugging cycle; do not rediscover it.
+
+2. **Free-tier quota is per model, and the newest model is the exhausted one.**
+   `gemini-3.8-flash` returned 429 (20/min) while `gemini-3.5-flash` answered the identical
+   request immediately. Default is 3.5-flash; `GEMINI_MODEL` overrides.
+
+3. **Every tool-calling round is one request.** Two rounds is the floor (one call, one
+   summary). The screen state and the variable catalogue are inlined into the system prompt
+   precisely so the model does not spend a round asking for them — that change took a layer
+   command from three rounds to two. Adding a chatty tool costs quota on every question.
+
+4. **Google Search grounding is not in the free tier.** Every request carrying the tool
+   429s with "check your plan and billing details"; the identical request without it
+   succeeds. The client strips it and retries, then remembers — so a missing grounding
+   quota degrades one feature instead of taking down every question.
+
+5. **The Gemini API is not the one you remember.** It is
+   `client.interactions.create(...)` → `Interaction` with `steps`/`output_text`, a
+   `function_call` step answered by a `function_result` entry. Not `generate_content`.
+   Verified against `google-genai` 2.22 and the live docs; do not "fix" it back.
 
 ## 2. Running it
 
@@ -454,16 +531,24 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 
 ## 10. Suggested next steps
 
-1. **Look at it on a real GPU** and decide whether the visual work is done. Still the one
+See §0 for the ordered list — this is the longer tail.
+
+1. **Finish the two assistant checks** (§0 item 0) and **decide Google Search billing**
+   (§0 item 1). Both are minutes, and the second unlocks live answers for the demo.
+2. **Land `feature/ai-assistant`** before anyone else touches the frontend — it sits on
+   four of the five known collision files.
+3. **Look at it on a real GPU** and decide whether the visual work is done. Still the one
    thing no session has been able to do. The globe especially — it was tuned against a
    software renderer at 2–4 fps.
-2. Decide on committing — ~100 files staged, no commits yet.
-3. Decide the basemap month: October (seasonally correct for the demo) or December (matches
+4. Decide the basemap month: October (seasonally correct for the demo) or December (matches
    the supplied reference frames exactly). One line in `backend/app/config.py`; both months
    are already committed.
-4. Confirm the current-speed units with INCOIS.
-5. If pitching soon: fill in `context.md` §9, and rehearse the Phailin narrative — open on the
+5. Confirm the current-speed units with INCOIS.
+6. If pitching soon: fill in `context.md` §9, and rehearse the Phailin narrative — open on the
    globe, dive, select `2901335` for the cold wake, then `2901327` for the −1.21 °C residual.
-   The globe toggle now gives a way back out for a second pass at the story.
-6. If building further: current direction as streamlines (see §8), then OGC endpoints, then
-   Docker.
+   The globe toggle now gives a way back out for a second pass at the story. **The assistant
+   is now a strong demo beat**: ask it to add a layer on stage, then ask it for a value and
+   show the citation line — it makes the provenance argument visible in one gesture.
+7. If building further: current direction as streamlines (see §8), then OGC endpoints, then
+   Docker. Assistant follow-ups: token-streaming the prose (only status streams today), and
+   conversation history in the panel (the store and endpoints exist; nothing reads them yet).
