@@ -1133,11 +1133,27 @@ each — component, decision, one-line reason, date.)*
   the same shape as `DataSource` — so a later swap is a class, not a rewrite. The
   `analysis_cache` table is also the free-tier mitigation: a repeated question skips both
   the upstream and the model._
-- _2026-09-06 — **The assistant writes layers through `setLayerStack`, never the map
-  reducer.** `layerStack` in `App.tsx` is the source of truth; an effect syncs it into the
-  reducer with `layers/sync`, which derives `map.layers`. Dispatching `layer/add` directly
-  appears to work and is silently overwritten on the next sync. Recorded because it is
-  invisible until it bites, which is what `next_session.md` §6 is for._
+- _2026-09-06 — **Writing a layer from outside has TWO wrong seams, and both fail
+  silently.** Found by building the assistant, and corrected once during the build.
+  (a) `dispatchMap({type:"layer/add"})` is overwritten by the `layers/sync` effect, which
+  derives `map.layers` from the stack. (b) `setLayerStack` alone changes nothing on screen:
+  **`VariablePanel` owns the stack in its own `useState`** and only mirrors it up, so
+  `App.tsx`'s `layerStack` is downstream, not the source. The working seam is to set the
+  mirror AND hand the panel a stack through a new `externalStack` prop, whose nonce marks
+  it a fresh instruction — a nonce rather than value equality, so undoing back to a stack
+  you were already in still applies. Lifting the state out of `VariablePanel` would be the
+  cleaner fix and is a much larger change to a file several people touch. Both failure
+  modes look identical from outside: the assistant cheerfully reports a change that did not
+  happen, which is the worst shape of bug this feature can have._
+- _2026-09-06 — **Gemini's free-tier quota is per model, and the newest model is the
+  exhausted one.** Measured on a real key: `gemini-3.8-flash` returned 429 (limit 20/min,
+  ~55 s to reset) while `gemini-3.5-flash` answered immediately with the same request.
+  Default moved to 3.5-flash; `GEMINI_MODEL` overrides it. Also measured: inlining the
+  screen state and the variable catalogue into the system prompt cut a layer command from
+  three rounds to two, and two is the floor for a tool loop (one call, one summary). Each
+  round is one request, so on a per-minute quota that is the difference between working and
+  not. A 429 is surfaced as "the free Gemini quota is used up for the moment" with the
+  retry delay Gemini itself names, and nothing else in the app is affected._
 
 ---
 

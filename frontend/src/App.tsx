@@ -103,6 +103,16 @@ export default function App() {
   const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  // A stack the assistant has pushed. VariablePanel owns the layer stack during
+  // normal use and only mirrors it up to `layerStack`, so writing that mirror
+  // changes nothing on screen — the panel has to be handed the new stack, and
+  // the nonce is what tells it this is a fresh instruction.
+  const [assistantStack, setAssistantStack] = useState<{
+    keys: string[];
+    visibility: Record<string, boolean>;
+    opacity: Record<string, number>;
+    nonce: number;
+  } | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
 
   const handleDepthIndexChange = useCallback((index: number) => {
@@ -138,9 +148,20 @@ export default function App() {
   // ----------------------------------------------------------- assistant
   //
   // The assistant reaches app state through exactly these three functions, and
-  // nowhere else. Layers go through `setLayerStack` — NOT dispatchMap — because
-  // the stack is the source of truth and an effect below syncs it into the map
-  // reducer; dispatching at the reducer would be overwritten on the next sync.
+  // nowhere else.
+  //
+  // Layers are the awkward one, and there are TWO wrong ways to write them:
+  //
+  //   1. `dispatchMap({type: "layer/add"})` is overwritten by the `layers/sync`
+  //      effect below, which derives map.layers from the stack.
+  //   2. `setLayerStack` alone changes nothing on screen. VariablePanel owns the
+  //      stack in its own useState and only mirrors it up to `layerStack`; the
+  //      mirror is downstream, not the source.
+  //
+  // So a layer change sets the mirror AND hands the panel the new stack through
+  // `externalStack`, whose nonce is what marks it a fresh instruction. Both
+  // failures look like the assistant cheerfully reporting a change that did not
+  // happen, which is the worst shape of bug this feature can have.
 
   /** What the assistant is told is currently on screen. Actions are validated against it. */
   const assistantState = useCallback(
@@ -172,9 +193,15 @@ export default function App() {
 
       for (const action of actions) {
         switch (action.type) {
-          case "set_layers":
-            setLayerStack((stack) => applyLayerAction(stack, action));
+          case "set_layers": {
+            const nextStack = applyLayerAction(layerStack, action);
+            setLayerStack(nextStack);
+            setAssistantStack((prev) => ({
+              ...nextStack,
+              nonce: (prev?.nonce ?? 0) + 1,
+            }));
             break;
+          }
           case "set_view":
             handleView(action.view as AppView);
             break;
@@ -231,6 +258,10 @@ export default function App() {
   const undoAssistant = useCallback(
     (snapshot: AppSnapshot) => {
       setLayerStack(snapshot.layerStack);
+      setAssistantStack((prev) => ({
+        ...snapshot.layerStack,
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
       if (snapshot.view !== view) handleView(snapshot.view as AppView);
       if (snapshot.time) dispatchMap({ type: "time/set", time: snapshot.time });
       handleDepthIndexChange(snapshot.depthIndex);
@@ -860,6 +891,7 @@ export default function App() {
                     : undefined
                   : undefined
               }
+              externalStack={assistantStack}
               onStackChange={setLayerStack}
               onOpacityChange={handleVolumeOpacityChange}
               onVisibilityChange={handleVolumeVisibilityChange}

@@ -89,6 +89,22 @@ export interface VariablePanelProps {
    *  upstream, so one shared label credits the wrong server on every card but
    *  one. */
   sourceLabelByKey?: Record<string, string | undefined>;
+  /**
+   * A stack pushed in from outside — currently only the assistant.
+   *
+   * This panel owns the layer stack during normal use and mirrors it upward via
+   * `onStackChange`, so a parent cannot simply hold the state instead. Rather
+   * than lift ownership out (a large change to a file several people touch),
+   * this applies a stack when `nonce` changes and is otherwise inert. The nonce
+   * rather than value equality is deliberate: re-applying the same stack after
+   * an undo has to count as a new instruction.
+   */
+  externalStack?: {
+    keys: string[];
+    visibility: Record<string, boolean>;
+    opacity: Record<string, number>;
+    nonce: number;
+  } | null;
   onStackChange?: (stack: {
     keys: string[];
     visibility: Record<string, boolean>;
@@ -132,6 +148,7 @@ export function VariablePanel({
   onVisibilityChange,
   sourceLabel,
   sourceLabelByKey,
+  externalStack,
   onStackChange,
 }: VariablePanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -155,6 +172,23 @@ export function VariablePanel({
       opacity: layerOpacity,
     });
   }, [activeLayerKeys, layerVisibility, layerOpacity, onStackChange]);
+
+  // Adopt a stack pushed in from outside (the assistant). Keyed on the nonce
+  // alone so that repeating an instruction, or undoing back to a stack we were
+  // already in, still applies.
+  const externalNonce = externalStack?.nonce ?? -1;
+  useEffect(() => {
+    if (!externalStack || externalNonce < 0) return;
+    setActiveLayerKeys(externalStack.keys);
+    setLayerVisibility(externalStack.visibility);
+    setLayerOpacity(externalStack.opacity);
+    // The panel drives the rest of the app off the selected key, so the topmost
+    // visible layer has to become the selection or the viewport keeps drawing
+    // the layer the reader just replaced.
+    const top = externalStack.keys.find((k) => externalStack.visibility[k] !== false);
+    if (top && top !== selected) onSelect(top);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalNonce]);
 
   const prevSelectedRef = useRef(selected);
   const dropdownRef = useRef<HTMLDivElement>(null);

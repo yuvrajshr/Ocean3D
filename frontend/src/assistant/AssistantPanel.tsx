@@ -155,10 +155,15 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
               >
                 <div className="assistant-msg__body">{m.text}</div>
 
+                {/* The marker belongs on an unsourced *claim*, not on a report
+                    of an action. "Added chlorophyll and hid temperature" states
+                    nothing about the ocean, so labelling it general knowledge
+                    would be noise — and worse, it would train the reader to
+                    ignore the marker in the one place it matters. */}
                 {m.role === "assistant" && !m.failed ? (
                   m.citations && m.citations.length > 0 ? (
                     <CitationLine citations={m.citations} />
-                  ) : (
+                  ) : m.snapshot ? null : (
                     <span className="assistant-msg__ungrounded">
                       General knowledge — not from your data
                     </span>

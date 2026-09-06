@@ -17,6 +17,8 @@ wrong in the same way a rounded drop-shadow would be.
 
 from __future__ import annotations
 
+from typing import Any
+
 SYSTEM_PROMPT = """
 You are the ocean assistant inside INCOIS's 3D ocean data visualization
 platform. You help two kinds of reader: a forecaster working a hazard event
@@ -67,23 +69,62 @@ is not available, say which are.
 """.strip()
 
 
-def build_system_prompt(*, mode: str = "ops") -> str:
-    """The prompt, with one line of audience context appended.
+def build_system_prompt(
+    *,
+    mode: str = "ops",
+    state: Any | None = None,
+    catalogue: list[str] | None = None,
+) -> str:
+    """The prompt, plus audience and the live screen state.
 
-    Kept as an append rather than a rewrite so the long prefix above stays
-    byte-identical between turns — the same prefix-stability discipline the
-    rest of the app applies to caching.
+    **The state and catalogue are inlined deliberately, and it is a quota
+    decision, not a stylistic one.** Gemini's free tier allows 5 requests per
+    minute, and this loop spends one request per round. Measured before this
+    change: "add chlorophyll and hide temperature" cost three rounds, because
+    the model first called `get_screen_state`, then `search_variables`, then
+    acted — most of a minute's quota for one sentence. Both of those answers are
+    small, known here, and change on every turn anyway, so putting them in the
+    prompt collapses that to a single round.
     """
+    parts = [SYSTEM_PROMPT]
+
     if mode == "explore":
-        return (
-            SYSTEM_PROMPT
-            + "\n\nThis reader is in Explore mode: likely a student or a curious "
-            "member of the public. Define a term the first time you use it, and "
-            "prefer one clear sentence over a precise but dense one. The grounding "
-            "rule does not relax."
+        parts.append(
+            "This reader is in Explore mode: likely a student or a curious member "
+            "of the public. Define a term the first time you use it, and prefer one "
+            "clear sentence over a precise but dense one. The grounding rule does "
+            "not relax."
         )
-    return (
-        SYSTEM_PROMPT
-        + "\n\nThis reader is in Ops mode: an INCOIS forecaster. Assume the "
-        "vocabulary. Lead with the number and the date."
-    )
+    else:
+        parts.append(
+            "This reader is in Ops mode: an INCOIS forecaster. Assume the "
+            "vocabulary. Lead with the number and the date."
+        )
+
+    if state is not None:
+        layers = getattr(state, "layers", []) or []
+        shown = (
+            ", ".join(
+                f"{l.get('key')}"
+                f"{'' if l.get('visible', True) else ' (hidden)'}"
+                for l in layers
+            )
+            or "none"
+        )
+        parts.append(
+            "## What is on screen right now\n"
+            f"View: {getattr(state, 'view', '?')}. "
+            f"Date: {getattr(state, 'time', '?')}. "
+            f"Depth: {getattr(state, 'depth_m', 0)} m.\n"
+            f"Layers, topmost first: {shown}.\n"
+            "This is current. Do not call a tool to ask what is on screen."
+        )
+
+    if catalogue:
+        parts.append(
+            "## Variables that can be drawn\n"
+            + ", ".join(sorted(catalogue))
+            + "\nThese are the only valid layer keys. Do not call a tool to list them."
+        )
+
+    return "\n\n".join(parts)

@@ -21,6 +21,8 @@ when chlorophyll was actually addable.
 from __future__ import annotations
 
 import json
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -75,6 +77,44 @@ def _client():
     from google import genai  # imported lazily so a missing key never costs an import
 
     return genai.Client(api_key=GEMINI_API_KEY)
+
+
+def _retry_delay(message: str) -> float | None:
+    """The delay Gemini itself asks for on a 429, if it named one.
+
+    It says "Please retry in 30.6s" in the error body, which is better
+    information than any backoff curve we could invent.
+    """
+    match = re.search(r"retry in ([\d.]+)s", message)
+    return float(match.group(1)) if match else None
+
+
+def _create_with_retry(client: Any, *, on_status: Callable[[str], None] | None, **kwargs: Any):
+    """One request, retried once if the free tier's per-minute limit is hit.
+
+    Measured: the free tier allows 5 requests per minute for this model, and a
+    single answer can spend several. One retry is worth it because the wait is
+    usually ~30 s and the alternative is losing the reader's question; a second
+    would just make the panel look hung.
+    """
+    for attempt in range(2):
+        try:
+            return client.interactions.create(**kwargs)
+        except Exception as exc:
+            text = str(exc)
+            if "429" not in text and "RESOURCE_EXHAUSTED" not in text.upper():
+                raise
+            delay = _retry_delay(text)
+            if attempt == 1 or delay is None or delay > 45:
+                raise AssistantUnavailable(
+                    "The free Gemini quota is used up for the moment "
+                    f"({'retry in about ' + str(int(delay)) + ' s' if delay else 'try again shortly'}). "
+                    "Nothing else in the app is affected."
+                ) from None
+            if on_status is not None:
+                on_status(f"Rate limited — waiting {int(delay)} s before retrying…")
+            time.sleep(delay + 1)
+    raise AssistantUnavailable("The assistant could not reach Gemini.")
 
 
 def _cache_key(name: str, args: dict[str, Any]) -> str:
@@ -141,14 +181,17 @@ def run_turn(
     """
     client = _client()
     result = TurnResult()
+    system = build_system_prompt(mode=mode, state=state, catalogue=catalogue)
 
     for _ in range(ASSISTANT_MAX_STEPS):
-        interaction = client.interactions.create(
+        interaction = _create_with_retry(
+            client,
             model=GEMINI_MODEL,
             store=False,
             input=history,
             tools=DECLARATIONS,
-            system_instruction=build_system_prompt(mode=mode),
+            system_instruction=system,
+            on_status=on_status,
         )
 
         steps = list(getattr(interaction, "steps", None) or [])

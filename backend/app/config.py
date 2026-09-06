@@ -67,7 +67,11 @@ COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 # the same degradation the Copernicus layers already have.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# gemini-3.5-flash, not the newer 3.8. Free-tier quota is per model, and the
+# newest flash is the one everyone is hammering: measured on this key, 3.8 was
+# rate-limited (20/min, ~55 s to reset) while 3.5 answered immediately. 3.5
+# handles this tool loop identically. Override with GEMINI_MODEL to move.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 # Conversations and the analysis cache. SQLite rather than a hosted database:
 # context.md 1 requires the app be deployable on INCOIS infrastructure, and 4

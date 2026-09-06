@@ -271,22 +271,13 @@ _STR = {"type": "string"}
 _NUM = {"type": "number"}
 _KEYS = {"type": "array", "items": {"type": "string"}}
 
+# `get_screen_state` and `search_variables` are deliberately NOT declared here.
+# Both are inlined into the system prompt instead (see prompt.py). The free tier
+# allows 5 requests per minute and this loop spends one per round; advertising
+# those two cost a measured three rounds for "add chlorophyll and hide
+# temperature" where one will do. The functions still exist in reads.py, so
+# re-declaring them is a one-line change if that ever stops being the right trade.
 DECLARATIONS: list[dict] = [
-    _fn(
-        "get_screen_state",
-        "What the user is currently looking at: which view, which layers are in the "
-        "stack and visible, the current date and depth. Call this before answering "
-        "anything about 'this', 'here', or the current display.",
-        {},
-        [],
-    ),
-    _fn(
-        "search_variables",
-        "List the ocean variables that can actually be drawn, with the upstream that "
-        "serves each. Call this before adding a layer if you are unsure of the exact key.",
-        {"query": {**_STR, "description": "Optional filter, e.g. 'chloro'."}},
-        [],
-    ),
     _fn(
         "query_point",
         "Fetch a real measured value at one location from the ocean analysis. Returns "
