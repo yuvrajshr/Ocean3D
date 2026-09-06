@@ -527,24 +527,6 @@
    rather than .viewport__hover's mono. Shown when a globe fly-to lands
    outside the analysis extent. Centred and wrapping, unlike .viewport__hover's
    fixed one-line anchor. */
-.viewport__hint {
-  position: absolute;
-  left: 50%;
-  top: 14%;
-  transform: translateX(-50%);
-  max-width: 34ch;
-  text-align: center;
-  pointer-events: none;
-  background: var(--surface-raised);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-ui);
-  font-size: var(--size-caption);
-  line-height: 1.4;
-  color: var(--text-primary);
-}
-
 .viewport__message {
   position: absolute;
   inset: 0;

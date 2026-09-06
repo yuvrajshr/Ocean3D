@@ -97,11 +97,6 @@ export default function App() {
   const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
-  // Shown briefly when a globe fly-to lands outside the analysis extent —
-  // there's real detail to find only inside it (the dive), so this is an
-  // honest "nothing measured here" rather than implying more coverage exists.
-  const [emptyRegionHint, setEmptyRegionHint] = useState(false);
-  const emptyRegionHintTimer = useRef<number | null>(null);
 
   const handleDepthIndexChange = useCallback((index: number) => {
     setDepthIndex(index);
@@ -147,13 +142,6 @@ export default function App() {
     scene.onEntryComplete = () => setEntryDone(true);
     // The scene can change view on its own — clicking the region on the globe dives in.
     scene.onViewChange = setView;
-    scene.onEmptyRegionClick = () => {
-      setEmptyRegionHint(true);
-      // Reset rather than stack, so repeated outside-box clicks don't cause
-      // the hint to flicker off mid-read from an earlier timer firing.
-      if (emptyRegionHintTimer.current !== null) window.clearTimeout(emptyRegionHintTimer.current);
-      emptyRegionHintTimer.current = window.setTimeout(() => setEmptyRegionHint(false), 2500);
-    };
 
     // Exposed so the screenshot harness can read a real frame rate. CLAUDE.md
     // treats a janky 3D scene as a bug, which means it has to be measured
@@ -167,7 +155,6 @@ export default function App() {
       observer.disconnect();
       scene.dispose();
       sceneRef.current = null;
-      if (emptyRegionHintTimer.current !== null) window.clearTimeout(emptyRegionHintTimer.current);
     };
   }, [webglReady]);
 
@@ -803,15 +790,13 @@ export default function App() {
                         )}–${Math.round(depthWindow[1])} m`}
                 </div>
 
-                {view === "globe" ? (
-                  <span className="viewport__hint">
-                    Drag to turn the Earth. Click the outlined region to dive in.
-                  </span>
-                ) : mode === "explore" ? (
-                  <span className="viewport__hint">
-                    Drag to turn the water column. Click a float to see what it measured.
-                  </span>
-                ) : (
+                {/* Drag/click instructions are deliberately absent: they never
+                    dismissed, so they sat over the viewport permanently to say
+                    something the first drag teaches anyway. What stays is the
+                    readout below, which is not a hint — context.md §10 commits
+                    to stating the exaggeration, because seafloor height is
+                    indicative and nothing should read a depth off it. */}
+                {view !== "globe" && mode !== "explore" ? (
                   <span className="viewport__hint">
                     {[
                       exaggeration > 0
@@ -822,7 +807,7 @@ export default function App() {
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                )}
+                ) : null}
 
                 {view === "globe" ? (
                   <p className="viewport__credit">
@@ -850,12 +835,6 @@ export default function App() {
                 <div className="viewport__hover" style={{ left: "50%", top: "12%" }}>
                   {hovered.platformId} · {Math.round(hovered.maxDepth)} m
                 </div>
-              ) : null}
-
-              {emptyRegionHint ? (
-                <p className="viewport__hint">
-                  No measurement here — the analysis covers the Bay of Bengal box.
-                </p>
               ) : null}
 
               {bootError ? (
