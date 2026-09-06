@@ -39,12 +39,21 @@ describe("projection", () => {
   });
 
   it("finds the nearest copy of a longitude across the antimeridian", () => {
-    const t = new MapTransform({ lonCentre: 179, latCentre: 0, zoom: 10 }, SIZE);
+    // Zoomed right in, because `clampViewport` no longer lets the centre sit at
+    // 179 from far out: it stops at 180 - halfLon. At this zoom halfLon is 1
+    // degree, so 179 survives the clamp and the case stays reachable.
+    //
+    // The method is still needed even though the VIEWPORT can no longer straddle
+    // the date line: a streamline advecting past 180 re-enters at -180, and
+    // without this it would draw one segment straight across the whole frame.
+    const ZOOM = 600;
+    const t = new MapTransform({ lonCentre: 179, latCentre: 0, zoom: ZOOM }, SIZE);
+    expect(t.viewport.lonCentre).toBeCloseTo(179, 9);
     // 179E and 179W are two degrees apart, not 358.
     const near = t.lonToXNearest(-179);
-    expect(Math.abs(near - SIZE.width / 2)).toBeCloseTo(2 * 10, 6);
+    expect(Math.abs(near - SIZE.width / 2)).toBeCloseTo(2 * ZOOM, 6);
     // The naive form is the one that would push it off screen.
-    expect(Math.abs(t.lonToX(-179) - SIZE.width / 2)).toBeCloseTo(358 * 10, 6);
+    expect(Math.abs(t.lonToX(-179) - SIZE.width / 2)).toBeCloseTo(358 * ZOOM, 6);
   });
 
   it("wraps longitude into [-180, 180)", () => {
@@ -52,6 +61,28 @@ describe("projection", () => {
     expect(wrapLon(-190)).toBeCloseTo(170, 9);
     expect(wrapLon(540)).toBeCloseTo(180 - 360, 9);
     expect(wrapLon(0)).toBe(0);
+  });
+
+  it("covers the frame at minimum zoom, leaving no empty band on any aspect", () => {
+    // `min` used to fit the world INSIDE the canvas, which was only safe while
+    // longitude wrapped and the repeats filled the leftover width.
+    for (const size of [SIZE, { width: 1918, height: 860 }, { width: 900, height: 1200 }]) {
+      const z = worldFitZoom(size);
+      expect(360 * z).toBeGreaterThanOrEqual(size.width - 1e-9);
+      expect(180 * z).toBeGreaterThanOrEqual(size.height - 1e-9);
+    }
+  });
+
+  it("clamps longitude to the world instead of scrolling past the date line", () => {
+    const min = worldFitZoom(SIZE);
+    for (const zoom of [min, min * 2, min * 8]) {
+      for (const lonCentre of [-900, -181, 0, 181, 900]) {
+        const t = new MapTransform(clampViewport({ lonCentre, latCentre: 0, zoom }, SIZE), SIZE);
+        const [west, east] = t.bounds().lonRange;
+        expect(west).toBeGreaterThanOrEqual(-180 - 1e-9);
+        expect(east).toBeLessThanOrEqual(180 + 1e-9);
+      }
+    }
   });
 
   it("never zooms out past a world fit, and keeps the poles at the frame edge", () => {

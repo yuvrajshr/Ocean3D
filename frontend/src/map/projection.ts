@@ -36,11 +36,16 @@ export function wrapLon(lon: number): number {
   return x - 180;
 }
 
-/** The zoom at which the whole world just fits the canvas width. */
+/** The zoom at which the world just COVERS the canvas — never smaller than it.
+ *
+ * `max`, not `min`. Fitting the world *inside* the frame was only safe while
+ * longitude wrapped: on a canvas wider than 2:1 the world is narrower than the
+ * frame at that zoom, and the repeated copies filled what was left over. Now
+ * that longitude is clamped (see `clampViewport`) nothing fills it, so fitting
+ * would leave real empty bands either side. Covering crops the far polar caps
+ * instead on such a canvas, and vertical panning still reaches them. */
 export function worldFitZoom(size: Size): number {
-  // Height is the binding constraint on a wide canvas: 180 degrees of latitude
-  // must fit as well as 360 of longitude.
-  return Math.min(size.width / WORLD_LON, size.height / (2 * LAT_LIMIT));
+  return Math.max(size.width / WORLD_LON, size.height / (2 * LAT_LIMIT));
 }
 
 export function clampViewport(v: Viewport, size: Size): Viewport {
@@ -53,7 +58,22 @@ export function clampViewport(v: Viewport, size: Size): Viewport {
   const latCentre =
     halfLat >= LAT_LIMIT ? 0 : Math.max(-LAT_LIMIT + halfLat, Math.min(LAT_LIMIT - halfLat, v.latCentre));
 
-  return { lonCentre: wrapLon(v.lonCentre), latCentre, zoom };
+  // Longitude is clamped exactly like latitude, NOT wrapped. Wrapping let the
+  // map slide sideways for ever, redrawing the same ocean past the date line;
+  // at world zoom that moved the seam around the frame and bought nothing,
+  // because every degree was already on screen.
+  //
+  // The cost is stated rather than hidden: the antimeridian can no longer be
+  // brought to the centre, so the Pacific stays split between the left and
+  // right edges. That is the honest trade for an Earth that ends where it
+  // really ends.
+  const halfLon = size.width / 2 / zoom;
+  const lonCentre =
+    halfLon >= WORLD_LON / 2
+      ? 0
+      : Math.max(-WORLD_LON / 2 + halfLon, Math.min(WORLD_LON / 2 - halfLon, v.lonCentre));
+
+  return { lonCentre, latCentre, zoom };
 }
 
 export class MapTransform {
