@@ -32,6 +32,7 @@ from ..config import (
     GEMINI_API_KEY,
     GEMINI_AVAILABLE,
     GEMINI_MODEL,
+    GEMINI_SEARCH,
 )
 from .prompt import build_system_prompt
 from .reads import READ_TOOLS, ReadError
@@ -47,20 +48,30 @@ class TurnResult:
     text: str = ""
     actions: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    web_sources: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def citations(self) -> list[dict[str, Any]]:
-        """Provenance for the answer, built from the reads that actually ran.
+        """Provenance for the answer, built from what actually ran.
 
         This is the whole grounding mechanism: the panel cites from here, not
-        from the prose, so a number the model produced without fetching has
-        nothing to show and is marked as general knowledge instead.
+        from the prose, so a claim the model produced without fetching anything
+        has nothing to show and is marked as general knowledge instead.
+
+        Two kinds, and the distinction is the point. `kind="data"` is a
+        measurement from one of this project's own upstreams. `kind="web"` is a
+        page Google Search returned. Both are sourced, neither is a guess — but
+        a reader must never mistake a web page for the ocean analysis, so they
+        are labelled differently and rendered differently.
         """
-        out = []
+        out: list[dict[str, Any]] = []
         for call in self.tool_calls:
-            prov = (call.get("result") or {}).get("provenance") if isinstance(call.get("result"), dict) else None
+            result = call.get("result")
+            prov = result.get("provenance") if isinstance(result, dict) else None
             if prov:
-                out.append({"tool": call["name"], **prov})
+                out.append({"kind": "data", "tool": call["name"], **prov})
+        for source in self.web_sources:
+            out.append({"kind": "web", **source})
         return out
 
 
@@ -89,21 +100,77 @@ def _retry_delay(message: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
-def _create_with_retry(client: Any, *, on_status: Callable[[str], None] | None, **kwargs: Any):
-    """One request, retried once if the free tier's per-minute limit is hit.
+# Whether Google Search grounding works on this key. Grounding is billed
+# separately from generation and is NOT part of the free tier — measured: with
+# `google_search` in `tools` every request 429s ("check your plan and billing
+# details") while the identical request without it succeeds. So we try it once,
+# and if it is refused we stop asking for the life of the process.
+#
+# Auto-detection matters more than the config flag: the failure is invisible
+# from the outside, and without the strip-and-retry a missing grounding quota
+# would take down *every* question, ocean ones included, for want of a feature
+# only some of them need. `GEMINI_SEARCH=off` just skips the one probe per
+# process on a key already known not to have it. Enable billing on the Google
+# Cloud project and live answers start working with no code change.
+_search_available: bool | None = {"on": True, "off": False}.get(GEMINI_SEARCH)
 
-    Measured: the free tier allows 5 requests per minute for this model, and a
-    single answer can spend several. One retry is worth it because the wait is
-    usually ~30 s and the alternative is losing the reader's question; a second
-    would just make the panel look hung.
+
+def _is_quota_error(text: str) -> bool:
+    return "429" in text or "RESOURCE_EXHAUSTED" in text.upper()
+
+
+def _create_with_retry(client: Any, *, on_status: Callable[[str], None] | None, **kwargs: Any):
+    """One request, degrading rather than failing where it can.
+
+    Two distinct quota problems are handled here and they are not the same:
+
+    * **Search grounding is not on the free tier.** Detected by retrying without
+      it; if that works, the key simply cannot search and we remember it.
+    * **Generation is rate limited per minute, per model.** Retried once when
+      Gemini names a delay short enough to be worth waiting for.
     """
+    global _search_available
+
+    tools = kwargs.get("tools") or []
+    wants_search = any(
+        isinstance(t, dict) and t.get("type") == "google_search" for t in tools
+    )
+    if wants_search and _search_available is False:
+        kwargs["tools"] = [t for t in tools if not (isinstance(t, dict) and t.get("type") == "google_search")]
+        wants_search = False
+
     for attempt in range(2):
         try:
-            return client.interactions.create(**kwargs)
+            response = client.interactions.create(**kwargs)
+            if wants_search:
+                _search_available = True
+            return response
         except Exception as exc:
             text = str(exc)
-            if "429" not in text and "RESOURCE_EXHAUSTED" not in text.upper():
+            if not _is_quota_error(text):
                 raise
+
+            # Try without search before blaming the quota: on a free key this is
+            # the difference between "cannot answer anything" and "cannot search".
+            if wants_search:
+                stripped = [
+                    t for t in kwargs.get("tools") or []
+                    if not (isinstance(t, dict) and t.get("type") == "google_search")
+                ]
+                try:
+                    response = client.interactions.create(**{**kwargs, "tools": stripped})
+                except Exception as inner:
+                    _search_available = None  # inconclusive; the quota is genuinely out
+                    # Read the delay from THIS failure, not the search one. The
+                    # search refusal carries no "retry in" hint, so using its text
+                    # threw away a perfectly good 35 s wait and told the reader to
+                    # "try again shortly" when the code could simply have waited.
+                    text = str(inner)
+                    wants_search = False
+                else:
+                    _search_available = False
+                    return response
+
             delay = _retry_delay(text)
             if attempt == 1 or delay is None or delay > 45:
                 raise AssistantUnavailable(
@@ -115,6 +182,11 @@ def _create_with_retry(client: Any, *, on_status: Callable[[str], None] | None, 
                 on_status(f"Rate limited — waiting {int(delay)} s before retrying…")
             time.sleep(delay + 1)
     raise AssistantUnavailable("The assistant could not reach Gemini.")
+
+
+def search_available() -> bool | None:
+    """True, False, or None if it has not been tried yet this process."""
+    return _search_available
 
 
 def _cache_key(name: str, args: dict[str, Any]) -> str:
@@ -189,7 +261,12 @@ def run_turn(
             model=GEMINI_MODEL,
             store=False,
             input=history,
-            tools=DECLARATIONS,
+            # Google Search sits alongside the ocean tools rather than replacing
+            # them. It is what lets the assistant answer a question this project
+            # has no data for — a shipping price, a news event — with a real
+            # source instead of a refusal or, worse, a confident guess. Gemini 3
+            # allows built-in and custom tools in the same request.
+            tools=[{"type": "google_search"}, *DECLARATIONS],
             system_instruction=system,
             on_status=on_status,
         )
@@ -197,6 +274,13 @@ def run_turn(
         steps = list(getattr(interaction, "steps", None) or [])
         for step in steps:
             history.append(step.model_dump() if hasattr(step, "model_dump") else step)
+
+        for source in _collect_web_sources(interaction):
+            if source["url"] not in {s["url"] for s in result.web_sources}:
+                result.web_sources.append(source)
+
+        if any(getattr(s, "type", None) == "google_search_call" for s in steps) and on_status:
+            on_status("Searching the web…")
 
         calls = [s for s in steps if getattr(s, "type", None) == "function_call"]
         if not calls:
@@ -232,6 +316,36 @@ def run_turn(
         "Try asking for one thing at a time."
     )
     return result
+
+
+def _collect_web_sources(interaction: Any) -> list[dict[str, Any]]:
+    """Pull the pages Google Search actually returned out of an interaction.
+
+    The API attaches `url_citation` annotations to the text it grounded. We read
+    them rather than trusting the prose, for the same reason the ocean citations
+    are built from tool calls: a source the reader can click is a claim they can
+    check, and anything else is just more text.
+
+    Written defensively — annotations appear on steps or on their content blocks
+    depending on the shape returned, and an unfamiliar variant should cost the
+    sources, not the answer.
+    """
+    found: dict[str, dict[str, Any]] = {}
+
+    def absorb(annotations: Any) -> None:
+        for ann in annotations or []:
+            if getattr(ann, "type", None) != "url_citation":
+                continue
+            url = getattr(ann, "url", None)
+            if not url:
+                continue
+            found.setdefault(url, {"url": url, "title": getattr(ann, "title", None) or url})
+
+    for step in getattr(interaction, "steps", None) or []:
+        absorb(getattr(step, "annotations", None))
+        for block in getattr(step, "content", None) or []:
+            absorb(getattr(block, "annotations", None))
+    return list(found.values())
 
 
 def _status_line(name: str, args: dict[str, Any]) -> str:

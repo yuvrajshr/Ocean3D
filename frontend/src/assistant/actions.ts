@@ -43,15 +43,27 @@ export type AssistantAction =
   | { type: "set_pin"; lat: number; lon: number }
   | { type: "set_area"; lat_range: [number, number]; lon_range: [number, number] };
 
-/** Provenance for one fetched value, built from the tool calls that actually ran. */
+/**
+ * Provenance for one sourced claim.
+ *
+ * `kind` is the distinction that matters. "data" is a measurement from one of
+ * this project's own upstreams — INCOIS, Copernicus, HYCOM, VIIRS. "web" is a
+ * page Google Search returned. Both are real sources and neither is a guess,
+ * but a reader must never mistake a web page for the ocean analysis, so the
+ * panel renders them differently.
+ */
 export interface Citation {
-  tool: string;
+  kind?: "data" | "web";
+  tool?: string;
   dataset?: string | null;
   label?: string | null;
   provider?: string | null;
   time?: string | null;
   depth_m?: number | null;
   units?: string | null;
+  /** Web only. */
+  url?: string | null;
+  title?: string | null;
 }
 
 /**

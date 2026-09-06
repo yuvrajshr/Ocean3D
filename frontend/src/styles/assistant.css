@@ -225,3 +225,18 @@
 @media (prefers-reduced-motion: reduce) {
   .assistant-panel * { transition: none !important; animation: none !important; }
 }
+
+/* A web source reads differently from a measured one on purpose. Both are real
+   sources — but a page Google returned is not the ocean analysis, and the
+   reader must be able to tell at a glance which they are looking at. */
+.assistant-cite__row--web {
+  border-left: 2px solid #334155;
+  padding-left: 6px;
+}
+.assistant-cite__link {
+  color: #67e8f9;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.assistant-cite__link:hover { text-decoration: underline; }
+.assistant-cite__link:focus-visible { outline: 2px solid #22d3ee; outline-offset: 1px; }

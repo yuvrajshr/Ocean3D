@@ -88,6 +88,21 @@ ASSISTANT_CACHE_TTL_SECONDS = 60 * 60 * 24
 # model can loop until the quota is gone.
 ASSISTANT_MAX_STEPS = 6
 
+# Google Search grounding, which lets the assistant answer live real-world
+# questions ("what is oil trading at?") with real sources instead of an honest
+# refusal.
+#
+# It is billed separately from generation and is NOT part of the free tier:
+# measured on a free key, every request carrying the `google_search` tool
+# returned 429 "check your plan and billing details", while the identical
+# request without it succeeded. Enable billing on the Google Cloud project and
+# it starts working with no code change.
+#
+# "auto" (the default) tries once per process and remembers the answer. Set to
+# "off" on a free key to skip that probe and save a request per restart, or
+# "on" to insist.
+GEMINI_SEARCH = os.environ.get("GEMINI_SEARCH", "auto").strip().lower()
+
 
 @dataclass(frozen=True)
 class VariableSpec:

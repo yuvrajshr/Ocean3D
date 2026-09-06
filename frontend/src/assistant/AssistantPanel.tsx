@@ -37,29 +37,44 @@ interface Props {
   getState: () => ScreenStatePayload;
 }
 
+const describe = (c: Citation) =>
+  c.kind === "web"
+    ? c.title ?? c.url ?? "web source"
+    : [c.label ?? c.dataset, c.provider, c.time, c.depth_m != null ? `${c.depth_m} m` : null, c.units]
+        .filter(Boolean)
+        .join(" · ");
+
 function CitationLine({ citations }: { citations: Citation[] }) {
   const first = citations[0];
   if (!first) return null;
-  const summary = [first.label ?? first.dataset, first.provider, first.time]
-    .filter(Boolean)
-    .join(" · ");
+  // A mixed answer names the measured source first: this is a data tool, and
+  // "Copernicus + 2 web sources" tells the reader more than the reverse would.
+  const dataCount = citations.filter((c) => c.kind !== "web").length;
+  const summary = describe(first);
   return (
     <details className="assistant-cite">
       <summary className="assistant-cite__summary">
         {citations.length === 1 ? summary : `${summary} + ${citations.length - 1} more`}
+        {dataCount === 0 ? " · web" : null}
       </summary>
       <ul className="assistant-cite__list">
         {citations.map((c, i) => (
-          <li key={i} className="assistant-cite__row">
-            {[
-              c.label ?? c.dataset,
-              c.provider,
-              c.time,
-              c.depth_m != null ? `${c.depth_m} m` : null,
-              c.units,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+          <li
+            key={i}
+            className={`assistant-cite__row${c.kind === "web" ? " assistant-cite__row--web" : ""}`}
+          >
+            {c.kind === "web" && c.url ? (
+              <a
+                className="assistant-cite__link"
+                href={c.url}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {describe(c)}
+              </a>
+            ) : (
+              describe(c)
+            )}
           </li>
         ))}
       </ul>
