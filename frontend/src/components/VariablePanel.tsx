@@ -8,7 +8,7 @@
  * - Layer visibility toggle (Eye/EyeOff), Opacity sliders, Metadata export, and Layer catalogue
  */
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -24,11 +24,9 @@ import {
   Trash2,
   UploadCloud,
   Check,
-  FlaskConical,
-  Clock,
 } from "lucide-react";
 import type { VariableInfo, FieldMeta } from "../api/client";
-import type { ColormapName } from "../viz/colormaps";
+import { sampleCss, type ColormapName } from "../viz/colormaps";
 import { DataCatalogueModal } from "./DataCatalogueModal";
 import "../styles/layers-panel.css";
 
@@ -97,7 +95,7 @@ export interface VariablePanelProps {
 }
 
 // Scientific Colormap RGB gradients for CSS linear-gradients
-const COLORMAP_GRADIENTS: Record<ColormapName, string> = {
+export const COLORMAP_GRADIENTS: Record<ColormapName, string> = {
   thermal: "linear-gradient(to right, rgb(3,35,51), rgb(23,51,122), rgb(85,59,137), rgb(129,79,143), rgb(170,100,132), rgb(208,127,113), rgb(233,165,92), rgb(243,209,89), rgb(232,250,91))",
   haline: "linear-gradient(to right, rgb(41,24,107), rgb(37,58,143), rgb(12,98,137), rgb(10,130,131), rgb(23,161,125), rgb(86,190,103), rgb(175,211,78), rgb(238,227,106), rgb(253,238,153))",
   speed: "linear-gradient(to right, rgb(255,252,224), rgb(214,232,160), rgb(150,206,124), rgb(79,174,114), rgb(27,138,107), rgb(25,98,87), rgb(20,52,58))",
@@ -120,6 +118,177 @@ function getVariableCode(key: string): string {
   }
 }
 
+interface LayerScaleSliderProps {
+  minVal: number;
+  maxVal: number;
+  units: string;
+  colormap: ColormapName;
+  gradient: string;
+}
+
+function LayerScaleSlider({ minVal, maxVal, units, colormap, gradient }: LayerScaleSliderProps) {
+  const [activeT, setActiveT] = useState<number | null>(null);
+  const [isSliding, setIsSliding] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  const calculateT = useCallback((clientX: number) => {
+    if (!barRef.current) return 0;
+    const rect = barRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    const rawT = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(1, rawT));
+  }, []);
+
+  const handlePointerEnter = (e: React.PointerEvent<HTMLDivElement>) => {
+    const t = calculateT(e.clientX);
+    setActiveT(t);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    setIsSliding(true);
+    const t = calculateT(e.clientX);
+    setActiveT(t);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const t = calculateT(e.clientX);
+    setActiveT(t);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    setIsSliding(false);
+  };
+
+  const handlePointerLeave = () => {
+    if (!isSliding) {
+      setActiveT(null);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveT((prev) => Math.max(0, (prev ?? 0.5) - 0.05));
+    } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveT((prev) => Math.min(1, (prev ?? 0.5) + 0.05));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setActiveT(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setActiveT(1);
+    }
+  };
+
+  const mid = Number(((minVal + maxVal) / 2).toFixed(1));
+
+  let activeValue: number | null = null;
+  let activeColor = "#38bdf8";
+  let activePercent = 50;
+
+  if (activeT !== null) {
+    activePercent = activeT * 100;
+    activeValue = minVal + activeT * (maxVal - minVal);
+    try {
+      activeColor = sampleCss(colormap, activeT);
+    } catch {
+      activeColor = "#38bdf8";
+    }
+  }
+
+  const formatVal = (v: number) => {
+    if (Math.abs(v) >= 100) return v.toFixed(0);
+    if (Math.abs(v) >= 10) return v.toFixed(1);
+    return v.toFixed(2);
+  };
+
+  let tooltipTransform = "translateX(-50%)";
+  if (activePercent < 15) {
+    tooltipTransform = "translateX(0%)";
+  } else if (activePercent > 85) {
+    tooltipTransform = "translateX(-100%)";
+  }
+
+  return (
+    <div className="layer-scale-wrap">
+      {/* Floating Readout Tooltip */}
+      <div className="layer-scale-tooltip-track">
+        {activeT !== null && activeValue !== null && (
+          <div
+            className="layer-scale-tooltip"
+            style={{
+              left: `${activePercent}%`,
+              transform: tooltipTransform,
+              borderColor: activeColor,
+              boxShadow: `0 6px 16px rgba(0, 0, 0, 0.8), 0 0 10px ${activeColor}40`,
+            }}
+          >
+            <span
+              className="layer-scale-tooltip-dot"
+              style={{ background: activeColor, boxShadow: `0 0 6px ${activeColor}` }}
+            />
+            <span className="layer-scale-tooltip-val">{formatVal(activeValue)}</span>
+            <span className="layer-scale-tooltip-unit">{units}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Interactive Scale Bar */}
+      <div
+        ref={barRef}
+        className={`layer-scale-bar ${isSliding ? "layer-scale-bar--sliding" : ""}`}
+        style={{ background: gradient }}
+        onPointerDown={handlePointerDown}
+        onPointerEnter={handlePointerEnter}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onKeyDown={handleKeyDown}
+        role="slider"
+        aria-label="Layer Color Scale Reading"
+        aria-valuemin={minVal}
+        aria-valuemax={maxVal}
+        aria-valuenow={activeValue ?? mid}
+        tabIndex={0}
+      >
+        {/* Tick notches on the bar */}
+        <div className="layer-scale-bar-tick" style={{ left: "25%" }} />
+        <div className="layer-scale-bar-tick layer-scale-bar-tick--50" style={{ left: "50%" }} />
+        <div className="layer-scale-bar-tick" style={{ left: "75%" }} />
+
+        {/* Scrubber Pin / Indicator */}
+        {activeT !== null && (
+          <div
+            className="layer-scale-scrubber"
+            style={{ left: `${activePercent}%` }}
+          >
+            <div
+              className="layer-scale-scrubber-pip"
+              style={{ background: activeColor, borderColor: "#ffffff" }}
+            />
+            <div className="layer-scale-scrubber-line" />
+          </div>
+        )}
+      </div>
+
+      {/* Ticks positioned with true mathematical alignment */}
+      <div className="layer-scale-ticks">
+        <span className="layer-scale-tick-min">{minVal}</span>
+        <span className="layer-scale-tick-mid">{mid}</span>
+        <span className="layer-scale-tick-max">{maxVal} {units}</span>
+      </div>
+    </div>
+  );
+}
+
 export function VariablePanel({
   variables,
   selected,
@@ -140,6 +309,35 @@ export function VariablePanel({
   const [isCatalogueOpen, setIsCatalogueOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+
+  // 2s Auto-close timer for opacity controls (closes if no changes made or left open for 2s)
+  const opacityAutoCloseTimerRef = useRef<number | null>(null);
+
+  const clearOpacityAutoCloseTimer = useCallback(() => {
+    if (opacityAutoCloseTimerRef.current !== null) {
+      window.clearTimeout(opacityAutoCloseTimerRef.current);
+      opacityAutoCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const resetOpacityAutoCloseTimer = useCallback(() => {
+    clearOpacityAutoCloseTimer();
+    opacityAutoCloseTimerRef.current = window.setTimeout(() => {
+      setActiveSettingsLayerId(null);
+      opacityAutoCloseTimerRef.current = null;
+    }, 2000);
+  }, [clearOpacityAutoCloseTimer]);
+
+  useEffect(() => {
+    if (activeSettingsLayerId) {
+      resetOpacityAutoCloseTimer();
+    } else {
+      clearOpacityAutoCloseTimer();
+    }
+    return () => {
+      clearOpacityAutoCloseTimer();
+    };
+  }, [activeSettingsLayerId, resetOpacityAutoCloseTimer, clearOpacityAutoCloseTimer]);
 
   // Active layer stack IDs
   const [activeLayerKeys, setActiveLayerKeys] = useState<string[]>(() => (selected ? [selected] : []));
@@ -339,6 +537,8 @@ export function VariablePanel({
     if (key === selected && onOpacityChange) {
       onOpacityChange(val);
     }
+    // Auto-close in 2s if no further changes are made
+    resetOpacityAutoCloseTimer();
   };
 
   // Map active layer keys into full layer objects
@@ -365,11 +565,11 @@ export function VariablePanel({
           opacity: layerOpacity[v.key] ?? 1,
           timestamp: currentTime
             ? new Date(currentTime).toLocaleDateString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                timeZone: "UTC",
-              })
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              timeZone: "UTC",
+            })
             : "Live Scenario",
           temporalResolution: sourceLabelByKey?.[k] ?? sourceLabel ?? "10-Daily Analysis",
           minVal: Number(minVal.toFixed(1)),
@@ -384,317 +584,301 @@ export function VariablePanel({
   return (
     <div
       id="ocean3d-layers-panel"
-      style={{ width: isCollapsed ? "auto" : "440px", maxWidth: "calc(100vw - 32px)" }}
+      className={`layers-panel-shell ${isCollapsed ? "layers-panel-shell--collapsed" : "layers-panel-shell--expanded"}`}
     >
-      {isCollapsed ? (
-        /* When collapsed: show ONLY the cyan expand panel button */
-        <button
-          type="button"
-          id="btn-expand-layers"
-          onClick={() => setIsCollapsed(false)}
-          className="layers-expand-btn"
-          title="Expand layers panel"
-          aria-label="Expand layers panel"
-        >
-          <ChevronRight className="w-5 h-5" style={{ width: 20, height: 20, strokeWidth: 2.5 }} />
-        </button>
-      ) : (
-        <div>
-          {/* Header bar */}
-          <div className="relative">
-            <div className="layers-header">
-              {/* Collapse button */}
-              <button
-                type="button"
-                id="btn-collapse-layers"
-                onClick={() => {
-                  setIsCollapsed(true);
-                  setActiveDropdown(null);
-                }}
-                className="layers-collapse-btn"
-                title="Collapse layers panel"
-                aria-label="Collapse layers panel"
-              >
-                <ChevronLeft className="w-5 h-5" style={{ width: 20, height: 20, strokeWidth: 2.5 }} />
-              </button>
+      {/* Collapsed Expand Button */}
+      <button
+        type="button"
+        id="btn-expand-layers"
+        onClick={() => setIsCollapsed(false)}
+        className={`layers-expand-btn ${isCollapsed ? "layers-expand-btn--visible" : "layers-expand-btn--hidden"}`}
+        title="Expand layers panel"
+        aria-label="Expand layers panel"
+      >
+        <ChevronRight className="w-5 h-5" style={{ width: 20, height: 20, strokeWidth: 2.5 }} />
+      </button>
 
-              {/* Add layer button */}
-              <button
-                type="button"
-                id="btn-open-catalogue-header"
-                onClick={() => setIsCatalogueOpen(true)}
-                className="layers-add-btn"
-              >
-                <Plus className="w-4 h-4" style={{ width: 16, height: 16, color: "#67e8f9", strokeWidth: 2.5 }} />
+      {/* Expanded Panel Body */}
+      <div className={`layers-expanded-wrapper ${isCollapsed ? "layers-expanded-wrapper--hidden" : "layers-expanded-wrapper--visible"}`}>
+        {/* Header bar */}
+        <div className="relative">
+          <div className="layers-header">
+            {/* Collapse button */}
+            <button
+              type="button"
+              id="btn-collapse-layers"
+              onClick={() => {
+                setIsCollapsed(true);
+                setActiveDropdown(null);
+              }}
+              className="layers-collapse-btn"
+              title="Collapse layers panel"
+              aria-label="Collapse layers panel"
+            >
+              <ChevronLeft className="w-4 h-4" style={{ width: 16, height: 16, strokeWidth: 2.2 }} />
+            </button>
+
+            {/* Add layer button */}
+            <button
+              type="button"
+              id="btn-open-catalogue-header"
+              onClick={() => setIsCatalogueOpen(true)}
+              className="layers-add-btn"
+              title="Browse ocean data catalogue"
+            >
+              <div className="layers-add-btn-main">
+                <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#38bdf8", strokeWidth: 2.5 }} />
                 <span>Add layer...</span>
-              </button>
+              </div>
+              <span className="layers-add-shortcut">CATALOGUE</span>
+            </button>
 
-              {/* Top-right action icons */}
-              <div ref={headerIconsRef} className="layers-header-icons">
+            {/* Top-right action icons */}
+            <div ref={headerIconsRef} className="layers-header-icons">
+              <button
+                type="button"
+                id="btn-header-discussion"
+                onClick={() => handleToggleDropdown("discussion")}
+                className={`layers-icon-btn ${activeDropdown === "discussion" ? "layers-icon-btn--active" : ""}`}
+                title="Community & Oceanographic Notes"
+              >
+                <MessageSquare className="w-3.5 h-3.5" style={{ width: 15, height: 15 }} />
+              </button>
+              <button
+                type="button"
+                id="btn-header-share"
+                onClick={() => handleToggleDropdown("share")}
+                className={`layers-icon-btn ${activeDropdown === "share" ? "layers-icon-btn--active" : ""}`}
+                title="Share current ocean view"
+              >
+                <Share2 className="w-3.5 h-3.5" style={{ width: 15, height: 15 }} />
+              </button>
+              <button
+                type="button"
+                id="btn-header-upload"
+                onClick={() => handleToggleDropdown("upload")}
+                className={`layers-icon-btn ${activeDropdown === "upload" ? "layers-icon-btn--active" : ""}`}
+                title="Upload custom ocean data"
+              >
+                <Upload className="w-3.5 h-3.5" style={{ width: 15, height: 15 }} />
+              </button>
+              <button
+                type="button"
+                id="btn-header-info"
+                onClick={() => handleToggleDropdown("info")}
+                className={`layers-icon-btn ${activeDropdown === "info" ? "layers-icon-btn--active" : ""}`}
+                title="Ocean 3D Viewer Information"
+              >
+                <Info className="w-3.5 h-3.5" style={{ width: 15, height: 15 }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Dropdown: Discussion Notes */}
+          {activeDropdown === "discussion" && (
+            <div ref={dropdownRef} id="dropdown-discussion" className="layers-dropdown">
+              <div className="layers-dropdown-title">
+                <MessageSquare className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
+                Community &amp; Oceanographic Notes
+              </div>
+              <p className="layers-dropdown-desc">
+                Collaborate and leave notes on current cyclone wakes, thermocline anomalies, or Argo float comparisons.
+              </p>
+              <textarea
+                id="discussion-note-input"
+                placeholder="Add observation at current coordinates or depth level..."
+                rows={3}
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                className="layers-textarea"
+              />
+              <div className="layers-actions">
                 <button
                   type="button"
-                  id="btn-header-discussion"
-                  onClick={() => handleToggleDropdown("discussion")}
-                  className={`layers-icon-btn ${activeDropdown === "discussion" ? "layers-icon-btn--active" : ""}`}
-                  title="Community & Oceanographic Notes"
+                  id="btn-cancel-discussion"
+                  onClick={() => setActiveDropdown(null)}
+                  className="layers-btn-cancel"
                 >
-                  <MessageSquare className="w-4 h-4" style={{ width: 16, height: 16 }} />
+                  Cancel
                 </button>
                 <button
                   type="button"
-                  id="btn-header-share"
-                  onClick={() => handleToggleDropdown("share")}
-                  className={`layers-icon-btn ${activeDropdown === "share" ? "layers-icon-btn--active" : ""}`}
-                  title="Share current ocean view"
+                  id="btn-post-discussion"
+                  onClick={() => {
+                    if (noteText.trim()) {
+                      alert(`Observation recorded: "${noteText}"`);
+                      setNoteText("");
+                    } else {
+                      alert("Observation recorded!");
+                    }
+                    setActiveDropdown(null);
+                  }}
+                  className="layers-btn-primary"
                 >
-                  <Share2 className="w-4 h-4" style={{ width: 16, height: 16 }} />
-                </button>
-                <button
-                  type="button"
-                  id="btn-header-upload"
-                  onClick={() => handleToggleDropdown("upload")}
-                  className={`layers-icon-btn ${activeDropdown === "upload" ? "layers-icon-btn--active" : ""}`}
-                  title="Upload custom ocean data"
-                >
-                  <Upload className="w-4 h-4" style={{ width: 16, height: 16 }} />
-                </button>
-                <button
-                  type="button"
-                  id="btn-header-info"
-                  onClick={() => handleToggleDropdown("info")}
-                  className={`layers-icon-btn ${activeDropdown === "info" ? "layers-icon-btn--active" : ""}`}
-                  title="Ocean 3D Viewer Information"
-                >
-                  <Info className="w-4 h-4" style={{ width: 16, height: 16 }} />
+                  Post Note
                 </button>
               </div>
             </div>
+          )}
 
-            {/* Dropdown: Discussion Notes */}
-            {activeDropdown === "discussion" && (
-              <div ref={dropdownRef} id="dropdown-discussion" className="layers-dropdown">
-                <div className="layers-testing-banner">
-                  <div className="layers-testing-tag">
-                    <FlaskConical className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#f59e0b" }} />
-                    <span>Under Testing (Development)</span>
-                  </div>
-                  <span className="layers-testing-timer">
-                    <Clock style={{ width: 11, height: 11 }} /> Auto-closes in 2s
-                  </span>
-                </div>
+          {/* Dropdown: Info */}
+          {activeDropdown === "info" && (
+            <div ref={dropdownRef} id="dropdown-info" className="layers-dropdown">
+              <div className="layers-dropdown-title">
+                <Info className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
+                <span style={{ color: "#22d3ee" }}>Ocean 3D</span> Marine Data Platform
+              </div>
+              <p className="layers-dropdown-desc">
+                Co-visualization of INCOIS numerical ocean analysis and in-situ Argo observations (Smart India Hackathon 2026, Problem Statement 26067). Real-time 3D volumetric raymarching in pure WebGL2.
+              </p>
+              <div style={{ background: "#0d1728", padding: "12px", borderRadius: "8px", border: "1px solid #1e293b", fontSize: "11px", color: "#94a3b8", fontFamily: "var(--font-readout, monospace)", marginBottom: 14 }}>
+                <div>• <span style={{ color: "#e2e8f0" }}>Upstream:</span> INCOIS ERDDAP (erddap.incois.gov.in)</div>
+                <div>• <span style={{ color: "#e2e8f0" }}>Bathymetry:</span> NOAA CoastWatch ETOPO180 Relief</div>
+                <div>• <span style={{ color: "#e2e8f0" }}>Depth Range:</span> 5 m to 2,000 m (24 vertical levels)</div>
+                <div>• <span style={{ color: "#e2e8f0" }}>Colormaps:</span> Scientific cmocean ramps (perceptually uniform)</div>
+              </div>
+              <div className="layers-actions">
+                <button
+                  type="button"
+                  id="btn-close-info"
+                  onClick={() => setActiveDropdown(null)}
+                  className="layers-btn-cancel"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
 
-                <div className="layers-dropdown-title">
-                  <MessageSquare className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
-                  Community &amp; Oceanographic Notes
-                </div>
-                <p className="layers-dropdown-desc">
-                  Collaborate and leave notes on current cyclone wakes, thermocline anomalies, or Argo float comparisons.
-                </p>
-                <textarea
-                  id="discussion-note-input"
-                  placeholder="Add observation at current coordinates or depth level..."
-                  rows={3}
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  className="layers-textarea"
-                />
-                <div className="layers-actions">
-                  <button
-                    type="button"
-                    id="btn-cancel-discussion"
-                    onClick={() => setActiveDropdown(null)}
-                    className="layers-btn-cancel"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    id="btn-post-discussion"
-                    onClick={() => {
-                      if (noteText.trim()) {
-                        alert(`Observation recorded: "${noteText}"`);
-                        setNoteText("");
-                      } else {
-                        alert("Observation recorded!");
-                      }
+          {/* Dropdown: Upload */}
+          {activeDropdown === "upload" && (
+            <div ref={dropdownRef} id="dropdown-upload" className="layers-dropdown">
+              <div className="layers-dropdown-title">
+                <UploadCloud className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
+                Upload Custom Ocean Data
+                <span className="layers-badge-beta">BETA</span>
+              </div>
+              <p className="layers-dropdown-desc">
+                Import CTD depth casts, Argo float trajectories, glider missions, or GeoTIFF/NetCDF ocean rasters.
+              </p>
+              <label className="layers-dropzone">
+                <UploadCloud className="w-7 h-7" style={{ width: 28, height: 28, color: "#22d3ee", marginBottom: 6 }} />
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#ffffff", display: "block" }}>
+                  Select File or Drop here
+                </span>
+                <span style={{ fontSize: "10px", color: "#64748b", marginTop: 4, fontFamily: "var(--font-readout, monospace)", display: "block" }}>
+                  .nc, .csv, .geojson, .tif, .json
+                </span>
+                <input
+                  type="file"
+                  style={{ display: "none" }}
+                  accept=".csv,.geojson,.json,.nc,.tif"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      alert(`Dataset "${e.target.files[0].name}" parsed and ready!`);
                       setActiveDropdown(null);
-                    }}
-                    className="layers-btn-primary"
-                  >
-                    Post Note
-                  </button>
-                </div>
+                    }
+                  }}
+                />
+              </label>
+              <div className="layers-actions">
+                <button
+                  type="button"
+                  id="btn-cancel-upload"
+                  onClick={() => setActiveDropdown(null)}
+                  className="layers-btn-cancel"
+                >
+                  Cancel
+                </button>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Dropdown: Info */}
-            {activeDropdown === "info" && (
-              <div ref={dropdownRef} id="dropdown-info" className="layers-dropdown">
-                <div className="layers-dropdown-title">
-                  <Info className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
-                  <span style={{ color: "#22d3ee" }}>Ocean 3D</span> Marine Data Platform
+          {/* Dropdown: Share */}
+          {activeDropdown === "share" && (
+            <div ref={dropdownRef} id="dropdown-share" className="layers-dropdown">
+              <div className="layers-dropdown-title">
+                <Share2 className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
+                Share Current Ocean View
+              </div>
+              <p className="layers-dropdown-desc">
+                Copy direct permalink with active layer, depth slice, timestep, and 3D camera orientation.
+              </p>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: 14 }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={typeof window !== "undefined" ? window.location.href : "https://ocean3d.incois.gov.in"}
+                  className="layers-input"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyShareLink}
+                  className="layers-btn-primary"
+                  style={{ background: shareCopied ? "#38bdf8" : "rgba(255, 255, 255, 0.12)", color: shareCopied ? "#05080e" : "#f8fafc", border: "1px solid rgba(255, 255, 255, 0.2)", display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  {shareCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
+                      Copied!
+                    </>
+                  ) : (
+                    "Copy Link"
+                  )}
+                </button>
+              </div>
+              <div className="layers-actions">
+                <button
+                  type="button"
+                  id="btn-close-share"
+                  onClick={() => setActiveDropdown(null)}
+                  className="layers-btn-cancel"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Main Content Area */}
+        <div className="layers-content">
+          {activeLayers.length === 0 ? (
+            /* Empty state */
+            <div id="layers-empty-state">
+              <div className="layers-empty-body" style={{ padding: "36px 20px" }}>
+                <div style={{ color: "#cbd5e1", fontSize: "14px", fontWeight: 500 }}>
+                  No layers currently active.
                 </div>
-                <p className="layers-dropdown-desc">
-                  Co-visualization of INCOIS numerical ocean analysis and in-situ Argo observations (Smart India Hackathon 2026, Problem Statement 26067). Real-time 3D volumetric raymarching in pure WebGL2.
-                </p>
-                <div style={{ background: "#0d1728", padding: "12px", borderRadius: "8px", border: "1px solid #1e293b", fontSize: "11px", color: "#94a3b8", fontFamily: "var(--font-readout, monospace)", marginBottom: 14 }}>
-                  <div>• <span style={{ color: "#e2e8f0" }}>Upstream:</span> INCOIS ERDDAP (erddap.incois.gov.in)</div>
-                  <div>• <span style={{ color: "#e2e8f0" }}>Bathymetry:</span> NOAA CoastWatch ETOPO180 Relief</div>
-                  <div>• <span style={{ color: "#e2e8f0" }}>Depth Range:</span> 5 m to 2,000 m (24 vertical levels)</div>
-                  <div>• <span style={{ color: "#e2e8f0" }}>Colormaps:</span> Scientific cmocean ramps (perceptually uniform)</div>
-                </div>
-                <div className="layers-actions">
+                <div style={{ marginTop: "12px" }}>
                   <button
                     type="button"
-                    id="btn-close-info"
-                    onClick={() => setActiveDropdown(null)}
-                    className="layers-btn-cancel"
+                    onClick={() => setIsCatalogueOpen(true)}
+                    className="layers-catalogue-link"
                   >
-                    Close
+                    <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
+                    Browse Data Catalogue to add an ocean layer
                   </button>
                 </div>
               </div>
-            )}
+            </div>
+          ) : (
+            /* Populated Layers List */
+            <div id="layers-populated-list" className="layers-list">
+              {activeLayers.map((layer) => {
+                const isSelected = layer.id === selected;
+                const isSettingsOpen = activeSettingsLayerId === layer.id;
+                const gradient = COLORMAP_GRADIENTS[layer.colormap] || COLORMAP_GRADIENTS.thermal;
 
-            {/* Dropdown: Upload */}
-            {activeDropdown === "upload" && (
-              <div ref={dropdownRef} id="dropdown-upload" className="layers-dropdown">
-                <div className="layers-testing-banner">
-                  <div className="layers-testing-tag">
-                    <FlaskConical className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#f59e0b" }} />
-                    <span>Under Testing (Development)</span>
-                  </div>
-                  <span className="layers-testing-timer">
-                    <Clock style={{ width: 11, height: 11 }} /> Auto-closes in 2s
-                  </span>
-                </div>
-
-                <div className="layers-dropdown-title">
-                  <UploadCloud className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
-                  Upload Custom Ocean Data
-                  <span className="layers-badge-beta">BETA</span>
-                </div>
-                <p className="layers-dropdown-desc">
-                  Import CTD depth casts, Argo float trajectories, glider missions, or GeoTIFF/NetCDF ocean rasters.
-                </p>
-                <label className="layers-dropzone">
-                  <UploadCloud className="w-7 h-7" style={{ width: 28, height: 28, color: "#22d3ee", marginBottom: 6 }} />
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#ffffff", display: "block" }}>
-                    Select File or Drop here
-                  </span>
-                  <span style={{ fontSize: "10px", color: "#64748b", marginTop: 4, fontFamily: "var(--font-readout, monospace)", display: "block" }}>
-                    .nc, .csv, .geojson, .tif, .json
-                  </span>
-                  <input
-                    type="file"
-                    style={{ display: "none" }}
-                    accept=".csv,.geojson,.json,.nc,.tif"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) {
-                        alert(`Dataset "${e.target.files[0].name}" parsed and ready!`);
-                        setActiveDropdown(null);
-                      }
-                    }}
-                  />
-                </label>
-                <div className="layers-actions">
-                  <button
-                    type="button"
-                    id="btn-cancel-upload"
-                    onClick={() => setActiveDropdown(null)}
-                    className="layers-btn-cancel"
+                return (
+                  <div
+                    key={layer.id}
+                    className={`layer-item ${isSelected && layer.visible ? "layer-item--active" : ""} ${!layer.visible ? "layer-item--inactive" : ""}`}
                   >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Dropdown: Share */}
-            {activeDropdown === "share" && (
-              <div ref={dropdownRef} id="dropdown-share" className="layers-dropdown">
-                <div className="layers-dropdown-title">
-                  <Share2 className="w-5 h-5" style={{ width: 20, height: 20, color: "#22d3ee" }} />
-                  Share Current Ocean View
-                </div>
-                <p className="layers-dropdown-desc">
-                  Copy direct permalink with active layer, depth slice, timestep, and 3D camera orientation.
-                </p>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: 14 }}>
-                  <input
-                    type="text"
-                    readOnly
-                    value={typeof window !== "undefined" ? window.location.href : "https://ocean3d.incois.gov.in"}
-                    className="layers-input"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCopyShareLink}
-                    className="layers-btn-primary"
-                    style={{ background: shareCopied ? "#22d3ee" : "#1d4ed8", color: shareCopied ? "#0f172a" : "#ffffff", display: "flex", alignItems: "center", gap: 6 }}
-                  >
-                    {shareCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
-                        Copied!
-                      </>
-                    ) : (
-                      "Copy Link"
-                    )}
-                  </button>
-                </div>
-                <div className="layers-actions">
-                  <button
-                    type="button"
-                    id="btn-close-share"
-                    onClick={() => setActiveDropdown(null)}
-                    className="layers-btn-cancel"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Main Content Area */}
-          <div className="layers-content">
-            {activeLayers.length === 0 ? (
-              /* Empty state */
-              <div id="layers-empty-state">
-                <div className="layers-empty-body" style={{ padding: "36px 20px" }}>
-                  <div style={{ color: "#cbd5e1", fontSize: "14px", fontWeight: 500 }}>
-                    No layers currently active.
-                  </div>
-                  <div style={{ marginTop: "12px" }}>
-                    <button
-                      type="button"
-                      onClick={() => setIsCatalogueOpen(true)}
-                      className="layers-catalogue-link"
-                    >
-                      <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
-                      Browse Data Catalogue to add an ocean layer
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Populated Layers List */
-              <div id="layers-populated-list" className="layers-list">
-                {activeLayers.map((layer) => {
-                  const isSelected = layer.id === selected;
-                  const isSettingsOpen = activeSettingsLayerId === layer.id;
-                  const gradient = COLORMAP_GRADIENTS[layer.colormap] || COLORMAP_GRADIENTS.thermal;
-                  const mid = Number(((layer.minVal + layer.maxVal) / 2).toFixed(1));
-
-                  return (
-                    <div
-                      key={layer.id}
-                      className={`layer-item ${isSelected && layer.visible ? "layer-item--active" : ""} ${!layer.visible ? "layer-item--inactive" : ""}`}
-                    >
-                      {/* Layer Header Row */}
-                      <div className="layer-header-row">
-                        {/* Visibility toggle */}
+                    {/* Layer Header Row */}
+                    <div className="layer-header-row">
+                      {/* Left: Visibility toggle + Name info */}
+                      <div className="layer-header-left">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -706,34 +890,31 @@ export function VariablePanel({
                           aria-label={layer.visible ? "Turn off layer" : "Turn on layer"}
                         >
                           {layer.visible ? (
-                            <Eye className="w-4 h-4" style={{ width: 16, height: 16 }} />
+                            <Eye className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
                           ) : (
-                            <EyeOff className="w-4 h-4" style={{ width: 16, height: 16 }} />
+                            <EyeOff className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
                           )}
                         </button>
 
-                        {/* Name & Code */}
                         <div
                           className="layer-info-col"
                           onClick={() => handleSelectLayer(layer.id)}
                           title="Click to bring to top & activate in 3D water column"
                         >
                           <div className="layer-name-line">
-                            <span className="layer-name-text">{layer.name}</span>
+                            <span className="layer-name-text" title={layer.name}>{layer.name}</span>
                             <span className="layer-code-badge">{layer.code}</span>
-                            {isSelected && layer.visible && (
-                              <span className="layer-status-pill">Active in 3D</span>
-                            )}
-                            {!layer.visible && (
-                              <span className="layer-status-pill layer-status-pill--hidden">Hidden</span>
-                            )}
                           </div>
-                          <div className="layer-meta-line">
-                            {layer.timestamp} · {layer.temporalResolution}
+                          <div className="layer-subline">
+                            <span className="layer-meta-date">{layer.timestamp}</span>
+                            <span className="layer-meta-sep">•</span>
+                            <span className="layer-meta-source">{layer.temporalResolution}</span>
                           </div>
                         </div>
+                      </div>
 
-                        {/* Remove layer button */}
+                      {/* Right: Remove button */}
+                      <div className="layer-header-actions">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -744,95 +925,125 @@ export function VariablePanel({
                           title="Remove layer"
                           aria-label="Remove layer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
+                          <Trash2 className="w-3.5 h-3.5" style={{ width: 13, height: 13 }} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Interactive Color-scale slider */}
+                    <LayerScaleSlider
+                      minVal={layer.minVal}
+                      maxVal={layer.maxVal}
+                      units={layer.units}
+                      colormap={layer.colormap}
+                      gradient={gradient}
+                    />
+
+                    {/* Icon controls below legend */}
+                    <div className="layer-controls-row">
+                      <div className="layer-controls-left">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const blob = new Blob([JSON.stringify(layer, null, 2)], { type: "application/json" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `${layer.code}_metadata.json`;
+                            a.click();
+                          }}
+                          className="layer-action-btn"
+                          title="Download scientific metadata (JSON)"
+                          aria-label="Download metadata"
+                        >
+                          <Download className="w-3.5 h-3.5" style={{ width: 13, height: 13 }} />
+                          <span>JSON</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => alert(`Layer: ${layer.name} (${layer.code})\nDataset: ${layer.productTitle}\nUnits: ${layer.units}\nDescription: ${layer.description}`)}
+                          className="layer-action-btn"
+                          title="Layer scientific provenance & details"
+                          aria-label="Layer information"
+                        >
+                          <Info className="w-3.5 h-3.5" style={{ width: 13, height: 13 }} />
+                          <span>INFO</span>
                         </button>
                       </div>
 
-                      {/* Color-scale legend */}
-                      <div className="layer-scale-wrap">
-                        <div
-                          className="layer-scale-bar"
-                          style={{ background: gradient }}
-                        />
-                        <div className="layer-scale-ticks">
-                          <span>{layer.minVal}</span>
-                          <span>{mid}</span>
-                          <span>{layer.maxVal} {layer.units}</span>
+                      {/* Interactive Opacity Trigger Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isSettingsOpen) {
+                            clearOpacityAutoCloseTimer();
+                            setActiveSettingsLayerId(null);
+                          } else {
+                            setActiveSettingsLayerId(layer.id);
+                          }
+                        }}
+                        className={`layer-opacity-trigger ${isSettingsOpen ? "layer-opacity-trigger--active" : ""}`}
+                        title="Toggle opacity slider"
+                        aria-label="Toggle opacity controls"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" style={{ width: 12, height: 12 }} />
+                        <span className="layer-opacity-val">{Math.round(layer.opacity * 100)}%</span>
+                      </button>
+                    </div>
+
+                    {/* Expandable settings drawer with quick presets and aerospace slider */}
+                    {isSettingsOpen && (
+                      <div
+                        className="layer-settings-drawer"
+                        onPointerDown={() => resetOpacityAutoCloseTimer()}
+                        onMouseMove={() => resetOpacityAutoCloseTimer()}
+                      >
+                        <div className="layer-settings-header">
+                          <div className="layer-settings-title-group">
+                            <span className="layer-settings-label">OPACITY</span>
+                          </div>
+                          <div className="layer-presets-group">
+                            {[0.25, 0.5, 0.75, 1.0].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => updateOpacity(layer.id, preset)}
+                                className={`layer-preset-btn ${Math.abs(layer.opacity - preset) < 0.04 ? "layer-preset-btn--active" : ""}`}
+                              >
+                                {Math.round(preset * 100)}%
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
-                        {/* Icon controls below legend */}
-                        <div className="layer-controls-row">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const blob = new Blob([JSON.stringify(layer, null, 2)], { type: "application/json" });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `${layer.code}_metadata.json`;
-                              a.click();
+                        <div className="layer-slider-row">
+                          <input
+                            type="range"
+                            min="0.05"
+                            max="1"
+                            step="0.05"
+                            value={layer.opacity}
+                            onChange={(e) => updateOpacity(layer.id, parseFloat(e.target.value))}
+                            onPointerDown={() => resetOpacityAutoCloseTimer()}
+                            className="layer-slider"
+                            style={{
+                              background: `linear-gradient(to right, #38bdf8 0%, #38bdf8 ${Math.round(layer.opacity * 100)}%, #162032 ${Math.round(layer.opacity * 100)}%, #162032 100%)`,
                             }}
-                            className="layer-action-btn"
-                            title="Download metadata"
-                            aria-label="Download metadata"
-                          >
-                            <Download className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => alert(`Layer: ${layer.name} (${layer.code})\nDataset: ${layer.productTitle}\nUnits: ${layer.units}\nDescription: ${layer.description}`)}
-                            className="layer-action-btn"
-                            title="Layer information"
-                            aria-label="Layer information"
-                          >
-                            <Info className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setActiveSettingsLayerId(isSettingsOpen ? null : layer.id)}
-                            className={`layer-action-btn ${isSettingsOpen ? "layer-action-btn--active" : ""}`}
-                            title="Opacity & Layer Options"
-                            aria-label="Opacity & Layer Options"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" style={{ width: 14, height: 14 }} />
-                          </button>
-
-                          <span className="layer-opacity-readout">
-                            Opacity: {Math.round(layer.opacity * 100)}%
+                          />
+                          <span className="layer-slider-readout">
+                            {Math.round(layer.opacity * 100)}%
                           </span>
                         </div>
-
-                        {/* Expandable settings drawer */}
-                        {isSettingsOpen && (
-                          <div className="layer-settings-drawer">
-                            <div className="layer-slider-row">
-                              <span style={{ color: "#94a3b8" }}>Layer Opacity:</span>
-                              <input
-                                type="range"
-                                min="0.1"
-                                max="1"
-                                step="0.05"
-                                value={layer.opacity}
-                                onChange={(e) => updateOpacity(layer.id, parseFloat(e.target.value))}
-                                className="layer-slider"
-                              />
-                              <span style={{ fontFamily: "var(--font-readout, monospace)", color: "#67e8f9", width: 36, textAlign: "right" }}>
-                                {Math.round(layer.opacity * 100)}%
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Full-Screen Data Catalogue Modal matching INCOIS / Copernicus Marine */}
       <DataCatalogueModal

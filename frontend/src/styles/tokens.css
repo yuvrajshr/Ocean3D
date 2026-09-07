@@ -13,48 +13,120 @@
    ========================================================================== */
 
 :root {
+  /* ══════════════════════════════════════════════════════════════════════════
+     THEME C: WARM MARITIME CHRONOMETER & COPPER TOKENS
+     Preserving Swiss 0px Grid & Geometry, Elevated with Warm Maritime Darkware
+     Palette: #15161A (Ground) · #1C1D22 (Surface) · #2E303A (Border)
+              #F4EFE6 (Parchment Ink) · #9698A3 (Muted Stone) · #E59858 (Copper)
+     ══════════════════════════════════════════════════════════════════════════ */
+  --rt-ground: #15161a;
+  --rt-surface: #1c1d22;
+  --rt-surface-hover: #262830;
+  --rt-surface-active: #2f313c;
+  --rt-inset: #111215;
+  --rt-border-color: #2e303a;
+  --rt-border-strong: #404352;
+
+  --rt-ink: #f4efe6;
+  --rt-ink-muted: #9698a3;
+  --rt-ink-faint: #606370;
+
+  --rt-copper: #e59858;
+  --rt-copper-deep: #d97736;
+  --rt-copper-glow: rgba(229, 152, 88, 0.2);
+
+  /* Semantic mappings for seamless component compatibility */
+  --rt-black: #f4efe6;          /* Primary text ink (warm parchment white) */
+  --rt-white: #1c1d22;          /* Primary surface (warm basalt card) */
+  --rt-gray: #15161a;           /* Secondary ground (topbar/timeline base) */
+  --rt-gray-hover: #262830;     /* Surface hover */
+  --rt-gray-active: #2f313c;    /* Inset active */
+  --rt-mid: #9698a3;            /* Secondary muted text */
+  --rt-faint: #606370;          /* Faint text */
+  --rt-red: #e59858;            /* THE SIGNATURE COPPER ACCENT RULE */
+
+  --rt-font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --rt-font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Modular Scale (Perfect Fourth ×1.333) */
+  --rt-text-xs: 9.5px;
+  --rt-text-sm: 10.7px;
+  --rt-text-base: 14px;
+  --rt-text-md: 18.5px;
+  --rt-text-lg: 25px;
+  --rt-text-xl: 33px;
+
+  /* Spacing Scale (8px base) */
+  --rt-space-1: 4px;
+  --rt-space-2: 8px;
+  --rt-space-3: 12px;
+  --rt-space-4: 16px;
+  --rt-space-6: 24px;
+  --rt-space-8: 32px;
+  --rt-space-12: 48px;
+
+  /* Borders & Radius */
+  --rt-border: 1px solid var(--rt-border-color, #2e303a);
+  --rt-border-light: 1px solid var(--rt-border-color, #2e303a);
+  --rt-border-subtle: 1px solid var(--rt-border-color, #2e303a);
+  --rt-border-red: 3px solid var(--rt-copper, #e59858);
+  --rt-radius: 0px;
+
   /* --- The six tokens (§5.1). Channels are exposed so alpha variants below
          stay derived from these exact values rather than re-picked by eye. --- */
-  --abyss-rgb:            5 11 18;      /* #050B12  base background, deep water   */
-  --thermocline-rgb:     13 36 54;      /* #0D2436  panel surfaces, dividers      */
-  --current-rgb:         28 110 140;    /* #1C6E8C  primary UI accent             */
-  --bioluminescence-rgb: 79 232 196;    /* #4FE8C4  live data — the "alive" color */
-  --advisory-rgb:       232 162  61;    /* #E8A23D  hazard state ONLY             */
-  --foam-rgb:           234 243 241;    /* #EAF3F1  primary text on dark          */
+  --abyss-rgb: 2 4 8;
+  /* #020408  deepest obsidian canvas       */
+  --thermocline-rgb: 12 20 34;
+  /* #0C1422  sleek dark surfaces & panels  */
+  --current-rgb: 56 189 248;
+  /* #38BDF8  electric cyan accent          */
+  --bioluminescence-rgb: 16 185 129;
+  /* #10B981  live data telemetry emerald   */
+  --advisory-rgb: 245 158 11;
+  /* #F59E0B  mission amber / cached state  */
+  --foam-rgb: 248 250 252;
+  /* #F8FAFC  ink primary on dark           */
+  --linear-blue-rgb: 94 106 210;
+  /* #5E6AD2  Linear signature lavender-blue */
 
-  --abyss:            rgb(var(--abyss-rgb));
-  --thermocline:      rgb(var(--thermocline-rgb));
-  --current:          rgb(var(--current-rgb));
-  --bioluminescence:  rgb(var(--bioluminescence-rgb));
-  --advisory:         rgb(var(--advisory-rgb));
-  --foam:             rgb(var(--foam-rgb));
+  --abyss: rgb(var(--abyss-rgb));
+  --thermocline: rgb(var(--thermocline-rgb));
+  --current: rgb(var(--current-rgb));
+  --bioluminescence: rgb(var(--bioluminescence-rgb));
+  --advisory: rgb(var(--advisory-rgb));
+  --foam: rgb(var(--foam-rgb));
+  --linear-blue: rgb(var(--linear-blue-rgb));
 
   /* --- Depth as the organizing metaphor (§5.1, Principle 1).
-         The chrome gets literally deeper toward the edges of the console.
-         These are the ONLY surface colors; they are mixes of two tokens,
-         not new hues. --- */
-  --surface-viewport: var(--abyss);                               /* z-plane 0 */
-  --surface-panel:    color-mix(in srgb, var(--thermocline) 55%, var(--abyss));
-  --surface-raised:   var(--thermocline);                          /* z-plane 2 */
-  --surface-inset:    color-mix(in srgb, var(--abyss) 80%, var(--thermocline));
+         The chrome gets literally deeper toward the edges of the console. --- */
+  --surface-viewport: var(--abyss);
+  /* #020408 */
+  --surface-panel: #080d16;
+  /* #080D16 */
+  --surface-raised: var(--thermocline);
+  /* #0C1422 */
+  --surface-inset: #050810;
+  /* #050810 */
 
-  /* --- Hairline dividers: instrument housings meeting, not card edges --- */
-  --hairline:        rgb(var(--thermocline-rgb) / 0.9);
-  --hairline-strong: color-mix(in srgb, var(--thermocline) 70%, var(--foam));
+  /* --- Hairline dividers: Linear-style precision borders --- */
+  --hairline: #1e2b42;
+  --hairline-subtle: #162032;
+  --hairline-strong: #2d3f5e;
+  --hairline-glow: rgba(56, 189, 248, 0.4);
 
   /* --- Text roles --- */
-  --text-primary:  var(--foam);
-  --text-muted:    rgb(var(--foam-rgb) / 0.62);
-  --text-faint:    rgb(var(--foam-rgb) / 0.38);
-  --text-on-accent: var(--abyss);
+  --text-primary: var(--foam);
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+  --text-on-accent: #020408;
 
   /* --- Interactive states. Every control needs hover / focus-visible /
          active (CLAUDE.md Step 6). --- */
-  --control-idle:    transparent;
-  --control-hover:   rgb(var(--current-rgb) / 0.18);
-  --control-active:  rgb(var(--current-rgb) / 0.34);
-  --control-on:      var(--current);
-  --focus-ring:      var(--bioluminescence);
+  --control-idle: transparent;
+  --control-hover: rgb(var(--current-rgb) / 0.18);
+  --control-active: rgb(var(--current-rgb) / 0.34);
+  --control-on: var(--current);
+  --focus-ring: var(--bioluminescence);
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 
@@ -73,26 +145,31 @@
          Step 6): the viewport is base, docked panels are one level up, the
          profile panel is the floating layer. --- */
   --z-viewport: 0;
-  --z-console:  10;
+  --z-console: 10;
   --z-floating: 20;
 
   /* --- Type. IBM Plex Sans for UI, IBM Plex Mono for literal readouts ONLY
          (depth, lat/lon, timestamps, values, platform IDs). §5.1. --- */
   --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
-             "Segoe UI", Roboto, sans-serif;
+    "Segoe UI", Roboto, sans-serif;
   --font-readout: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas,
-                  "Liberation Mono", monospace;
+    "Liberation Mono", monospace;
 
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
 
   /* Type scale. Small and dense: this is a console, not a landing page. */
-  --size-readout-lg: 1.25rem;   /* 20px — the one big number, e.g. live depth  */
-  --size-title:      0.9375rem; /* 15px — app title                            */
-  --size-label:      0.8125rem; /* 13px — control labels                       */
-  --size-readout:    0.75rem;   /* 12px — tick labels, values, platform IDs    */
-  --size-caption:    0.6875rem; /* 11px — Explore-mode captions, units         */
+  --size-readout-lg: 1.25rem;
+  /* 20px — the one big number, e.g. live depth  */
+  --size-title: 0.9375rem;
+  /* 15px — app title                            */
+  --size-label: 0.8125rem;
+  /* 13px — control labels                       */
+  --size-readout: 0.75rem;
+  /* 12px — tick labels, values, platform IDs    */
+  --size-caption: 0.6875rem;
+  /* 11px — Explore-mode captions, units         */
 
   --leading-tight: 1.2;
   --leading-body: 1.5;
@@ -122,6 +199,7 @@
     --transition-state: 0ms;
     --entry-duration: 0ms;
   }
+
   *,
   *::before,
   *::after {
@@ -138,9 +216,13 @@
 
 *,
 *::before,
-*::after { box-sizing: border-box; }
+*::after {
+  box-sizing: border-box;
+}
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
 }
@@ -154,7 +236,8 @@ body {
   line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow: hidden; /* the console owns the viewport; the page never scrolls */
+  overflow: hidden;
+  /* the console owns the viewport; the page never scrolls */
 }
 
 /* Every focusable control shows a bioluminescence ring on the dark ground
@@ -163,7 +246,10 @@ body {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
-:focus:not(:focus-visible) { outline: none; }
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
 
 /* Utility classes for the two type roles. A readout reads out; a label
    labels; nothing does double duty (§5.3). */
@@ -185,8 +271,10 @@ body {
    so color is never the sole encoding (§5.4). */
 .sr-only {
   position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;

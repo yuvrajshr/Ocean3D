@@ -16,8 +16,9 @@ import {
 import { ProfilePanel } from "./components/ProfilePanel";
 import { Timeline } from "./components/Timeline";
 import { VariablePanel } from "./components/VariablePanel";
-import { ToolDock, type PointAnnotation } from "./components/ToolDock";
+import { PointsDrawer, type PointAnnotation } from "./components/PointsDrawer";
 import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
+import { CommandPill } from "./components/CommandPill";
 import { MapView } from "./map/MapView";
 import { PointReadout } from "./map/PointReadout";
 import { MapTimeline } from "./map/MapTimeline";
@@ -29,6 +30,7 @@ import {
 } from "./map/state";
 import { MAX_DEPTH } from "./viz/depth";
 import { BASEMAPS } from "./viz/globe";
+import type { ColormapName } from "./viz/colormaps";
 import {
   isWebGL2Available,
   OceanScene,
@@ -68,6 +70,7 @@ export default function App() {
   const [pointLoading, setPointLoading] = useState(false);
   const [pointError, setPointError] = useState<string | null>(null);
   const [sectionLoaded, setSectionLoaded] = useState(false);
+  const [isPointsOpen, setIsPointsOpen] = useState(false);
 
   /** The layer stack the side panel owns, mirrored here so the map can draw it. */
   const [layerStack, setLayerStack] = useState<{
@@ -353,12 +356,6 @@ export default function App() {
       sceneRef.current?.setSelected(pt.platform.platform_id);
     }
   }, []);
-
-  // The dock's 2D/3D control was a placeholder mapped onto globe/column. Now
-  // that a real plan view exists it means what it says.
-  const handleToggleProjection = useCallback(() => {
-    handleView(view === "map" ? "column" : "map");
-  }, [handleView, view]);
 
   const openColumnFromMap = useCallback(
     (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
@@ -650,80 +647,33 @@ export default function App() {
           day: "numeric", month: "short", timeZone: "UTC",
         })} · ${upstreamName}`;
 
+  const isLayerActiveInColumn = Boolean(
+    variableKey &&
+      (layerStack.keys.length === 0 ||
+        (layerStack.keys.includes(variableKey) && layerStack.visibility[variableKey] !== false)),
+  );
+
+  const columnActiveColormap = useMemo<ColormapName>(() => {
+    const v = variables.find((item) => item.key === variableKey);
+    return (v?.colormap as ColormapName) || (fieldMeta?.colormap as ColormapName) || "thermal";
+  }, [variables, variableKey, fieldMeta]);
+
   return (
     <div className="console">
-      <header className="console__header">
-        <div className="header__mark">
-          <img
-            className="header__seal"
-            src="/incois-logo-128.png"
-            alt="Indian National Centre for Ocean Information Services"
-            width={30}
-            height={30}
-          />
-          <div className="header__titles">
-            <h1 className="header__title">Ocean data visualization</h1>
-            <span className="header__subtitle">
-              {scenario ? `${scenario.title} · Bay of Bengal, October 2013` : "INCOIS · Ministry of Earth Sciences"}
-            </span>
-          </div>
-        </div>
-
-        <div className="header__spacer" />
-
-        <div className="header__group">
-          <div className="provenance">
-            <span
-              className={`provenance__dot${
-                source?.provenance === "cached" ? " provenance__dot--cached" : ""
-              }${!source ? " provenance__dot--offline" : ""}`}
-              aria-hidden="true"
-            />
-            <span className="provenance__text readout">
-              {mapLoadingLabel ?? provenanceLabel}
-            </span>
-          </div>
-
-          <div className="mode-toggle" role="group" aria-label="View">
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "map"}
-              onClick={() => handleView("map")}
-            >
-              Map
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "globe"} disabled={!entryDone}
-              onClick={() => handleView("globe")}
-            >
-              Globe
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "column"} disabled={!entryDone}
-              onClick={() => handleView("column")}
-            >
-              Water column
-            </button>
-          </div>
-
-          <div className="mode-toggle" role="group" aria-label="Interface mode">
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={mode === "ops"} onClick={() => setMode("ops")}
-            >
-              Ops
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={mode === "explore"} onClick={() => setMode("explore")}
-            >
-              Explore
-            </button>
-          </div>
-        </div>
-      </header>
+      <CommandPill
+        scenario={scenario}
+        source={source}
+        mapLoadingLabel={mapLoadingLabel || (view === "column" && fieldLoading ? "Loading field…" : null)}
+        provenanceLabel={provenanceLabel}
+        view={view}
+        onViewChange={handleView}
+        entryDone={entryDone}
+        mode={mode}
+        onModeChange={setMode}
+        pointsCount={toolPoints.length}
+        isPointsOpen={isPointsOpen}
+        onTogglePoints={() => setIsPointsOpen((prev) => !prev)}
+      />
 
       <div
         className={`console__main${mode === "explore" ? " console__main--explore" : ""}${
@@ -774,21 +724,11 @@ export default function App() {
                   the map draws its own HUD and these would report on a scene
                   the reader is not looking at. */}
               <div className={`viewport__overlay${view === "map" ? " viewport__overlay--hidden" : ""}`}>
-                <div className="viewport__status">
-                  {view === "globe"
-                    ? `${scenario ? "Analysis extent outlined" : "Locating the analysis"} · ${
-                        visibleMarkers.length
-                      } float${visibleMarkers.length === 1 ? "" : "s"} reporting`
-                    : fieldLoading && currentTime
-                    ? `Loading ${activeVariable?.label.toLowerCase() ?? "field"} for ${new Date(
-                        currentTime,
-                      ).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}…`
-                    : fieldError
-                      ? fieldError
-                      : `${visibleMarkers.length} float${visibleMarkers.length === 1 ? "" : "s"} reporting · depth ${Math.round(
-                          depthWindow[0],
-                        )}–${Math.round(depthWindow[1])} m`}
-                </div>
+                {fieldError ? (
+                  <div className="viewport__status viewport__status--error">
+                    {fieldError}
+                  </div>
+                ) : null}
 
                 {view === "globe" ? (
                   <span className="viewport__hint">
@@ -906,12 +846,14 @@ export default function App() {
               onDepthChange={handleDepthIndexChange}
               window={depthWindow}
               cursorDepth={selected?.max_depth ?? null}
+              colormap={isLayerActiveInColumn ? columnActiveColormap : null}
+              hasActiveLayer={isLayerActiveInColumn}
             />
           ) : null}
 
-          <ToolDock
-            projectionMode={view === "map" ? "2d" : "3d"}
-            onToggleProjection={handleToggleProjection}
+          <PointsDrawer
+            isOpen={isPointsOpen}
+            onClose={() => setIsPointsOpen(false)}
             points={toolPoints}
             selectedPointId={selected?.platform_id}
             onOpenGraphForPoint={handleOpenGraphForPoint}
