@@ -28,11 +28,9 @@ Nothing else needs starting. `npm install` first if you are pulling for the firs
    submerged camera, the streamline density — was tuned against SwiftShader at 1-4 fps. The
    map's CPU raster path is immune to this, but the 3D column is not.
 
-2. **Resolve the two-palette split (§11, §5.1.2).** The 3D viewport uses the six named
-   tokens; the merged floating console uses slate+cyan that `tokens.css` does not define, and
-   two of those colours duplicate roles the tokens already fill. Pick one direction and make
-   it true everywhere. This is the biggest *design* debt and it is newly created, so it is
-   fresh in everyone's head.
+2. ~~**Resolve the two-palette split (§11, §5.1.2).**~~ **Resolved 2026-09-07.**
+   Unified the application under Theme C (Warm Maritime Chronometer & Copper: `#15161A`, `#1C1D22`,
+   `#2E303A`, `#F4EFE6`, `#E59858`) and strict 0px Swiss grid layout. See `context.md` §5.1.3 & §10.
 
 3. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
    stride, so zooming in shows ~0.4° cells under a 50 m coastline. `derive_stride` already

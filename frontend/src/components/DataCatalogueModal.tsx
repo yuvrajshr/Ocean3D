@@ -10,7 +10,8 @@
  * - Reduced compact height and width to prevent any overlap with the header or timeline
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Search,
@@ -67,7 +68,7 @@ export const PRODUCTS: CatalogueProduct[] = [
     coverageEnd: "30 Jul 2026",
     temporalFrequency: "10-day variational analysis",
     category: "primary",
-    badge: "Operational Live",
+    badge: "INCOIS-HYCOM Analysis",
     thumbnailGradient: "linear-gradient(135deg, #b45309, #d97706, #f59e0b, #eab308)",
     primaryVariable: "temperature",
     variables: [
@@ -86,7 +87,7 @@ export const PRODUCTS: CatalogueProduct[] = [
     coverageEnd: "16 Oct 2013",
     temporalFrequency: "Hourly cold wake & upper thermal structure",
     category: "cyclone",
-    badge: "Cyclone Phailin",
+    badge: "WRF-Ocean Model",
     thumbnailGradient: "linear-gradient(135deg, #c2410c, #ea580c, #f97316, #fb923c)",
     primaryVariable: "heat_content",
     variables: [
@@ -106,7 +107,7 @@ export const PRODUCTS: CatalogueProduct[] = [
     coverageEnd: "20 Oct 2013",
     temporalFrequency: "Daily composite raster",
     category: "cyclone",
-    badge: "Reference Observation",
+    badge: "MODIS-Aqua Satellite",
     thumbnailGradient: "linear-gradient(135deg, #0f766e, #0d9488, #06b6d4)",
     primaryVariable: "chlorophyll",
     variables: [
@@ -124,7 +125,7 @@ export const PRODUCTS: CatalogueProduct[] = [
     coverageEnd: "20 Oct 2013",
     temporalFrequency: "Daily multi-layer analysis",
     category: "primary",
-    badge: "Reference Simulation",
+    badge: "INCOIS-TIO Simulation",
     thumbnailGradient: "linear-gradient(135deg, #4338ca, #4f46e5, #7c3aed)",
     primaryVariable: "d26",
     variables: [
@@ -195,7 +196,30 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     return isCycloneSelected ? "prod-002" : "prod-001";
   }, [selectedCategory, selectedVariableCode]);
 
-  // Handle "+ Add to map..." on the single available product
+  const [isClosing, setIsClosing] = useState(false);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+    } else if (shouldRender) {
+      setIsClosing(true);
+      const timer = window.setTimeout(() => {
+        setShouldRender(false);
+        setIsClosing(false);
+      }, 220);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isOpen, shouldRender]);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 200);
+  };
+
   const handleAddProduct = (product: CatalogueProduct) => {
     const targetVar = selectedVariableCode || product.primaryVariable;
     onAddLayer(targetVar);
@@ -203,15 +227,38 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     setToastMessage(`Added layer to map`);
     setTimeout(() => {
       setToastMessage(null);
-      onClose();
+      handleClose();
     }, 350);
   };
 
-  if (!isOpen) return null;
+  // Close modal when pressing Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
 
-  return (
-    <div id="ocean3d-data-catalogue-modal" className="catalogue-modal-overlay">
-      <div className="catalogue-modal-box">
+  if (!shouldRender) return null;
+
+  const modalContent = (
+    <div
+      id="ocean3d-data-catalogue-modal"
+      className={`catalogue-modal-overlay ${isClosing ? "catalogue-modal-overlay--closing" : "catalogue-modal-overlay--open"}`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleClose();
+        }
+      }}
+    >
+      <div
+        className={`catalogue-modal-box ${isClosing ? "catalogue-modal-box--closing" : "catalogue-modal-box--open"}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Streamlined Modal Header */}
         <div className="catalogue-modal-topbar">
           <div className="catalogue-modal-title-wrap">
@@ -222,7 +269,10 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
           <button
             type="button"
             id="btn-close-catalogue"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClose();
+            }}
             className="catalogue-icon-btn catalogue-icon-btn--close"
             title="Close Catalogue (Esc)"
           >
@@ -388,13 +438,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                         <div
                           className="catalogue-card-thumb-bg"
                           style={{ background: product.thumbnailGradient }}
-                        >
-                          <svg className="catalogue-wave-svg" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M0,20 Q90,5 180,20 T360,20" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-                            <path d="M0,45 Q90,30 180,45 T360,45" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-                            <path d="M0,70 Q90,55 180,70 T360,70" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
-                          </svg>
-                        </div>
+                        />
 
                         <div className="catalogue-thumb-icon">
                           <Globe className="w-3 h-3" style={{ width: 12, height: 12 }} />
@@ -419,7 +463,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                         ) : (
                           <div className="catalogue-readonly-badge">
                             <Lock className="w-3 h-3" style={{ width: 11, height: 11 }} />
-                            Reference Only (View)
+                            Reference Dataset
                           </div>
                         )}
                       </div>
@@ -462,4 +506,8 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 };

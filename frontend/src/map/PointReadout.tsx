@@ -15,7 +15,7 @@
  * the behaviour context.md §10 requires.
  */
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 
 import type { MapPointBlock } from "../api/client";
 import { encodeRange, sampleCss } from "../viz/colormaps";
@@ -72,6 +72,15 @@ export function PointReadout({
   sectionLoaded,
   sectionLoading,
 }: Props) {
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 200);
+  };
+
   const derived = useMemo(() => {
     if (!block) return null;
     const nD = block.depths.length;
@@ -93,10 +102,10 @@ export function PointReadout({
 
   if (error) {
     return (
-      <aside className="point-panel">
+      <aside className={`point-panel ${isClosing ? "point-panel--closing" : "point-panel--open"}`}>
         <div className="point-panel__head">
           <span className="point-panel__id readout">Point</span>
-          <button type="button" className="profile-panel__close" onClick={onClose} aria-label="Close">
+          <button type="button" className="profile-panel__close" onClick={handleClose} aria-label="Close">
             ×
           </button>
         </div>
@@ -107,10 +116,10 @@ export function PointReadout({
 
   if (loading || !block || !derived) {
     return (
-      <aside className="point-panel">
+      <aside className={`point-panel ${isClosing ? "point-panel--closing" : "point-panel--open"}`}>
         <div className="point-panel__head">
           <span className="point-panel__id readout">Point</span>
-          <button type="button" className="profile-panel__close" onClick={onClose} aria-label="Close">
+          <button type="button" className="profile-panel__close" onClick={handleClose} aria-label="Close">
             ×
           </button>
         </div>
@@ -161,13 +170,13 @@ export function PointReadout({
   });
 
   return (
-    <aside className="point-panel">
+    <aside className={`point-panel ${isClosing ? "point-panel--closing" : "point-panel--open"}`}>
       <div className="point-panel__head">
         <span className="point-panel__id readout">
           {Math.abs(block.lat).toFixed(3)}°{block.lat >= 0 ? "N" : "S"}{" "}
           {Math.abs(block.lon).toFixed(3)}°{block.lon >= 0 ? "E" : "W"}
         </span>
-        <button type="button" className="profile-panel__close" onClick={onClose} aria-label="Close point">
+        <button type="button" className="profile-panel__close" onClick={handleClose} aria-label="Close point">
           ×
         </button>
       </div>

@@ -419,6 +419,15 @@ Plex Mono. A layer housing still states its dataset, resolution, cadence and the
 that drew it. Percentile clipping is still declared. The rounding is a container decision; it
 buys no licence over how a measurement is drawn or described.
 
+### 5.1.3 Two-Palette Split Resolved: Theme C Warm Maritime & Swiss Grid (adopted 2026-09-07)
+
+The unresolved two-palette split recorded in §5.1.2 has been unified across the entire application into a single, cohesive design system — **Theme C: Warm Maritime Chronometer & Copper**:
+- **Palette**: Ground `#15161A`, Surface `#1C1D22`, Inset `#111215`, Border `#2E303A`, Text `#F4EFE6`, Muted `#9698A3`, Accent Copper `#E59858`. Defined canonically in `tokens.css` as `--rt-*` variables and applied across all console surfaces (layers panel, top navbar, data catalogue modal, timeline scrubber, depth ruler, tool dock).
+- **Geometry**: Replaced SaaS rounded cards (radii 4–12px) with a strict **0px border-radius mathematical Swiss grid alignment**, restoring the "Instrument, not dashboard" physical console ethos (§5.1 Principle 2).
+- **Elimination of Performative AI Tropes**: Removed artificial badges (`● 3D ACTIVE`, `HIDDEN`, `⏱ 2s auto-close`, `<FlaskConical>` "Under Testing" chips, fake 4K animation export toasts), relying instead on standard GIS visual semantics (3px copper active indicator, eye visibility toggle, clean JSON/INFO icons).
+- **Authentic Scientific Provenance**: Replaced catalogue marketing chips with genuine oceanographic model/sensor tags (`INCOIS-HYCOM Analysis`, `WRF-Ocean Model`, `MODIS-Aqua Satellite`, `INCOIS-TIO Simulation`, `Reference Dataset`), replacing decorative wave SVGs with subtle technical grid textures.
+- **Micro-Animations**: Smooth, hardware-accelerated cubic-bezier transitions for panel expand/collapse, timeline horizontal folding, modal scale/fade, and float points slide-in.
+
 ### 5.2 Self-critique against generic defaults
 
 Checked against common AI-generated tells before locking this in:
@@ -1074,6 +1083,22 @@ each — component, decision, one-line reason, date.)*
   not move: cmocean still owns data colour, no chrome colour encodes a value, readouts stay
   mono, and every layer still states its source and range. The rounding is a container
   decision and buys no licence over how a measurement is drawn._
+- _2026-09-07 — **Two-palette split resolved (§5.1.3, answers §11 open item 2).** Replaced the
+  conflicting slate+cyan floating styling with Theme C (Warm Maritime Chronometer & Copper:
+  `#15161A` ground, `#1C1D22` surface, `#2E303A` border, `#F4EFE6` text, `#E59858` copper accent)
+  and restored the strict 0px-radius Swiss instrument console architecture across all UI components._
+- _2026-09-07 — **Timeline layout and non-overlapping date calculation.** Replaced overlapping ruler
+  labels with deduplicated landmark stamps (`10 OCT 2013` and `20 OCT 2013`) pinned to ruler edges via
+  flex space-between. Upgraded chevrons to dedicated `[EXPAND]` / `[SHRINK]` instrument controls, added
+  `[CADENCE DAY]` selector, and removed the fake 4K video export alert toast._
+- _2026-09-07 — **Systematic removal of performative AI design tropes.** Removed `● 3D ACTIVE` and
+  `HIDDEN` badges (active layer denoted by 3px copper stripe; visibility by eye toggle), removed
+  `⏱ 2s auto-close` badges and `<FlaskConical>` testing banners, streamlined JSON/INFO/Opacity footer
+  buttons, and restored authentic scientific provenance in the Data Catalogue._
+- _2026-09-07 — **Smooth hardware-accelerated transitions.** Implemented cubic-bezier transitions
+  for `VariablePanel` (width collapse/expand, dropdown slide, opacity drawer easing), `DataCatalogue`
+  (fade and scale), `FloatPoints` (slide-in drawer), and `Timeline` (ruler unfolding and slide-up
+  entrance)._
 
 ---
 
@@ -1094,14 +1119,8 @@ each — component, decision, one-line reason, date.)*
 - **New, still open:** the value-added hazard fields (D26, HTCNT, GEO_U/V) stop at
   2019-03-30, while the 3D grid runs to Jul 2026. If a "recent data" mode is added later,
   those layers must degrade with a stated reason rather than silently vanish.
-- **New, still open (design, and the biggest one):** **the product now has two chrome
-  palettes.** The 3D viewport uses the six named tokens; the floating console uses slate+cyan
-  (`#22d3ee` and seven greys) that `tokens.css` does not define. Two of them duplicate roles
-  the tokens already fill — `#22d3ee` does what `bioluminescence` does, `#020617` what `abyss`
-  does. Either the six tokens absorb the console (restyle the panels to the tokens) or the
-  console's palette is adopted into `tokens.css` and the viewport follows it. Leaving both is
-  the one option that is actively wrong, because a reader cannot learn what a colour means
-  when the same role has two values. See §5.1.2.
+- ~~**The product now has two chrome palettes.**~~ **Answered 2026-09-07.** Resolved by
+  standardizing on Theme C Warm Maritime Chronometer & Copper with 0px Swiss grid geometry. See §5.1.3 and §10.
 - **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
   far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
   against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality

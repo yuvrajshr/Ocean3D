@@ -1,61 +1,84 @@
 /* ============================================================================
-   data-catalogue-modal.css — Ocean3D Streamlined Data Catalogue
-   Compact modal window sized to fit cleanly inside viewport without overlap
+   data-catalogue-modal.css — Ratio Design System Ocean Data Catalogue
+   Theme C: Warm Maritime Chronometer & Copper
    ========================================================================== */
 
 .catalogue-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
-  background: rgba(0, 0, 0, 0.82);
-  backdrop-filter: blur(10px);
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  user-select: none;
-  animation: catalogueFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto !important;
+  user-select: auto;
+  cursor: pointer;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+  animation: catalogueFadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes catalogueFadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.catalogue-modal-overlay--closing {
+  animation: catalogueFadeOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  pointer-events: none !important;
 }
 
-/* Reduced size: 860px max width, 420px max height to avoid header and timeline */
+/* Modal Shell */
 .catalogue-modal-box {
-  background: #0b1220;
-  border: 1px solid rgba(51, 65, 85, 0.85);
-  border-radius: 12px;
-  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(34, 211, 238, 0.15);
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8) !important;
   width: 100%;
   max-width: 960px;
   height: 76vh;
-  max-height: 520px;
-  min-height: 350px;
+  max-height: 540px;
+  min-height: 360px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  color: #cbd5e1;
+  color: var(--rt-ink, #f4efe6);
+  pointer-events: auto !important;
+  cursor: default;
+  animation: catalogueScaleIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* --- Streamlined Topbar --- */
+.catalogue-modal-box--closing {
+  animation: catalogueScaleOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  pointer-events: none !important;
+}
+
+@keyframes catalogueFadeIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(4px); }
+}
+
+@keyframes catalogueFadeOut {
+  from { opacity: 1; backdrop-filter: blur(4px); }
+  to { opacity: 0; backdrop-filter: blur(0px); }
+}
+
+@keyframes catalogueScaleIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes catalogueScaleOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+/* --- Topbar with Copper Rule --- */
 .catalogue-modal-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--rt-border-color, #2e303a);
   padding: 0 16px;
-  background: #070b14;
+  background: var(--rt-ground, #15161a);
   flex-shrink: 0;
-  height: 44px;
+  height: 48px;
 }
 
 .catalogue-modal-title-wrap {
@@ -65,46 +88,57 @@
 }
 
 .catalogue-modal-title-text {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ffffff;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--rt-ink, #f4efe6);
   letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.catalogue-modal-red-rule {
+  width: 3px;
+  height: 18px;
+  background-color: var(--rt-copper, #e59858);
+  flex-shrink: 0;
 }
 
 .catalogue-modal-sub-badge {
-  font-size: 9px;
-  font-family: var(--font-readout, monospace);
+  font-size: 9.5px;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-weight: 700;
-  color: #22d3ee;
-  background: rgba(34, 211, 238, 0.12);
-  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: var(--rt-copper, #e59858);
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 0px !important;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .catalogue-icon-btn {
-  background: transparent;
-  border: 0;
-  color: #94a3b8;
-  padding: 5px;
-  border-radius: 6px;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  color: var(--rt-ink, #f4efe6);
+  width: 28px;
+  height: 28px;
+  border-radius: 0px !important;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .catalogue-icon-btn:hover {
-  color: #ffffff;
-  background: #1e293b;
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-copper, #e59858);
 }
 
 .catalogue-icon-btn--close:hover {
-  color: #f43f5e;
-  background: rgba(244, 63, 94, 0.12);
+  background: var(--rt-copper, #e59858);
+  color: #15161a;
+  border-color: var(--rt-copper, #e59858);
 }
 
 /* --- Modal Body: 2-Column Layout --- */
@@ -113,14 +147,15 @@
   display: flex;
   min-height: 0;
   overflow: hidden;
+  background: var(--rt-surface, #1c1d22);
 }
 
-/* --- Left Sidebar (Compact 230px) --- */
+/* --- Left Sidebar (240px) --- */
 .catalogue-sidebar {
-  width: 230px;
+  width: 240px;
   flex-shrink: 0;
-  border-right: 1px solid #1e293b;
-  background: #090e18;
+  border-right: 1px solid var(--rt-border-color, #2e303a);
+  background: var(--rt-ground, #15161a);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -128,37 +163,42 @@
 
 .catalogue-sidebar-header {
   padding: 10px 14px;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--rt-border-color, #2e303a);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  background: var(--rt-ground, #15161a);
 }
 
 .catalogue-sidebar-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #ffffff;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--rt-ink, #f4efe6);
   display: flex;
   align-items: center;
   gap: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .catalogue-filter-clear-btn {
-  background: transparent;
-  border: 0;
-  color: #94a3b8;
-  font-size: 10px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  color: var(--rt-ink, #f4efe6);
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 0px !important;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .catalogue-filter-clear-btn:hover {
-  color: #22d3ee;
-  background: #1e293b;
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-copper, #e59858);
 }
 
 .catalogue-sidebar-content {
@@ -180,32 +220,33 @@
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
-  color: #64748b;
+  color: var(--rt-ink-muted, #9698a3);
   pointer-events: none;
 }
 
 .catalogue-search-input {
   width: 100%;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 5px;
-  padding: 5px 8px 5px 26px;
+  background: var(--rt-inset, #111215);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
+  padding: 6px 8px 6px 26px;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 11px;
-  color: #ffffff;
+  color: var(--rt-ink, #f4efe6);
   outline: none;
-  transition: border-color 0.15s ease;
   box-sizing: border-box;
 }
 
 .catalogue-search-input:focus {
-  border-color: #22d3ee;
+  border-color: var(--rt-copper, #e59858);
+  background: #15161a;
 }
 
 .catalogue-search-input::placeholder {
-  color: #64748b;
+  color: var(--rt-ink-muted, #9698a3);
 }
 
-/* 2 Filter Categories */
+/* Filter Categories */
 .catalogue-filter-section {
   display: flex;
   flex-direction: column;
@@ -216,73 +257,84 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
   font-size: 11px;
   font-weight: 700;
-  color: #cbd5e1;
-  padding: 6px 8px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rt-ink, #f4efe6);
+  padding: 6px 10px;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .catalogue-section-header-btn:hover {
-  background: #1e293b;
-  border-color: #334155;
-  color: #ffffff;
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-copper, #e59858);
 }
 
 .catalogue-section-header-btn--active {
-  background: rgba(6, 182, 212, 0.12);
-  border-color: rgba(34, 211, 238, 0.4);
-  color: #22d3ee;
+  background: var(--rt-copper, #e59858) !important;
+  color: #15161a !important;
+  border-color: var(--rt-copper, #e59858) !important;
 }
 
 .catalogue-count-badge {
-  font-size: 9px;
-  font-family: var(--font-readout, monospace);
-  background: #1e293b;
-  color: #94a3b8;
+  font-size: 9.5px;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  background: var(--rt-ground, #15161a);
+  color: var(--rt-copper, #e59858);
+  border: 1px solid var(--rt-border-color, #2e303a);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 0px !important;
+}
+
+.catalogue-section-header-btn--active .catalogue-count-badge {
+  background: #15161a;
+  color: var(--rt-copper, #e59858);
 }
 
 .catalogue-options-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-left: 4px;
-  margin-top: 2px;
+  gap: 3px;
+  margin-top: 3px;
 }
 
 .catalogue-option-item {
-  /* Now a <button> for keyboard reach; strip the UA chrome so it still
-     renders exactly as the div did. */
   appearance: none;
+  -webkit-appearance: none;
   font: inherit;
   text-align: left;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px;
-  border-radius: 5px;
-  font-size: 10.5px;
-  color: #94a3b8;
+  padding: 6px 10px;
+  border-radius: 0px !important;
+  font-size: 11px;
+  color: var(--rt-ink, #f4efe6);
   cursor: pointer;
-  transition: all 0.12s ease;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  box-shadow: none !important;
+  transition: background 0.12s ease;
+  box-sizing: border-box;
 }
 
 .catalogue-option-item:hover {
-  background: #1e293b;
-  color: #f1f5f9;
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-copper, #e59858);
 }
 
+/* Selected Item Inversion */
 .catalogue-option-item--selected {
-  background: rgba(34, 211, 238, 0.1);
-  color: #38bdf8;
-  font-weight: 600;
+  background: var(--rt-copper, #e59858) !important;
+  color: #15161a !important;
+  border-color: var(--rt-copper, #e59858) !important;
 }
 
 .catalogue-option-label {
@@ -290,20 +342,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  font-weight: 600;
 }
 
 .catalogue-option-unit {
-  font-family: var(--font-readout, monospace);
-  font-size: 9px;
-  color: #64748b;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  font-size: 9.5px;
+  color: var(--rt-ink-muted, #9698a3);
   margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.catalogue-option-item--selected .catalogue-option-unit {
+  color: #15161a;
+  font-weight: 700;
 }
 
 /* --- Right Area: Products Main --- */
 .catalogue-products-main {
   flex: 1;
-  background: #05070d;
-  padding: 14px 18px;
+  background: var(--rt-surface, #1c1d22);
+  padding: 16px;
   overflow-y: auto;
   position: relative;
 }
@@ -313,151 +372,140 @@
   top: 10px;
   right: 16px;
   z-index: 60;
-  background: #06b6d4;
-  color: #020617;
+  background: var(--rt-ground, #15161a);
+  color: var(--rt-ink, #f4efe6);
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 0px !important;
+  border: 1px solid var(--rt-border-color, #2e303a);
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 8px 20px -4px rgba(6, 182, 212, 0.5);
-  animation: toastBounce 0.25s ease;
-}
-
-@keyframes toastBounce {
-  from {
-    transform: translateY(-6px);
-    opacity: 0;
-  }
-
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
 }
 
 .catalogue-products-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rt-border-color, #2e303a);
+  padding-bottom: 8px;
 }
 
 .catalogue-products-title {
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
   font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
+  font-weight: 800;
+  color: var(--rt-ink, #f4efe6);
   margin: 0;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
 
 .catalogue-products-count {
-  font-family: var(--font-readout, monospace);
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 12px;
   font-weight: 700;
-  color: #22d3ee;
+  color: var(--rt-copper, #e59858);
 }
 
 .catalogue-products-subtitle {
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 10px;
-  color: #64748b;
+  color: var(--rt-ink-muted, #9698a3);
 }
 
 .catalogue-empty-state {
   padding: 40px 0;
   text-align: center;
+  font-size: 12px;
+  color: var(--rt-ink-muted, #9698a3);
 }
 
 .catalogue-btn-reset {
   margin-top: 8px;
-  background: #2563eb;
-  color: #ffffff;
-  border: 0;
+  background: var(--rt-copper, #e59858);
+  color: #15161a;
+  border: 1px solid var(--rt-copper, #e59858);
   padding: 5px 12px;
-  border-radius: 5px;
+  border-radius: 0px !important;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-/* Compact Products Grid */
+/* Products Grid */
 .catalogue-products-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
 }
 
 /* Product Card */
 .catalogue-card {
-  background: #0b1220;
-  border: 1px solid #1e293b;
-  border-radius: 10px;
+  background: var(--rt-ground, #15161a);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
   overflow: hidden;
-  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.4);
-  transition: all 0.18s ease;
+  box-shadow: none !important;
   display: flex;
   flex-direction: column;
 }
 
+/* Available product: signature Theme C Copper Stripe */
 .catalogue-card--available {
-  border-color: rgba(34, 211, 238, 0.3);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-left: 3px solid var(--rt-copper, #e59858) !important;
 }
 
 .catalogue-card--available:hover {
-  border-color: rgba(34, 211, 238, 0.7);
-  box-shadow: 0 12px 24px -4px rgba(6, 182, 212, 0.2);
-  transform: translateY(-2px);
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-copper, #e59858);
 }
 
 .catalogue-card--readonly {
-  opacity: 0.85;
+  opacity: 0.65;
 }
 
 .catalogue-card--readonly:hover {
-  border-color: #334155;
-  opacity: 0.95;
+  opacity: 0.85;
 }
 
-/* Compact Card Thumbnail */
+/* Card Thumbnail */
 .catalogue-card-thumb {
   position: relative;
-  aspect-ratio: 16 / 7.5;
+  aspect-ratio: 16 / 7;
   width: 100%;
   overflow: hidden;
-  background: #0f172a;
+  background: var(--rt-inset, #111215);
+  border-bottom: 1px solid var(--rt-border-color, #2e303a);
 }
 
 .catalogue-card-thumb-bg {
   width: 100%;
   height: 100%;
-  opacity: 0.92;
-  transition: transform 0.3s ease;
+  opacity: 0.65;
   position: relative;
-}
-
-.catalogue-card--available:hover .catalogue-card-thumb-bg {
-  transform: scale(1.04);
-}
-
-.catalogue-wave-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+  background-size: 16px 16px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
 }
 
 .catalogue-thumb-icon {
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgba(11, 18, 32, 0.85);
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(51, 65, 85, 0.6);
-  border-radius: 5px;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
   padding: 3px;
-  color: #22d3ee;
+  color: var(--rt-ink, #f4efe6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -467,60 +515,64 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(11, 18, 32, 0.9);
-  border: 1px solid #334155;
-  color: #fbbf24;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  color: var(--rt-copper, #e59858);
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 8.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 1.5px 6px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 0px !important;
 }
 
-/* Active "+ Add to map..." Button for the 1 available product */
+/* Active "+ Add to map..." Button */
 .catalogue-add-to-map-btn {
   position: absolute;
   inset-x: 0;
   bottom: 0;
   width: 100%;
-  background: rgba(31, 58, 138, 0.96);
-  color: #ffffff;
+  background: var(--rt-copper, #e59858);
+  color: #15161a;
   border: 0;
+  border-top: 1px solid var(--rt-border-color, #2e303a);
   padding: 7px 0;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s ease;
+  box-shadow: none !important;
 }
 
 .catalogue-add-to-map-btn:hover {
-  background: #2563eb;
+  background: var(--rt-copper-deep, #d97736);
 }
 
-/* Readonly tag for view-only reference cards (no add button) */
+/* Readonly tag */
 .catalogue-readonly-badge {
   position: absolute;
   inset-x: 0;
   bottom: 0;
   width: 100%;
-  background: rgba(15, 23, 42, 0.92);
-  color: #94a3b8;
+  background: var(--rt-ground, #15161a);
+  color: var(--rt-ink-muted, #9698a3);
   padding: 5px 0;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 9.5px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border-top: 1px solid #1e293b;
+  border-top: 1px solid var(--rt-border-color, #2e303a);
 }
 
 /* Card Body */
@@ -531,30 +583,29 @@
   flex-direction: column;
   justify-content: space-between;
   gap: 8px;
+  background: var(--rt-ground, #15161a);
 }
 
 .catalogue-card-title {
-  font-size: 11.5px;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+  font-size: 12px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--rt-ink, #f4efe6);
   line-height: 1.3;
   margin: 0;
 }
 
-.catalogue-card--available:hover .catalogue-card-title {
-  color: #38bdf8;
-}
-
 .catalogue-card-code {
-  font-family: var(--font-readout, monospace);
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 9px;
-  color: #64748b;
+  color: var(--rt-copper, #e59858);
   margin-top: 3px;
 }
 
 .catalogue-card-spatial {
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 9.5px;
-  color: #94a3b8;
+  color: var(--rt-ink-muted, #9698a3);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -562,7 +613,7 @@
 }
 
 .catalogue-card-footer {
-  border-top: 1px solid #1e293b;
+  border-top: 1px solid var(--rt-border-color, #2e303a);
   padding-top: 6px;
 }
 
@@ -570,16 +621,37 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  font-size: 9.5px;
-  color: #64748b;
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  font-size: 9px;
+  color: var(--rt-ink-muted, #9698a3);
 }
 
 .catalogue-card-var-tag--matched {
-  color: #22d3ee;
+  color: var(--rt-ink, #f4efe6);
   font-weight: 700;
 }
 
 .catalogue-card-var-tag--active {
-  color: #34d399;
+  color: var(--rt-copper, #e59858);
   font-weight: 700;
+}
+
+/* Scrollbars */
+.catalogue-products-main::-webkit-scrollbar,
+.catalogue-sidebar::-webkit-scrollbar,
+.catalogue-sidebar-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.catalogue-products-main::-webkit-scrollbar-track,
+.catalogue-sidebar::-webkit-scrollbar-track,
+.catalogue-sidebar-content::-webkit-scrollbar-track {
+  background: var(--rt-ground, #15161a);
+}
+
+.catalogue-products-main::-webkit-scrollbar-thumb,
+.catalogue-sidebar::-webkit-scrollbar-thumb,
+.catalogue-sidebar-content::-webkit-scrollbar-thumb {
+  background: var(--rt-copper, #e59858);
+  border-radius: 0px;
 }
