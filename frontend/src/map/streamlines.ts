@@ -96,7 +96,11 @@ export class ParticleField {
     frozen = false,
   ): void {
     const f = this.field;
-    const { width, height } = ctx.canvas;
+    // CSS pixels, from the transform. `ctx.canvas.width` is the device-pixel
+    // backing store, and this context is dpr-scaled — see the note in
+    // geography.ts. Using it here made the antimeridian guard below twice as
+    // permissive on a HiDPI display.
+    const { width, height } = transform.size;
 
     // Fade, not clear. A translucent wipe leaves a decaying tail behind each
     // particle; clearing outright would draw a field of unconnected dots.

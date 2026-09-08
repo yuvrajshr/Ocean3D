@@ -19,6 +19,8 @@ import {
   wrapLon,
 } from "./projection";
 import { rasterizeLandMaskBytes, rasterizeSliceBytes, sampleAt, type SliceGrid } from "./raster";
+import { drawGeography, type Geography } from "./geography";
+import { ParticleField } from "./streamlines";
 
 const SIZE = { width: 1200, height: 700 };
 
@@ -222,5 +224,85 @@ describe("sampleAt", () => {
     const g = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     // 190E is the same meridian as 170W, which is the first column.
     expect(sampleAt(g, global, -10, 190)).toBe(sampleAt(g, global, -10, -170));
+  });
+});
+
+
+/**
+ * A 2D context stub whose `canvas` is a trap.
+ *
+ * The context these functions receive is scaled by devicePixelRatio, so every
+ * coordinate they compute is a CSS pixel while `ctx.canvas.width` is the
+ * device-pixel backing store. Reading it mixed the two units, and on a HiDPI
+ * display that made every frame-relative threshold twice as large as the frame:
+ * the antimeridian guards stopped firing and coastlines drew straight across the
+ * map. The bounds must come from the transform, which is in the same units as
+ * the coordinates. Touching `canvas` at all fails the test.
+ */
+function trapContext() {
+  const calls: string[] = [];
+  const ctx = {
+    get canvas(): never {
+      throw new Error("drawing code must not read ctx.canvas — use the transform's CSS size");
+    },
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over",
+    strokeStyle: "",
+    fillStyle: "",
+    lineWidth: 1,
+    lineJoin: "round" as CanvasLineJoin,
+    lineCap: "round" as CanvasLineCap,
+    save() {},
+    restore() {},
+    beginPath() {},
+    setLineDash() {},
+    stroke() {},
+    fillRect() {},
+    drawImage() {},
+    moveTo(x: number, y: number) { calls.push(`M${Math.round(x)},${Math.round(y)}`); },
+    lineTo(x: number, y: number) { calls.push(`L${Math.round(x)},${Math.round(y)}`); },
+  };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+}
+
+const STYLE = {
+  coast: "#fff",
+  coastCasing: "#000",
+  border: "#888",
+  coastWidth: 1.5,
+  borderWidth: 1.25,
+};
+
+describe("drawing bounds come from the transform, not the backing store", () => {
+  it("draws coastlines without reading ctx.canvas", () => {
+    const { ctx } = trapContext();
+    const t = new MapTransform({ lonCentre: 0, latCentre: 0, zoom: 4 }, SIZE);
+    const geo: Geography = { coast: [[0, 0, 10, 10, 20, 20]], borders: [[0, 0, 5, 5]] };
+    expect(() => drawGeography(ctx, geo, t, STYLE)).not.toThrow();
+  });
+
+  it("breaks a coastline that crosses the antimeridian instead of drawing across the frame", () => {
+    const { ctx, calls } = trapContext();
+    // Zoomed in far enough that the whole world is not on screen, which is when
+    // the +/-360 copies are drawn and a tear can actually appear.
+    const t = new MapTransform({ lonCentre: 175, latCentre: 0, zoom: 20 }, SIZE);
+    const geo: Geography = { coast: [[170, 0, -170, 0]], borders: [] };
+    drawGeography(ctx, geo, t, STYLE);
+    // The two points are 340 degrees apart in raw longitude. Whatever is drawn,
+    // no single segment may span more than half the frame.
+    let prev: [number, number] | null = null;
+    for (const c of calls) {
+      const [x, y] = c.slice(1).split(",").map(Number) as [number, number];
+      if (c[0] === "L" && prev) {
+        expect(Math.abs(x - prev[0])).toBeLessThanOrEqual(SIZE.width * 0.5);
+      }
+      prev = [x, y];
+    }
+  });
+
+  it("draws streamlines without reading ctx.canvas", () => {
+    const { ctx } = trapContext();
+    const t = new MapTransform({ lonCentre: 0, latCentre: 0, zoom: 4 }, SIZE);
+    expect(() => new ParticleField().draw(ctx, t, "#fff", true)).not.toThrow();
   });
 });

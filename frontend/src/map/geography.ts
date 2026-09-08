@@ -71,7 +71,13 @@ function strokeLines(
   t: MapTransform,
   shift: number,
 ): void {
-  const { width, height } = ctx.canvas;
+  // CSS pixels, from the transform — NOT `ctx.canvas.width`, which is the
+  // device-pixel backing store. The context is scaled by devicePixelRatio, so
+  // every coordinate below is a CSS pixel; mixing the two made `tear` twice as
+  // large as the frame on a HiDPI display, so a coastline crossing the
+  // antimeridian was never split and drew a stripe straight across the map.
+  // `t.size` is the same value `lonToX`/`latToY` project into, by construction.
+  const { width, height } = t.size;
   // A line that jumps most of the frame in one step has crossed the
   // antimeridian; drawing it would put a stripe straight across the map.
   const tear = width * 0.5;

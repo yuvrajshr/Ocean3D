@@ -104,7 +104,8 @@ function drawGrid(
   for (const shift of [-360, 0, 360]) {
     const xL = t.lonToX(west + shift);
     const xR = t.lonToX(east + shift);
-    if (xR < -2 || xL > ctx.canvas.width + 2) continue;
+    // t.size is CSS pixels, matching xL/xR; ctx.canvas.width is device pixels.
+    if (xR < -2 || xL > t.size.width + 2) continue;
     ctx.drawImage(bitmap, xL, yTop, xR - xL, yBot - yTop);
   }
   ctx.globalAlpha = 1;
@@ -307,11 +308,18 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: P
     const ctx = prepare(basemapRef.current);
     if (!ctx) return;
     ctx.clearRect(0, 0, size.width, size.height);
+
+    // The land mask is derived from a layer's own no-data gaps, so it exists
+    // only when a layer has loaded. The coastlines are not: they are reference
+    // geography, and a map with no layer yet still has to look like the Earth.
+    // Returning early here left an empty grid with nothing on it, which read as
+    // "the map is broken" rather than "no layer is selected".
     const first = state.layers.map((l) => renders[l.id]).find((r) => r !== undefined);
-    if (!first) return;
-    const mask = toBitmap(rasterizeLandMask(first.values, first.grid, [5, 11, 18]));
-    ctx.imageSmoothingEnabled = false;
-    drawGrid(ctx, mask, first.grid, transform, 1);
+    if (first) {
+      const mask = toBitmap(rasterizeLandMask(first.values, first.grid, [5, 11, 18]));
+      ctx.imageSmoothingEnabled = false;
+      drawGrid(ctx, mask, first.grid, transform, 1);
+    }
 
     // Strokes on top of the mask, never instead of it. The fill is still the
     // data's own no-data mask, so nothing here can hide or invent an ocean cell.
@@ -350,13 +358,14 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: P
     if (!canvas) return;
     let raf = 0;
     const tick = () => {
-      const ctx = canvas.getContext("2d");
+      // Sized through `prepare`, which compares BOTH axes. The old guard here
+      // tested width alone, so a height-only resize — the timeline expanding, a
+      // panel opening, the browser's own chrome appearing — left this canvas
+      // with its previous backing-store height while its CSS box followed the
+      // new one. The browser then stretched it, and the streamlines drifted off
+      // the coastlines under them by whatever the height had changed by.
+      const ctx = prepare(canvas);
       if (ctx) {
-        if (canvas.width !== Math.round(size.width * dpr)) {
-          canvas.width = Math.round(size.width * dpr);
-          canvas.height = Math.round(size.height * dpr);
-        }
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         particles.current.draw(ctx, transform, TOKEN.flow, reduced);
       }
       // Under reduced motion the traces are drawn once and left standing: the
@@ -365,7 +374,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: P
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, [transform, size, dpr, reduced, flowField]);
+  }, [transform, prepare, reduced, flowField]);
 
   // -------------------------------------------------------------- pointers
   const pointToGeo = (e: { clientX: number; clientY: number }) => {
