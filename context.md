@@ -454,6 +454,73 @@ The unresolved two-palette split recorded in §5.1.2 has been unified across the
 - **Authentic Scientific Provenance**: Replaced catalogue marketing chips with genuine oceanographic model/sensor tags (`INCOIS-HYCOM Analysis`, `WRF-Ocean Model`, `MODIS-Aqua Satellite`, `INCOIS-TIO Simulation`, `Reference Dataset`), replacing decorative wave SVGs with subtle technical grid textures.
 - **Micro-Animations**: Smooth, hardware-accelerated cubic-bezier transitions for panel expand/collapse, timeline horizontal folding, modal scale/fade, and float points slide-in.
 
+### 5.1.4 What actually shipped with Theme C, and what §5.1.3 overstates (audited 2026-09-08)
+
+§5.1.3 was written on the `designTest` branch and says the two-palette split "has been
+unified across the entire application". Audited at merge time against the code, that is not
+what shipped, and the gap is recorded here rather than left for someone to rediscover on a
+demo machine. Nothing below reverses Theme C — the team chose it and it stands. These are
+the parts of it that are not yet true.
+
+**The product now has three colour systems, not one.** `designTest` touched no file in
+`frontend/src/viz/`, and `viz/scene.ts` carries its own hardcoded copy of the six tokens:
+
+```
+const TOKEN = { abyss: 0x050b12, thermocline: 0x0d2436, current: 0x1c6e8c,
+                bioluminescence: 0x4fe8c4, advisory: 0xe8a23d, foam: 0xeaf3f1 };
+```
+
+So the 3D viewport still renders in the *original* six values, `app.css` renders in the
+*rewritten* six values, and the console renders in Theme C `--rt-*`. The worst case is
+`bioluminescence`, the token §5.1 defines as "live data": it is `#4FE8C4` on the 3D float
+markers and `#10B981` in the chrome, in the same frame. §11 stated the reason this matters —
+"a reader cannot learn what a colour means when the same role has two values" — and there are
+now three. **This is the open question reopened, not closed.**
+
+**The six named tokens were rewritten, and §5.1.3 does not mention it.** The subsection
+describes adopting a console palette; it does not say that the six tokens §5.1 locks were
+themselves given new values. They were:
+
+| Token | §5.1 | after `designTest` |
+|---|---|---|
+| `abyss` | `#050B12` | `#020408` |
+| `thermocline` | `#0D2436` | `#0C1422` |
+| `current` | `#1C6E8C` | `#38BDF8` |
+| `bioluminescence` | `#4FE8C4` | `#10B981` |
+| `advisory` | `#E8A23D` | `#F59E0B` |
+| `foam` | `#EAF3F1` | `#F8FAFC` |
+
+The four changed hues are Tailwind's `sky-400`, `emerald-500`, `amber-500` and `slate-50`.
+§5.2 checks this palette against generic defaults; that check has not been re-run against
+these values, and should be before the pitch.
+
+**The UI font is declared as Inter and is not bundled.** `--rt-font-ui` names
+`"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`, but there is no
+`@fontsource/inter` dependency and no import — `main.tsx` still imports IBM Plex Sans and
+Plex Mono only. Inter therefore resolves only on a machine that already has it installed; on
+a clean Windows demo machine the whole console falls back to Segoe UI. Either ship the
+dependency or return `--rt-font-ui` to IBM Plex Sans, which §5.1 locks and which is already
+bundled. Mono is unaffected: readouts are Plex Mono in both systems.
+
+**`--linear-blue-rgb: #5E6AD2` is defined and used nowhere.** It is commented "Linear
+signature lavender-blue". A second product's brand colour sitting in this project's token
+file is worth deleting on sight; it is left in place only because this pass was scoped to
+documentation.
+
+**No `focus-visible` rule exists in any of the six new stylesheets** — `command-pill.css`,
+`layers-panel.css`, `tool-dock.css`, `timeline.css`, `depth-ruler.css`,
+`data-catalogue-modal.css` all have zero. §5.4 makes a visible focus ring non-negotiable, and
+`CLAUDE.md`'s quality floor repeats it. `assistant.css` was rewritten with rings in the Theme
+C accent at merge time; the other six need the same pass.
+
+**The assistant's entry point moved, and this is a real structural change.** `designTest`
+redistributed `ToolDock`'s jobs into `CommandPill` and stopped rendering `ToolDock` at all.
+Since the assistant's button lived in that file, §5.1 Principle 13's entry point is now
+`assistant/AssistantDock.tsx`: a slim right-edge dock holding one control, in the lane
+Principle 11 reserves, clear of the depth ruler's centred 240px track. The panel itself is
+unchanged — 420px, same z-plane, same citation line. `ToolDock.tsx` still exists and renders
+nowhere.
+
 ### 5.2 Self-critique against generic defaults
 
 Checked against common AI-generated tells before locking this in:
@@ -1196,6 +1263,33 @@ each — component, decision, one-line reason, date.)*
   billing and live answers begin with no code change; until then it says "I cannot check
   a live value from here" and dates what it does remember._
 
+- _2026-09-08 — **`designTest` and `feature/ai-assistant` merged to `main` together.** They
+  collide in a way git does not report: `designTest` moved the right-hand dock's jobs into
+  `CommandPill` and stopped rendering `ToolDock`, and the assistant's button lived inside
+  `ToolDock.tsx`, which merges without a conflict. The naive result compiles, passes 52/28
+  tests, and has no way to open the assistant. Entry point rebuilt as
+  `assistant/AssistantDock.tsx`; `ToolDock.tsx` is now dead code and named as such in
+  `next_session.md` item 7. **The lesson generalises: a clean merge between a redesign and a
+  feature says nothing about whether the feature is still reachable.**_
+- _2026-09-08 — The assistant panel restyled to Theme C: every colour resolves through an
+  `--rt-*` token, 0px radii, the 8px spacing scale. Two things deliberately did not move.
+  Readouts stay IBM Plex Mono, because §5.1 assigns literal values to mono wherever they
+  appear and the medium changing does not change the role. And the ungrounded marker stays
+  `advisory` rather than copper: Theme C's accent `#E59858` and advisory `#F59E0B` are near
+  neighbours, so an unsourced answer marked in the accent would read as ordinary chrome. It
+  stays paired with words (§5.1 Principle 13), so the meaning never rests on colour._
+- _2026-09-08 — **§5.1.3's claim that the split is "unified across the entire application" is
+  not what shipped, and §5.1.4 records the audit.** `designTest` touched no file in
+  `frontend/src/viz/`, and `viz/scene.ts` hardcodes its own copy of the six tokens — so the
+  3D viewport renders in the original values while chrome renders in the rewritten ones.
+  `bioluminescence` is `#4FE8C4` on the float markers and `#10B981` in the chrome, in one
+  frame. Three systems where §11 wanted one. The open question is reopened rather than closed._
+- _2026-09-08 — Recorded, not fixed, at merge time (scope was documentation): the six named
+  tokens were given new values without §5.1.3 saying so; `--rt-font-ui` names Inter with no
+  `@fontsource/inter` dependency, so the console falls back to Segoe UI on a clean machine;
+  `--linear-blue-rgb` (another product's brand colour) is defined and unused; and none of the
+  six new stylesheets carry a single `focus-visible` rule, which §5.4 makes non-negotiable._
+
 ---
 
 ## 11. Open questions for the team
@@ -1215,8 +1309,16 @@ each — component, decision, one-line reason, date.)*
 - **New, still open:** the value-added hazard fields (D26, HTCNT, GEO_U/V) stop at
   2019-03-30, while the 3D grid runs to Jul 2026. If a "recent data" mode is added later,
   those layers must degrade with a stated reason rather than silently vanish.
-- ~~**The product now has two chrome palettes.**~~ **Answered 2026-09-07.** Resolved by
-  standardizing on Theme C Warm Maritime Chronometer & Copper with 0px Swiss grid geometry. See §5.1.3 and §10.
+- **Reopened 2026-09-08 (design, and still the biggest one): the product now has THREE
+  colour systems, not two.** `designTest` adopted Theme C for the console and rewrote the six
+  named tokens in `tokens.css`, but touched no file in `frontend/src/viz/` — and
+  `viz/scene.ts` hardcodes its own copy of the six tokens. So the 3D viewport renders in the
+  original values, `app.css` in the rewritten ones, and the console in Theme C `--rt-*`.
+  `bioluminescence`, which §5.1 defines as "live data", is `#4FE8C4` on the float markers and
+  `#10B981` in the chrome at the same time. The original framing still applies and is now
+  sharper: a reader cannot learn what a colour means when the same role has three values.
+  Resolving it means picking one system and making `viz/scene.ts` read from it rather than
+  restate it. See §5.1.4 for the full audit.
 - **New, still open (assistant, one-line decision):** **enable billing on the Google Cloud
   project, or accept that the assistant cannot look anything up.** Google Search grounding
   is implemented and inert on a free key (§10, 2026-09-06). With billing it answers live

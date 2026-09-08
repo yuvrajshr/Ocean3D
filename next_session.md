@@ -9,14 +9,20 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ---
 
-## 0. Start here — state as of 2026-09-06
+## 0. Start here — state as of 2026-09-08
 
-**`main` is pushed and clean** (`origin/main` = `7700f6a`, the globe merge). Two further
-commits landed on `main` after it — the hint-box removal and the map longitude clamp — and
-**the AI assistant is on an unpushed branch, `feature/ai-assistant` (3 commits).**
+**`main` now carries both outstanding branches.** `designTest` (Ashish's Theme C redesign)
+and `feature/ai-assistant` were merged together on 2026-09-08 via
+`integrate/theme-c-assistant`. `sidePannel` and `globe-enhancements` were already in `main`
+before that and are ahead by nothing — the only branch that was genuinely outstanding was
+`designTest`.
 
-Suite green: **52/52 backend, 28/28 frontend**, typecheck clean, build clean, zero console
-errors.
+**Read `context.md` §5.1.4 before doing any visual work.** The merge audit found that
+Theme C did not reach the 3D viewport: `designTest` touched no file in `frontend/src/viz/`,
+and `viz/scene.ts` hardcodes its own copy of the six tokens. The app therefore renders three
+colour systems at once, and §11's two-palette question is **reopened, not resolved**.
+
+Suite green after the merge: **28/28 frontend**, typecheck clean, build clean.
 
 **Run it:** backend `uvicorn app.main:app --port 8000`, frontend `npm run dev` → :5173.
 `npm install` and `pip install -r requirements.txt` first if pulling fresh — `lucide-react`
@@ -123,8 +129,9 @@ down rather than ignored.
 Streamlines (the white current ribbons that are the actual subject of the NASA reference)
 were explicitly deferred, not rejected — see §8.
 
-Nothing is committed. `git init` was run and ~100 files are staged, but **there are zero
-commits**. Committing is the user's call; they have not asked for it.
+> **Stale when written, corrected 2026-09-08.** This paragraph used to say "nothing is
+> committed… there are zero commits", which was true only of the very first session. The
+> repository has full history and `main` is pushed; see §0 for current state.
 
 ---
 
@@ -240,6 +247,49 @@ told the truth ("that would need more than 3 layers") instead of assuming succes
    `client.interactions.create(...)` → `Interaction` with `steps`/`output_text`, a
    `function_call` step answered by a `function_result` entry. Not `generate_content`.
    Verified against `google-genai` 2.22 and the live docs; do not "fix" it back.
+
+## 1d. The Theme C merge (2026-09-08)
+
+`designTest` and `feature/ai-assistant` landed on `main` together through
+`integrate/theme-c-assistant`. `designTest` merged into `main` with **no conflicts at all**;
+the assistant then conflicted in four files (`context.md`, `next_session.md`, `App.tsx`,
+`tsconfig.tsbuildinfo`). The conflicts were the easy part.
+
+### Traps, and the first one is the important one
+
+1. **A clean merge said nothing about whether the feature still worked.** `designTest`
+   redistributed `ToolDock`'s jobs into the new `CommandPill` and stopped rendering
+   `ToolDock` anywhere. The assistant's "Ask" button lived inside `ToolDock.tsx` — a file
+   both branches edited in *different regions*, so git auto-merged it with no conflict and
+   no warning. Taken as merged, the app compiled, passed every test, and had no way to open
+   the assistant. **When a redesign and a feature merge cleanly, check that the feature is
+   still reachable, not just that it still builds.**
+
+2. **The assistant's props landed on the wrong component.** `<ToolDock assistantOpen … >`
+   textually merged into the `<PointsDrawer …>` that had taken its place in the JSX.
+   `PointsDrawerProps` has no such props, so this one *was* caught — by `tsc`, not by the
+   merge. Without TypeScript it would have been a silent no-op.
+
+3. **The entry point is now `assistant/AssistantDock.tsx`**, a slim right-edge dock holding
+   one button, in the lane §5.1 Principle 11 reserves and clear of the depth ruler's
+   vertically-centred 240px track. `ToolDock.tsx` was taken from `designTest` so the Ask
+   button exists in exactly one place. **`ToolDock.tsx` now renders nowhere** — item 7 in §0
+   is the decision to delete it or wire it.
+
+4. **Theme C never reached the 3D.** `designTest` touched no file under `frontend/src/viz/`,
+   and `viz/scene.ts` carries a hardcoded `TOKEN` table of the original six values. So the
+   float markers draw `bioluminescence` as `#4FE8C4` while the chrome draws it as `#10B981`,
+   in the same frame. Full audit in `context.md` §5.1.4.
+
+5. **Inter is declared and not bundled.** `--rt-font-ui` names Inter first, but there is no
+   `@fontsource/inter` dependency and `main.tsx` imports only IBM Plex Sans and Plex Mono.
+   On a clean demo machine the console renders in Segoe UI. One `npm i` either way — decide
+   before the pitch, not during it.
+
+6. **No `focus-visible` rule exists in any of the six new stylesheets.** `assistant.css` was
+   rewritten with rings at merge time; `command-pill`, `layers-panel`, `tool-dock`,
+   `timeline`, `depth-ruler` and `data-catalogue-modal` all have zero, which §5.4 makes
+   non-negotiable.
 
 ## 2. Running it
 
@@ -449,7 +499,7 @@ session tempted to "fix the inconsistency" would either flatten the globe or cor
 ## 7. Verification
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest tests -v     # 11 integration tests, live data
+cd backend && .venv/Scripts/python -m pytest tests -v     # 52 tests, live data
 cd frontend && npx tsc --noEmit && npm run build          # both clean
 node screenshot.mjs <label>    # full pass: interactions, reduced-motion, mobile
 node shot.mjs <label> --skip   # fast single frame, for iterating on the look
@@ -457,8 +507,9 @@ node shot.mjs <label> --globe        # captures the entry globe
 node shot.mjs <label> --globe-mode  # captures globe mode, reached via the header toggle
 ```
 
-All passing as of session end: 11/11 backend tests, clean typecheck and build, zero console
-errors, no horizontal overflow at 414 px, `prefers-reduced-motion` suppresses the entry.
+All passing as of 2026-09-08: **52/52 backend, 28/28 frontend**, clean typecheck and build,
+zero console errors, no horizontal overflow at 414 px, `prefers-reduced-motion` suppresses
+the entry. (This line read "11/11 backend" for several sessions after the count had grown.)
 
 The globe session additionally verified, with a throwaway puppeteer script (not kept — rebuild
 it if you touch view switching): panels unmount and remount across the toggle; the timeline
@@ -519,8 +570,8 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 ## 9. Working agreement, in short
 
 - `CLAUDE.md` and `context.md` must never drift apart. **Any new colour, shadow, type role or
-  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to seven
-  principles and §10 to ~30 decision-log entries, including two that explicitly *reverse*
+  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to thirteen
+  principles and §10 to ~75 decision-log entries, including several that explicitly *reverse*
   earlier ones. Keep that up — and when reversing a decision, say so and say what survives,
   rather than quietly editing the old entry.
 - Chrome uses the six tokens; data uses cmocean colormaps. They never mix.
