@@ -321,8 +321,13 @@ Not via `screenshot.mjs`, for the reason above:
 
 ## 2. Running it
 
-Two processes. Backend first — the browser cannot reach ERDDAP directly (no CORS headers),
-so nothing renders without it.
+**`npm run dev` from the repo root starts both** (added 2026-09-08) — prefixed output,
+Ctrl+C stops both, and if either process exits it takes the other with it. That last part is
+the gotcha at the bottom of this section made structurally impossible rather than documented:
+you now either have both halves or a message naming the one that went.
+
+Run them separately if you prefer. Backend first — the browser cannot reach ERDDAP directly
+(no CORS headers), so nothing renders without it.
 
 ```bash
 # Backend  →  http://127.0.0.1:8000   (docs at /docs)

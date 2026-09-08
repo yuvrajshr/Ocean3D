@@ -27,8 +27,21 @@ session each. Re-introducing one is the most likely way to lose a day here.
 
 ## 2. Getting it running
 
-Full instructions in `next_session.md` §2. In short — backend first, because the
-browser cannot reach ERDDAP directly:
+**One command, from the repo root:**
+
+```bash
+npm run dev          # both processes, prefixed output, Ctrl+C stops both
+npm run dev --open   # ...and open the browser once both answer
+```
+
+It resolves the venv itself (`Scripts/` on Windows, `bin/` elsewhere), refuses to
+start on a port that already answers, and **takes both down if either one dies** —
+a half-running stack renders a blank page that reads as a bug in the 3D rather
+than as a dead server, which is the most expensive false trail this repo has
+recorded (`next_session.md` §2).
+
+Starting them separately still works, backend first, because the browser cannot
+reach ERDDAP directly:
 
 ```bash
 # Backend  → http://127.0.0.1:8000   (docs at /docs)
