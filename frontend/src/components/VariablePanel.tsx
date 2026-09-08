@@ -51,7 +51,6 @@ export interface LayerItem {
 export interface VariablePanelProps {
   variables: VariableInfo[];
   selected: string;
-  mode?: "ops" | "explore";
   onSelect: (key: string) => void;
   currentTime?: string | null;
   fieldMeta?: FieldMeta | null;
@@ -308,7 +307,6 @@ function LayerScaleSlider({ minVal, maxVal, units, colormap, gradient }: LayerSc
 export function VariablePanel({
   variables,
   selected,
-  mode: _mode = "ops",
   onSelect,
   currentTime,
   fieldMeta,

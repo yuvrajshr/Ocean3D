@@ -328,48 +328,6 @@
   background-color: var(--rt-copper, #e59858);
 }
 
-/* ------------------------------------------------------ Mode Toggle (Ops/Explore) */
-.command-pill__mode-toggle {
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--rt-border-color, #2e303a);
-  background: var(--rt-surface, #1c1d22);
-  border-radius: 0px !important;
-  overflow: hidden;
-  height: 36px;
-}
-
-.command-pill__mode-btn {
-  height: 100%;
-  padding: 0 16px;
-  border: none;
-  border-right: 1px solid var(--rt-border-color, #2e303a);
-  border-radius: 0px !important;
-  background: var(--rt-surface, #1c1d22);
-  color: var(--rt-ink, #f4efe6);
-  font-family: var(--rt-font-ui, "Inter", sans-serif);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-  box-shadow: none !important;
-}
-
-.command-pill__mode-btn:last-child {
-  border-right: none;
-}
-
-.command-pill__mode-btn:hover:not(.command-pill__mode-btn--active) {
-  background: var(--rt-surface-hover, #262830);
-}
-
-.command-pill__mode-btn--active {
-  background: var(--rt-copper, #e59858) !important;
-  color: #15161a !important;
-}
-
 /* ------------------------------------------------------------- Responsive */
 @media (max-width: 900px) {
   .command-pill {

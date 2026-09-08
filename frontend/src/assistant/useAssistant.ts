@@ -28,7 +28,6 @@ export interface ChatMessage {
 
 export interface ScreenStatePayload {
   view: string;
-  mode: string;
   layers: { key: string; visible: boolean; opacity: number }[];
   time: string;
   depth_index: number;

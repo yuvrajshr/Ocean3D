@@ -33,10 +33,12 @@ and `google-genai` are new.
 Free-tier generation is **20 requests/minute per model** and one answer costs two.
 
 ### What to work on next, in the order I would do it
-0. **Finish two assistant checks — one minute, do it first.** Ask it "who was Alan Turing"
-   (a general-knowledge question) and "what is the sea surface temperature at 15 N, 88 E"
-   (an ocean one, which must still render a citation). Both are unverified only because the
-   per-minute quota ran out mid-testing; everything else in the feature was confirmed live.
+0. **One assistant check left.** ~~"what is the sea surface temperature at 15 N, 88 E"~~
+   **verified 2026-09-08** — it answered `30.06 °C` and rendered the citation line
+   `Temperature forecast · Copernicus Marine analysis & forecast · 2026-06-23 · 0 m · °C`,
+   built from the tool call that actually ran. Still unverified: a **general-knowledge**
+   question ("who was Alan Turing"), which exercises the strip-and-retry path when search
+   grounding 429s on the free key.
 
 1. **Decide on Google Search billing.** Grounding is wired and inert on a free key
    (`context.md` §10, 2026-09-06). Enable billing on the Google Cloud project and the
@@ -319,10 +321,50 @@ Not via `screenshot.mjs`, for the reason above:
 - **Reduced motion: zero errors, no overflow.**
 - **414px: zero errors, overflow present** — trap 7.
 
+## 1e. The Ops/Explore toggle is gone (2026-09-08)
+
+Removed on the team's call: it read as useless, and an audit before deleting confirmed why.
+Of the four things `mode` controlled, **two were already dead code** — `VariablePanel`'s
+`mode` prop was destructured as `_mode` and never read, and `.console__main--explore` set
+`grid-template-columns: minmax(0, 1fr)`, byte-identical to the base rule, because the panels
+float now and there is no side column left to collapse. Meanwhile §5.1 Principle 4 promised
+Explore would hide isosurface extraction and colorbar editing and add per-variable captions;
+none of those three exists.
+
+What was actually live, and what happened to it:
+
+- **The exaggeration readout** ("Depth exaggerated 425× · N levels rejected by QC") was the
+  one thing Explore hid. **Removed with the modes**, on the team's call. §10's entry on the
+  two-axis fix is amended accordingly: the physical claim is unchanged and the seafloor is
+  still on its own axis, but the UI no longer *says so*. If anyone is ever likely to read a
+  depth off the relief, that sentence needs a new home — the layer housing already states
+  resolution and source and is the obvious one.
+- **The assistant's register.** It branched in `build_system_prompt`: Explore defined terms
+  and preferred one clear sentence; Ops assumed the vocabulary and led with the number and
+  date. **Pinned to Ops** — the voice an INCOIS deliverable is judged on. The branch, the
+  parameter, and `mode` on both `ScreenStatePayload` and `ScreenState` are gone rather than
+  left defaulted, and `get_screen_state` no longer reports a mode, which also stops the model
+  being told about a control the reader cannot see.
+
+**PS requirement 7** ("doubles as a public science-communication / outreach tool") was
+answered by this toggle. It is now answered by the interface being approachable by default —
+the descent, the globe, real place names, plain empty/error states, and an assistant anyone
+can ask in words. Flagged here because **the pitch deck may still describe the two-mode
+design**, and it no longer exists.
+
+Side effect: the toggle was the furthest-right element in the 414px overflow. Document
+scrollWidth dropped **722 → 618** against a 414 viewport, so the overflow is smaller and
+**still there** (§1d trap 7).
+
 ## 2. Running it
 
-Two processes. Backend first — the browser cannot reach ERDDAP directly (no CORS headers),
-so nothing renders without it.
+**`npm run dev` from the repo root starts both** (added 2026-09-08) — prefixed output,
+Ctrl+C stops both, and if either process exits it takes the other with it. That last part is
+the gotcha at the bottom of this section made structurally impossible rather than documented:
+you now either have both halves or a message naming the one that went.
+
+Run them separately if you prefer. Backend first — the browser cannot reach ERDDAP directly
+(no CORS headers), so nothing renders without it.
 
 ```bash
 # Backend  →  http://127.0.0.1:8000   (docs at /docs)

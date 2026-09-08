@@ -90,7 +90,6 @@ def get_screen_state(state: Any, _args: dict[str, Any]) -> dict[str, Any]:
     """
     return {
         "view": state.view,
-        "mode": state.mode,
         "layers": state.layers,
         "time": state.time,
         "depth_m": state.depth_m,

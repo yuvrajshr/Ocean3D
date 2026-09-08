@@ -45,7 +45,6 @@ import {
   type SceneView,
 } from "./viz/scene";
 
-type Mode = "ops" | "explore";
 
 /** The map is a third view but not a SceneView: it owns a separate canvas and
  *  never touches viz/scene.ts. Widening here is what keeps the 3D camera rig
@@ -61,7 +60,6 @@ export default function App() {
   const sceneRef = useRef<OceanScene | null>(null);
 
   const [webglReady] = useState(isWebGL2Available);
-  const [mode, setMode] = useState<Mode>("ops");
   // The map is the landing view. The load-in descent survives as the product's
   // one orchestrated moment; it now plays on the first dive into the column
   // rather than at boot, so the view toggle is live immediately.
@@ -117,7 +115,6 @@ export default function App() {
     opacity: Record<string, number>;
     nonce: number;
   } | null>(null);
-  const [exaggeration, setExaggeration] = useState(0);
 
   const handleDepthIndexChange = useCallback((index: number) => {
     setDepthIndex(index);
@@ -171,7 +168,6 @@ export default function App() {
   const assistantState = useCallback(
     () => ({
       view,
-      mode,
       layers: layerStack.keys.map((key) => ({
         key,
         visible: layerStack.visibility[key] ?? true,
@@ -181,7 +177,7 @@ export default function App() {
       depth_index: depthIndex,
       depth_m: DEFAULT_DEPTH_LEVELS[depthIndex]?.depthMeters ?? 0,
     }),
-    [view, mode, layerStack, map.time, depthIndex],
+    [view, layerStack, map.time, depthIndex],
   );
 
   /** Apply a batch of actions, returning the state as it was immediately before. */
@@ -343,7 +339,6 @@ export default function App() {
               minElevation: relief.min_elevation,
               maxElevation: relief.max_elevation,
             });
-            setExaggeration(sceneRef.current?.verticalExaggeration ?? 0);
           }
         } catch {
           /* no relief; the water column stands on its own */
@@ -810,17 +805,13 @@ export default function App() {
         view={view}
         onViewChange={handleView}
         entryDone={entryDone}
-        mode={mode}
-        onModeChange={setMode}
         pointsCount={toolPoints.length}
         isPointsOpen={isPointsOpen}
         onTogglePoints={() => setIsPointsOpen((prev) => !prev)}
       />
 
       <div
-        className={`console__main${mode === "explore" ? " console__main--explore" : ""}${
-          view === "globe" ? " console__main--globe" : ""
-        }`}
+        className={`console__main${view === "globe" ? " console__main--globe" : ""}`}
       >
         <div className="viewport">
           {/* The layer panel is shared: it drives the 3D column's single field and
@@ -829,7 +820,6 @@ export default function App() {
             <VariablePanel
               variables={variables}
               selected={variableKey}
-              mode={mode}
               onSelect={setVariableKey}
               currentTime={view === "map" ? map.time : currentTime}
               fieldMeta={view === "map" ? mapFieldShim : fieldMeta}
@@ -871,25 +861,6 @@ export default function App() {
                   <div className="viewport__status viewport__status--error">
                     {fieldError}
                   </div>
-                ) : null}
-
-                {/* Drag/click instructions are deliberately absent: they never
-                    dismissed, so they sat over the viewport permanently to say
-                    something the first drag teaches anyway. What stays is the
-                    readout below, which is not a hint — context.md §10 commits
-                    to stating the exaggeration, because seafloor height is
-                    indicative and nothing should read a depth off it. */}
-                {view !== "globe" && mode !== "explore" ? (
-                  <span className="viewport__hint">
-                    {[
-                      exaggeration > 0
-                        ? `Depth exaggerated ${Math.round(exaggeration)}×`
-                        : null,
-                      instruments ? `${instruments.rejected_by_qc} levels rejected by QC` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
                 ) : null}
 
                 {view === "globe" ? (

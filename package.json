@@ -1,10 +1,14 @@
 {
-  "name": "@tooling/sih-project",
+  "name": "ocean3d",
   "version": "1.0.0",
-  "description": "",
+  "description": "INCOIS 3D Ocean Data Visualization \u2014 root tooling (dev runner, screenshot harness).",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node dev.mjs",
+    "dev:open": "node dev.mjs --open",
+    "shot": "node shot.mjs",
+    "screenshot": "node screenshot.mjs",
+    "test": "cd frontend && npm test"
   },
   "keywords": [],
   "author": "",
