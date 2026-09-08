@@ -356,6 +356,39 @@ Side effect: the toggle was the furthest-right element in the 414px overflow. Do
 scrollWidth dropped **722 → 618** against a 414 viewport, so the overflow is smaller and
 **still there** (§1d trap 7).
 
+## 1f. The map alignment bugs (2026-09-08)
+
+Reported from a teammate's machine: the map looked squished and the country lines were not
+where they belonged. Three defects, one shared root cause, all now fixed and covered by tests.
+
+1. **`ctx.canvas.width/height` was read by drawing code that works in CSS pixels.** The map's
+   contexts are `setTransform(dpr, …)`-scaled, so coordinates are CSS pixels while
+   `ctx.canvas.*` is the device-pixel backing store. On a HiDPI screen every frame-relative
+   threshold was **2× the frame**: `geography.ts`'s antimeridian `tear` never fired and a
+   coastline crossing the date line drew straight across the map. Same guard in
+   `streamlines.ts`. **Bounds now come from `MapTransform.size`.** This is why it reproduced on
+   a teammate's laptop and not on a 1× display — worth remembering the next time a bug is
+   "only on their machine".
+
+2. **The streamline canvas was resized on width only.** A height-only change left the backing
+   store at its old height inside a CSS box of the new one, and the browser stretched the
+   difference. Measured 1400×809 inside 1400×527 — **a 1.54× vertical stretch**. It self-healed
+   only when the width later changed, which is what made it look random. It now goes through
+   the same `prepare()` helper as the other two canvases, which compares both axes.
+
+3. **No layer meant no coastlines.** The basemap effect returned early when no layer had
+   loaded, taking `drawGeography` with it, so an empty map drew a bare graticule and read as
+   broken. The land *fill* is still the data's own no-data mask; only the strokes are now
+   unconditional.
+
+**The rule, and it is enforced:** drawing code in `map/` must never read `ctx.canvas`.
+`map.test.ts` passes a context whose `canvas` getter throws, so reintroducing any of this
+fails the suite rather than waiting for someone with a Retina screen to notice.
+
+Everything else in that feedback document — the zoom buttons, the naming, the Point panel
+overlapping the depth ruler, the doubled `+`, the download-image option, globe idle motion —
+is **untouched**. Only the alignment was asked for.
+
 ## 2. Running it
 
 **`npm run dev` from the repo root starts both** (added 2026-09-08) — prefixed output,

@@ -1338,6 +1338,36 @@ each — component, decision, one-line reason, date.)*
   overflow measured at the Theme C merge (`command-pill__mode-toggle`, right edge 767px, 141px
   wide). The overflow is reduced, **not fixed** — §5.1.4 still stands._
 
+- _2026-09-08 — **The map's squish and its misplaced coastlines were one root cause in three
+  places: drawing code read `ctx.canvas.width/height` while drawing in CSS pixels.** The map's
+  contexts are scaled with `setTransform(dpr, 0, 0, dpr, 0, 0)`, so every coordinate
+  `lonToX`/`latToY` produces is a CSS pixel, while `ctx.canvas.*` is the device-pixel backing
+  store. On any HiDPI display the two differ by `devicePixelRatio`, so every frame-relative
+  threshold was **twice the size of the frame**: `geography.ts`'s antimeridian `tear`
+  (`width * 0.5`) never fired, so a coastline crossing the date line drew as a stripe straight
+  across the map; `streamlines.ts` had the same guard at `width / 4`; `MapView`'s `drawGrid`
+  cull was merely too generous. Fixed by taking the bounds from `MapTransform.size`, which is
+  by construction the same CSS-pixel frame the coordinates are projected into. **The rule:
+  drawing code in `map/` must never read `ctx.canvas` — a test now enforces it with a context
+  whose `canvas` getter throws.**_
+- _2026-09-08 — **The streamline canvas was resized on width only, so a height-only change
+  stretched it.** `MapView`'s flow loop guarded with `if (canvas.width !== size.width * dpr)`
+  and set both axes inside — so when the height changed and the width did not, the backing
+  store kept its old height while the CSS box followed the new one and the browser scaled the
+  difference. Measured live: backing 1400×809 in a 1400×787 box (1.028 vertical), and 1400×809
+  in 1400×527 after a resize — **a 1.54× vertical stretch**, with the streamlines that far off
+  the coastlines beneath them. It self-healed only if the width later changed, which is why it
+  looked intermittent. The flow canvas now goes through the same `prepare()` helper as the
+  other two, which compares both axes. A height-only resize is not exotic: the timeline
+  expanding, a panel opening, or the browser's own chrome appearing all do it._
+- _2026-09-08 — **Reference geography no longer depends on a layer being loaded.** The basemap
+  effect derived its land mask from the first loaded layer and returned early when there was
+  none — taking `drawGeography` with it, so a map with no layer selected drew an empty
+  graticule and read as broken rather than as empty. The mask is still layer-derived (§10,
+  2026-09-01: the fill is the data's own no-data mask and may never be invented); only the
+  coastline and border strokes now draw unconditionally. They encode nothing, so they cannot
+  claim coverage the data lacks — the same argument §5.1 Principle 7 makes for the graticule._
+
 ---
 
 ## 11. Open questions for the team
