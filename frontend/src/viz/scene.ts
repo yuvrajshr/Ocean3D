@@ -24,18 +24,18 @@ import { OceanEffects } from "./effects";
 import { ANALYSIS_HEIGHT, ANALYSIS_MAX_DEPTH, GeoFrame, type Extent } from "./geo";
 import {
   buildClouds,
+  buildFloatMarkers,
   buildGlobe,
   buildStarfield,
   type CloudLayer,
   CLOUDS_URL,
   DEFAULT_BASEMAP,
+  type FloatMarkers,
   type Globe,
-  globeFloatMarkers,
   globeToLatLon,
   latLonToGlobe,
   NIGHT_LIGHTS_URL,
   OCEAN_MASK_URL,
-  regionOutline,
   setGlobeOpacity,
 } from "./globe";
 import {
@@ -48,7 +48,6 @@ import {
 } from "./ocean";
 import { buildLattice, ensureLabelFont, type Lattice, RENDER_ORDER } from "./lattice";
 import { buildTerrainMesh, type TerrainField } from "./terrain";
-import { TOKEN_RGB } from "./water";
 import {
   buildLutTexture,
   buildVolumeTexture,
@@ -179,8 +178,7 @@ export class OceanScene {
 
   private globe: Globe | null = null;
   private clouds: CloudLayer | null = null;
-  private globeOutline: THREE.LineLoop | null = null;
-  private globeFloats: THREE.Points | null = null;
+  private globeFloats: FloatMarkers | null = null;
   // Lives directly in `scene`, not `globeGroup` — it must never move with
   // the globe's fixed rotation. Visibility is synced from
   // `globeGroup.visible` once per frame in tick() rather than duplicated
@@ -460,54 +458,29 @@ export class OceanScene {
   }
 
   /**
-   * (Re)draw the marks on the sphere: the analysis extent, and the floats inside it.
+   * (Re)draw the floats on the sphere.
    *
-   * Rebuilt rather than mutated because both depend on the extent and the marker list,
-   * and both are cheap. Kept as fields so repeated calls replace rather than accumulate —
-   * the outline used to be added inside startEntry(), which leaked one loop per entry.
+   * Rebuilt rather than mutated because it depends on the marker list and is cheap. Kept
+   * as a field so repeated calls replace rather than accumulate.
+   *
+   * No visible extent outline is drawn here (removed — it read as a distracting box on
+   * the sphere). The region is still a real hit-test target: `isInsideExtent` below
+   * checks a clicked lat/lon against the same bounds regardless of what's drawn, so the
+   * click-to-dive gesture is unaffected. The floats themselves, and the hint copy in
+   * App.tsx, are what show a reader roughly where the analysis is.
    */
   private refreshGlobeMarks(): void {
-    if (this.globeOutline) {
-      this.globeGroup.remove(this.globeOutline);
-      this.globeOutline.geometry.dispose();
-      (this.globeOutline.material as THREE.Material).dispose();
-      this.globeOutline = null;
-    }
     if (this.globeFloats) {
-      this.globeGroup.remove(this.globeFloats);
-      this.globeFloats.geometry.dispose();
-      (this.globeFloats.material as THREE.Material).dispose();
+      this.globeGroup.remove(this.globeFloats.object);
+      this.globeFloats.dispose();
       this.globeFloats = null;
     }
 
-    this.globeOutline = regionOutline(this.extent.latRange, this.extent.lonRange);
-    this.globeGroup.add(this.globeOutline);
-
-    const floats = globeFloatMarkers(
-      this.markers.map(({ lat, lon }) => ({ lat, lon })),
-    );
+    const floats = buildFloatMarkers(this.markers.map(({ lat, lon }) => ({ lat, lon })));
     if (floats) {
       this.globeFloats = floats;
-      this.globeGroup.add(floats);
+      this.globeGroup.add(floats.object);
     }
-
-    this.applyRegionHighlight();
-  }
-
-  /**
-   * The outline is the click target, so it has to show that it is one.
-   *
-   * Brightness, not opacity: 0.95 -> 1.0 is invisible, and `linewidth` does nothing in
-   * WebGL, so neither of the obvious levers actually reads. Scaling the colour past 1.0
-   * drives it toward white while staying `bioluminescence` — a state change, not a change
-   * of meaning.
-   */
-  private applyRegionHighlight(): void {
-    const material = this.globeOutline?.material as THREE.LineBasicMaterial | undefined;
-    if (!material) return;
-    material.color.setRGB(...TOKEN_RGB.bioluminescence);
-    if (this.regionHovered) material.color.multiplyScalar(2.1);
-    material.opacity = this.regionHovered ? 1 : 0.9;
   }
 
   /** Is a point on the sphere inside the analysis extent? */
@@ -566,7 +539,6 @@ export class OceanScene {
     if (this.view === "column") return;
     this.view = "column";
     this.regionHovered = false;
-    this.applyRegionHighlight();
     this.canvas.style.cursor = "grab";
 
     if (prefersReducedMotion()) {
@@ -1175,7 +1147,6 @@ export class OceanScene {
 
     if (inside === this.regionHovered) return;
     this.regionHovered = inside;
-    this.applyRegionHighlight();
     this.canvas.style.cursor = inside ? "pointer" : "grab";
   }
 
@@ -1400,6 +1371,15 @@ export class OceanScene {
     // Synced here rather than at each of the several call sites that toggle
     // globeGroup.visible — see the field's own comment for why.
     this.starfield.visible = this.globeGroup.visible;
+    // Drives per-style animation (pulse) and the individual/cluster crossfade (every
+    // Drives the pulse animation and the glow/pulse crossfade — see globe.ts's own
+    // comment on buildFloatMarkers. `this.distance` here is already the eased, per-frame
+    // value driving the visible zoom, not `distanceTarget`, so the crossfade tracks
+    // exactly what's on screen with no separate lag. Gated on visibility so it costs
+    // nothing while in the water column.
+    if (this.globeGroup.visible) {
+      this.globeFloats?.update({ time, cameraDistance: this.distance });
+    }
 
     const underwater = this.camera.position.y < 0;
     if (this.marineSnow) this.marineSnow.visible = underwater && this.worldGroup.visible;
