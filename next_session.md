@@ -291,6 +291,34 @@ the assistant then conflicted in four files (`context.md`, `next_session.md`, `A
    `timeline`, `depth-ruler` and `data-catalogue-modal` all have zero, which §5.4 makes
    non-negotiable.
 
+7. **`CommandPill` overflows at 414px** — 722px of content in a 414px viewport, and every
+   offender is `command-pill__*`. `CONTRIBUTING.md` §6 asserts no horizontal overflow at that
+   width and it held before the redesign. The assistant panel is not involved; it already
+   collapses under 900px.
+
+8. **`screenshot.mjs` is stale beyond the one selector fixed here.** Its status wait now reads
+   CommandPill, so the run gets past the field step — but it still drives a
+   `.float-list__item` list that renders nowhere (`FloatList` is unmounted, and was already
+   unmounted before this merge), and its step labels — "entry-globe", "ops-temperature" —
+   predate the map landing view, so they name views the shot no longer shows. Verification for
+   this merge was done with a focused script instead. **Someone should bring the harness back
+   in line with the current UI**, because CONTRIBUTING §6 makes a clean pass a precondition for
+   every PR and it currently cannot give one.
+
+### What this merge verified, and how
+
+Not via `screenshot.mjs`, for the reason above:
+
+- **52/52 backend, 28/28 frontend, typecheck and build clean.**
+- **Map → Column → Globe → Map round trip: zero console errors**, all three views drawing to
+  canvas. This is the round trip §0 warns never to test one hop at a time.
+- **The assistant drives the layer panel end to end through designTest's rewritten
+  `VariablePanel`.** Asked live to "add the chlorophyll layer and hide temperature", it added
+  chlorophyll, greyed temperature, answered "Added chlorophyll and hid temperature." and
+  offered undo. This is the §1c trap-1 seam and it survives the 955-line rewrite intact.
+- **Reduced motion: zero errors, no overflow.**
+- **414px: zero errors, overflow present** — trap 7.
+
 ## 2. Running it
 
 Two processes. Backend first — the browser cannot reach ERDDAP directly (no CORS headers),

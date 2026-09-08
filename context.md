@@ -513,6 +513,15 @@ documentation.
 `CLAUDE.md`'s quality floor repeats it. `assistant.css` was rewritten with rings in the Theme
 C accent at merge time; the other six need the same pass.
 
+**`CommandPill` overflows a 414px viewport by 308px.** Measured at merge time: every
+element past the right edge is `command-pill__*` — the mode toggle, the points button and the
+view segmented control, which sit at a fixed width with no responsive treatment. §5.4 asks for
+"a single-column layout on mobile/tablet for the Explore/outreach audience" and
+`CONTRIBUTING.md` §6 asserts no horizontal overflow at 414px, which held before this redesign.
+Nothing from the assistant contributes: its panel already collapses to `left/right: 16px`
+under 900px. What the bar should *do* at 414px — wrap, scroll, or collapse behind a control —
+is a design decision, so it is recorded here rather than guessed at.
+
 **The assistant's entry point moved, and this is a real structural change.** `designTest`
 redistributed `ToolDock`'s jobs into `CommandPill` and stopped rendering `ToolDock` at all.
 Since the assistant's button lived in that file, §5.1 Principle 13's entry point is now
