@@ -363,6 +363,32 @@ only.
     (0.5 m surface down to 2000 m floor). Real-time hover callouts display oceanographic
     physical zones (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) so depth
     selection is grounded in ocean physics.
+13. **An assistant may state a measurement only if it fetched one, and the interface
+    proves which.** The ocean assistant (2026-09-06) is the first thing in the product
+    that can produce a sentence rather than a rendering, which makes it the first thing
+    that can be confidently wrong. Three rules keep it inside the system:
+
+    **Provenance is rendered from tool calls, not from prose.** The citation line under
+    an answer is built from the reads that actually executed, so an answer that fetched
+    nothing has nothing to cite and is marked *"General knowledge — not from your data"*
+    in `advisory` amber, paired with words rather than carrying meaning by colour. The
+    model is asked to obey the rule in its prompt; the interface does not depend on it
+    having obeyed.
+
+    **A readout stays a readout.** Dataset, date, depth and units in the citation line
+    are IBM Plex Mono, the same role §5.1 gives every literal value elsewhere. The
+    medium changed, not the rule.
+
+    **It may act, and it may always be undone.** The assistant changes the workspace
+    without asking first, because a reader who says "add chlorophyll" wants chlorophyll
+    added. That is only reasonable because every message that changed something carries
+    a one-click undo restoring the exact prior state.
+
+    *This principle also admits the one structural device it needs: a wide floating
+    panel, 420 px, on the existing floating-console z-plane — not a fourth level.* It is
+    a genuine exception to §5.1's rule that nothing competes with the viewport, taken
+    knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
+    closes when dismissed, and the viewport is never obscured while it is shut.
 
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
@@ -1100,6 +1126,76 @@ each — component, decision, one-line reason, date.)*
   (fade and scale), `FloatPoints` (slide-in drawer), and `Timeline` (ruler unfolding and slide-up
   entrance)._
 
+- _2026-09-06 — **An AI assistant, and the grounding rule is structural rather than
+  prompted.** The assistant can answer about the water and drive the app ("add the
+  chlorophyll layer and hide temperature"). The danger it introduces is specific: a
+  plausible invented sea temperature inside an INCOIS-branded tool is worse than no
+  assistant. So the panel builds its citation line from the tool calls that actually
+  ran, never from the prose — an answer that fetched nothing has nothing to cite and is
+  visibly marked as general knowledge. The prompt states the rule too, but the interface
+  does not rely on the model having followed it. See §5.1 Principle 13._
+- _2026-09-06 — **Gemini, and the API is not the one in anyone's memory.** `gemini-3.8-flash`
+  through `google-genai` 2.22, which is `client.interactions.create(...)` returning an
+  `Interaction` with `steps` and `output_text` — a `function_call` step answered by a
+  `function_result` entry. This replaced the `generate_content` surface; verified against
+  the installed package and the live docs, not recalled. Key in gitignored `backend/.env`,
+  server-side only (§5.5). `store=False`, so no transcript persists on Google's servers —
+  the defensible choice for a government deliverable. Without a key the dock button states
+  the reason and everything else works, the same degradation the Copernicus layers have._
+- _2026-09-06 — **The tool loop is split, because half of it cannot run on the server.**
+  Read tools execute in the backend against the endpoints the UI already uses. Action
+  tools mutate React state in a browser, so they are *validated* server-side against a
+  state snapshot the client sends with every message, then returned for the client to
+  apply. That is what lets the model be told the truth about whether an action succeeded —
+  it learns "that would need more than 3 layers" rather than assuming it worked._
+- _2026-09-06 — **`zoom_to_region` resolves a fixed table and nothing else.** A model
+  supplying its own bounding box for a place name is the most dangerous kind of wrong
+  here, because a plausible-looking box is indistinguishable from a correct one on screen._
+- _2026-09-06 — **SQLite, not Supabase, for conversations and cached analyses.** Asked for
+  Supabase first, then delegated the choice. §1 requires deployability on INCOIS
+  infrastructure and a hosted database is an outbound dependency a government network may
+  refuse; §4 already sanctions "SQLite for demo". Behind a `ConversationStore` protocol —
+  the same shape as `DataSource` — so a later swap is a class, not a rewrite. The
+  `analysis_cache` table is also the free-tier mitigation: a repeated question skips both
+  the upstream and the model._
+- _2026-09-06 — **Writing a layer from outside has TWO wrong seams, and both fail
+  silently.** Found by building the assistant, and corrected once during the build.
+  (a) `dispatchMap({type:"layer/add"})` is overwritten by the `layers/sync` effect, which
+  derives `map.layers` from the stack. (b) `setLayerStack` alone changes nothing on screen:
+  **`VariablePanel` owns the stack in its own `useState`** and only mirrors it up, so
+  `App.tsx`'s `layerStack` is downstream, not the source. The working seam is to set the
+  mirror AND hand the panel a stack through a new `externalStack` prop, whose nonce marks
+  it a fresh instruction — a nonce rather than value equality, so undoing back to a stack
+  you were already in still applies. Lifting the state out of `VariablePanel` would be the
+  cleaner fix and is a much larger change to a file several people touch. Both failure
+  modes look identical from outside: the assistant cheerfully reports a change that did not
+  happen, which is the worst shape of bug this feature can have._
+- _2026-09-06 — **Gemini's free-tier quota is per model, and the newest model is the
+  exhausted one.** Measured on a real key: `gemini-3.8-flash` returned 429 (limit 20/min,
+  ~55 s to reset) while `gemini-3.5-flash` answered immediately with the same request.
+  Default moved to 3.5-flash; `GEMINI_MODEL` overrides it. Also measured: inlining the
+  screen state and the variable catalogue into the system prompt cut a layer command from
+  three rounds to two, and two is the floor for a tool loop (one call, one summary). Each
+  round is one request, so on a per-minute quota that is the difference between working and
+  not. A 429 is surfaced as "the free Gemini quota is used up for the moment" with the
+  retry delay Gemini itself names, and nothing else in the app is affected._
+
+- _2026-09-06 — **The assistant answers beyond the ocean, and Google Search grounding is
+  wired but unusable on a free key.** It first refused "what is a barrel of oil worth"
+  with "I can only assist with oceanographic data" — untrue and the worst answer it can
+  give. Two causes: the prompt scoped it, and a current price is genuinely not in any
+  model's weights, so widening the prompt alone would have produced a stale figure stated
+  as current. Both fixed: the prompt now allows general knowledge, and `google_search` is
+  in the tool list with web sources rendering as clickable citations, marked `kind="web"`
+  and styled apart from measured ones — a page Google returned is not the ocean analysis.
+  **Measured: grounding is billed separately and is NOT in the free tier.** Every request
+  carrying the tool returns 429 "check your plan and billing details" while the identical
+  request without it succeeds, so adding it unconditionally would have broken every
+  question including ocean ones. The client strips search and retries on a quota error,
+  remembers the result for the process, and `GEMINI_SEARCH=off` skips the probe. Enable
+  billing and live answers begin with no code change; until then it says "I cannot check
+  a live value from here" and dates what it does remember._
+
 ---
 
 ## 11. Open questions for the team
@@ -1121,6 +1217,19 @@ each — component, decision, one-line reason, date.)*
   those layers must degrade with a stated reason rather than silently vanish.
 - ~~**The product now has two chrome palettes.**~~ **Answered 2026-09-07.** Resolved by
   standardizing on Theme C Warm Maritime Chronometer & Copper with 0px Swiss grid geometry. See §5.1.3 and §10.
+- **New, still open (assistant, one-line decision):** **enable billing on the Google Cloud
+  project, or accept that the assistant cannot look anything up.** Google Search grounding
+  is implemented and inert on a free key (§10, 2026-09-06). With billing it answers live
+  questions with real cited sources; without it, it honestly declines and dates what it
+  remembers. Nothing else changes either way. Free-tier generation is **20 requests per
+  minute per model**, and one answer costs two, so roughly ten questions a minute — fine
+  for a demo, tight if judges pass a laptop around.
+- **New, still open (assistant, unverified):** two paths have never been run end to end
+  because the per-minute quota ran out during testing: a **general-knowledge question**
+  ("who was Alan Turing"), and the **ocean measurement path since search grounding was
+  added**. The oil-price question did exercise the strip-and-retry fallback successfully,
+  so the mechanism works; what is unconfirmed is that the ocean path still cites correctly
+  through it. Run both first thing next session — they are two questions and one minute.
 - **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
   far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
   against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality

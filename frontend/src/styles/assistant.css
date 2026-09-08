@@ -1,0 +1,382 @@
+/**
+ * The assistant dock and panel — Theme C (context.md §5.1.3).
+ *
+ * Previously drawn in the floating console's slate-and-cyan palette, which
+ * §5.1.2 recorded as one half of the two-palette split. That split is closed:
+ * everything here now resolves through the `--rt-*` tokens, with the 0px Swiss
+ * geometry, hairline borders and 8px spacing scale the rest of the console uses.
+ * No literal hex appears below except through a token fallback.
+ *
+ * Two things did NOT move, because they are not container decisions:
+ *
+ *   1. Readouts stay IBM Plex Mono. A dataset name, a date, a depth and a unit
+ *      are literal values, which §5.1 assigns to mono wherever they appear.
+ *
+ *   2. The ungrounded marker stays `advisory`, not copper. Theme C's accent
+ *      (#E59858) and advisory amber (#F59E0B) are near neighbours, so an
+ *      unsourced answer marked in the accent colour would read as ordinary
+ *      chrome. It is drawn in advisory and paired with words — "General
+ *      knowledge — not from your data" — so the meaning never rests on the
+ *      colour alone (§5.1 Principle 13, §5.4).
+ *
+ * The panel sits on the floating-console z-plane, the same one as the layer
+ * panel. It does not introduce a fourth level.
+ */
+
+/* ── The dock ──────────────────────────────────────────────────────────────
+   One button, top-right, clear of the depth ruler's vertically-centred 240px
+   track (§5.1 Principle 11: right-hand instruments occupy non-colliding lanes). */
+
+.assistant-dock {
+  position: absolute;
+  top: var(--rt-space-4, 16px);
+  right: var(--rt-space-4, 16px);
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.assistant-dock__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 52px;
+  padding: var(--rt-space-2, 8px) var(--rt-space-1, 4px);
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  border-radius: 0;
+  color: var(--rt-ink-muted, #9698a3);
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.assistant-dock__label {
+  font-size: var(--rt-text-xs, 9.5px);
+  letter-spacing: 0.02em;
+}
+
+.assistant-dock__btn:hover {
+  background: var(--rt-surface-hover, #262830);
+  color: var(--rt-ink, #f4efe6);
+}
+
+/* Active is the 3px copper stripe designTest uses throughout, not a fill. */
+.assistant-dock__btn--active {
+  border-left-color: var(--rt-copper, #e59858);
+  background: var(--rt-surface-active, #2f313c);
+  color: var(--rt-copper, #e59858);
+}
+
+.assistant-dock__btn:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+
+/* ── The panel ─────────────────────────────────────────────────────────── */
+
+.assistant-panel {
+  position: absolute;
+  top: var(--rt-space-4, 16px);
+  right: 80px;
+  bottom: var(--rt-space-4, 16px);
+  width: 420px;
+  max-width: calc(100vw - 112px);
+  display: flex;
+  flex-direction: column;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  z-index: 40;
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+}
+
+.assistant-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--rt-space-2, 8px);
+  padding: var(--rt-space-3, 12px) var(--rt-space-4, 16px);
+  background: var(--rt-ground, #15161a);
+  border-bottom: 1px solid var(--rt-border-color, #2e303a);
+}
+
+.assistant-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--rt-space-2, 8px);
+  font-size: var(--rt-text-base, 14px);
+  font-weight: 600;
+  color: var(--rt-ink, #f4efe6);
+}
+
+.assistant-panel__close {
+  border: 0;
+  background: transparent;
+  color: var(--rt-ink-muted, #9698a3);
+  border-radius: 0;
+  padding: var(--rt-space-1, 4px);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.assistant-panel__close:hover {
+  background: var(--rt-surface-hover, #262830);
+  color: var(--rt-ink, #f4efe6);
+}
+.assistant-panel__close:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+
+.assistant-panel__log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--rt-space-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--rt-space-4, 16px);
+}
+
+/* An invitation with a next step, not an apology (§5.3). */
+.assistant-panel__empty {
+  color: var(--rt-ink-muted, #9698a3);
+  font-size: var(--rt-text-sm, 10.7px);
+  line-height: 1.7;
+}
+.assistant-panel__empty strong {
+  color: var(--rt-ink, #f4efe6);
+  font-weight: 600;
+}
+.assistant-panel__examples {
+  margin: var(--rt-space-3, 12px) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rt-space-1, 4px);
+}
+.assistant-panel__example {
+  text-align: left;
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0;
+  background: var(--rt-inset, #111215);
+  color: var(--rt-ink-muted, #9698a3);
+  padding: var(--rt-space-2, 8px) var(--rt-space-3, 12px);
+  font-family: inherit;
+  font-size: var(--rt-text-sm, 10.7px);
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.assistant-panel__example:hover {
+  border-color: var(--rt-copper, #e59858);
+  color: var(--rt-ink, #f4efe6);
+}
+.assistant-panel__example:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+
+.assistant-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rt-space-1, 4px);
+}
+.assistant-msg__body {
+  font-size: var(--rt-text-base, 14px);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.assistant-msg--user .assistant-msg__body {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--rt-inset, #111215);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  color: var(--rt-ink, #f4efe6);
+  border-radius: 0;
+  padding: var(--rt-space-2, 8px) var(--rt-space-3, 12px);
+}
+.assistant-msg--assistant .assistant-msg__body {
+  color: var(--rt-ink, #f4efe6);
+}
+.assistant-msg--failed .assistant-msg__body {
+  color: rgb(var(--advisory-rgb, 245 158 11));
+}
+
+/* Provenance. Mono because it is a literal readout — dataset, date, depth —
+   and §5.1 assigns those to IBM Plex Mono wherever they appear. */
+.assistant-cite {
+  border-top: 1px solid var(--rt-border-color, #2e303a);
+  padding-top: var(--rt-space-2, 8px);
+}
+.assistant-cite__summary {
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+  font-size: var(--rt-text-xs, 9.5px);
+  color: var(--rt-ink-faint, #606370);
+  cursor: pointer;
+  list-style: none;
+}
+.assistant-cite__summary::-webkit-details-marker { display: none; }
+.assistant-cite__summary:hover { color: var(--rt-ink-muted, #9698a3); }
+.assistant-cite__summary:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: 2px;
+}
+.assistant-cite[open] .assistant-cite__summary { color: var(--rt-ink-muted, #9698a3); }
+.assistant-cite__list {
+  margin: var(--rt-space-2, 8px) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--rt-space-1, 4px);
+}
+.assistant-cite__row {
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+  font-size: var(--rt-text-xs, 9.5px);
+  color: var(--rt-ink-muted, #9698a3);
+  background: var(--rt-inset, #111215);
+  border-left: 2px solid var(--rt-border-strong, #404352);
+  border-radius: 0;
+  padding: var(--rt-space-1, 4px) var(--rt-space-2, 8px);
+}
+
+/* The honest marker on an answer with nothing to cite. Advisory amber means
+   "pay attention" — an unsourced claim in a data tool is exactly that — and it
+   is paired with words, never carrying the meaning by colour. Deliberately not
+   copper: the accent and advisory are close enough in Theme C that the accent
+   would read as ordinary chrome. */
+.assistant-msg__ungrounded {
+  font-size: var(--rt-text-xs, 9.5px);
+  color: rgb(var(--advisory-rgb, 245 158 11));
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+}
+
+.assistant-msg__undo {
+  align-self: flex-start;
+  border: 1px solid var(--rt-border-color, #2e303a);
+  background: transparent;
+  color: var(--rt-copper, #e59858);
+  border-radius: 0;
+  padding: var(--rt-space-1, 4px) var(--rt-space-2, 8px);
+  font-family: inherit;
+  font-size: var(--rt-text-sm, 10.7px);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.assistant-msg__undo:hover { background: var(--rt-surface-hover, #262830); }
+.assistant-msg__undo:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+
+.assistant-panel__status {
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+  font-size: var(--rt-text-sm, 10.7px);
+  color: var(--rt-copper, #e59858);
+}
+
+.assistant-panel__form {
+  display: flex;
+  gap: var(--rt-space-2, 8px);
+  padding: var(--rt-space-3, 12px);
+  background: var(--rt-ground, #15161a);
+  border-top: 1px solid var(--rt-border-color, #2e303a);
+}
+.assistant-panel__input {
+  flex: 1;
+  background: var(--rt-inset, #111215);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0;
+  padding: var(--rt-space-2, 8px) var(--rt-space-3, 12px);
+  color: var(--rt-ink, #f4efe6);
+  font-size: var(--rt-text-base, 14px);
+  font-family: inherit;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+}
+.assistant-panel__input:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+.assistant-panel__input::placeholder { color: var(--rt-ink-faint, #606370); }
+
+.assistant-panel__send {
+  border: 1px solid var(--rt-copper, #e59858);
+  border-radius: 0;
+  background: var(--rt-copper, #e59858);
+  color: var(--rt-ground, #15161a);
+  padding: 0 var(--rt-space-3, 12px);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: var(--rt-text-sm, 10.7px);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.assistant-panel__send:hover:not(:disabled) {
+  background: var(--rt-copper-deep, #d97736);
+  border-color: var(--rt-copper-deep, #d97736);
+}
+.assistant-panel__send:disabled {
+  background: var(--rt-surface-hover, #262830);
+  border-color: var(--rt-border-color, #2e303a);
+  color: var(--rt-ink-faint, #606370);
+  cursor: not-allowed;
+}
+.assistant-panel__send:focus-visible {
+  outline: 2px solid var(--rt-ink, #f4efe6);
+  outline-offset: -3px;
+}
+
+.assistant-panel__unavailable {
+  padding: var(--rt-space-4, 16px);
+  font-size: var(--rt-text-sm, 10.7px);
+  line-height: 1.7;
+  color: var(--rt-ink-muted, #9698a3);
+}
+
+@media (max-width: 900px) {
+  .assistant-panel {
+    left: var(--rt-space-4, 16px);
+    right: var(--rt-space-4, 16px);
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-panel *,
+  .assistant-dock * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* A web source reads differently from a measured one on purpose. Both are real
+   sources — but a page Google returned is not the ocean analysis, and the
+   reader must be able to tell at a glance which they are looking at. The
+   distinction is the copper rule plus the link treatment, not colour alone. */
+.assistant-cite__row--web {
+  border-left-color: var(--rt-copper, #e59858);
+}
+.assistant-cite__link {
+  color: var(--rt-copper, #e59858);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.assistant-cite__link:hover { text-decoration: underline; }
+.assistant-cite__link:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: 2px;
+}

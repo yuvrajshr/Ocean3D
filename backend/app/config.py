@@ -59,6 +59,50 @@ COPERNICUS_AVAILABLE = bool(COPERNICUS_USERNAME and COPERNICUS_PASSWORD)
 # not ship (context.md 5.5).
 COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 
+# ---------------------------------------------------------------- assistant
+
+# The ocean assistant. Server-side only: the key never reaches the browser,
+# exactly like the Copernicus credentials above. Without a key the assistant
+# simply does not appear and every other part of the app still works, which is
+# the same degradation the Copernicus layers already have.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
+# gemini-3.5-flash, not the newer 3.8. Free-tier quota is per model, and the
+# newest flash is the one everyone is hammering: measured on this key, 3.8 was
+# rate-limited (20/min, ~55 s to reset) while 3.5 answered immediately. 3.5
+# handles this tool loop identically. Override with GEMINI_MODEL to move.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+
+# Conversations and the analysis cache. SQLite rather than a hosted database:
+# context.md 1 requires the app be deployable on INCOIS infrastructure, and 4
+# already sanctions "SQLite for demo". Lives beside the disk cache and is
+# gitignored the same way.
+ASSISTANT_DB = BACKEND_ROOT / "app" / "assistant_store" / "assistant.db"
+
+# How long a cached tool result stays fresh. Ocean analyses for a past date do
+# not change, so this is generous; it exists to stop a repeated question
+# spending free-tier quota, not to guarantee recency.
+ASSISTANT_CACHE_TTL_SECONDS = 60 * 60 * 24
+
+# A hard ceiling on tool-calling rounds per message. Without it a confused
+# model can loop until the quota is gone.
+ASSISTANT_MAX_STEPS = 6
+
+# Google Search grounding, which lets the assistant answer live real-world
+# questions ("what is oil trading at?") with real sources instead of an honest
+# refusal.
+#
+# It is billed separately from generation and is NOT part of the free tier:
+# measured on a free key, every request carrying the `google_search` tool
+# returned 429 "check your plan and billing details", while the identical
+# request without it succeeded. Enable billing on the Google Cloud project and
+# it starts working with no code change.
+#
+# "auto" (the default) tries once per process and remembers the answer. Set to
+# "off" on a free key to skip that probe and save a request per restart, or
+# "on" to insist.
+GEMINI_SEARCH = os.environ.get("GEMINI_SEARCH", "auto").strip().lower()
+
 
 @dataclass(frozen=True)
 class VariableSpec:
