@@ -9,48 +9,76 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ---
 
-## 0. Start here — state as of 2026-09-05
+## 0. Start here — state as of 2026-09-08
 
-**Everything is on `main` and pushed.** `origin/main` = `1309a55`. Working tree clean.
-The side-panel branch is merged and contained in main; the worktree used to review it is gone.
+**`main` now carries both outstanding branches.** `designTest` (Ashish's Theme C redesign)
+and `feature/ai-assistant` were merged together on 2026-09-08 via
+`integrate/theme-c-assistant`. `sidePannel` and `globe-enhancements` were already in `main`
+before that and are ahead by nothing — the only branch that was genuinely outstanding was
+`designTest`.
 
-Suite green: **23/23 backend, 18/18 frontend**, typecheck clean, build clean, zero console
-errors in the browser.
+**Read `context.md` §5.1.4 before doing any visual work.** The merge audit found that
+Theme C did not reach the 3D viewport: `designTest` touched no file in `frontend/src/viz/`,
+and `viz/scene.ts` hardcodes its own copy of the six tokens. The app therefore renders three
+colour systems at once, and §11's two-palette question is **reopened, not resolved**.
+
+Suite green after the merge: **28/28 frontend**, typecheck clean, build clean.
 
 **Run it:** backend `uvicorn app.main:app --port 8000`, frontend `npm run dev` → :5173.
-Nothing else needs starting. `npm install` first if you are pulling for the first time —
-`lucide-react` is new.
+`npm install` and `pip install -r requirements.txt` first if pulling fresh — `lucide-react`
+and `google-genai` are new.
 
-### What to work on tomorrow, in the order I would do it
+**The assistant needs a key.** `GEMINI_API_KEY` in `backend/.env` (gitignored; see
+`.env.example`). Without one the dock button states the reason and everything else works.
+Free-tier generation is **20 requests/minute per model** and one answer costs two.
 
-1. **Look at it on a real GPU.** Still the oldest open item and still the single largest
-   unknown. Every visual decision in this project — water fog, the globe's shadow lift, the
-   submerged camera, the streamline density — was tuned against SwiftShader at 1-4 fps. The
-   map's CPU raster path is immune to this, but the 3D column is not.
+### What to work on next, in the order I would do it
+0. **Finish two assistant checks — one minute, do it first.** Ask it "who was Alan Turing"
+   (a general-knowledge question) and "what is the sea surface temperature at 15 N, 88 E"
+   (an ocean one, which must still render a citation). Both are unverified only because the
+   per-minute quota ran out mid-testing; everything else in the feature was confirmed live.
 
-2. **Resolve the two-palette split (§11, §5.1.2).** The 3D viewport uses the six named
-   tokens; the merged floating console uses slate+cyan that `tokens.css` does not define, and
-   two of those colours duplicate roles the tokens already fill. Pick one direction and make
-   it true everywhere. This is the biggest *design* debt and it is newly created, so it is
-   fresh in everyone's head.
+1. **Decide on Google Search billing.** Grounding is wired and inert on a free key
+   (`context.md` §10, 2026-09-06). Enable billing on the Google Cloud project and the
+   assistant answers live questions with cited sources; leave it and it declines honestly.
+   One decision, no code either way.
 
-3. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
+2. ~~**Merge or PR `feature/ai-assistant`.**~~ **Done 2026-09-08.** Merged into `main`
+   together with `designTest`, and the assistant's entry point was re-attached to the
+   Theme C console — see §1d.
+
+3. ~~**Resolve the two-palette split (§11, §5.1.2).**~~ **Resolved 2026-09-07** on
+   `designTest`. The app is unified under Theme C (Warm Maritime Chronometer & Copper:
+   `#15161A` ground, `#1C1D22` surface, `#2E303A` border, `#F4EFE6` ink, `#E59858` copper)
+   with 0px Swiss grid geometry. See `context.md` §5.1.3 and §5.1.4.
+
+4. **Look at it on a real GPU.** Still the oldest open item and still the single largest
+   unknown. Every visual decision — water fog, the globe's shadow lift, the submerged
+   camera, streamline density — was tuned against SwiftShader at 1-4 fps. The map's CPU
+   raster path is immune; the 3D column is not. **Theme C raises the stakes:** the whole
+   chrome palette changed and no one has seen it on real hardware either.
+
+5. **Bounding-box refetch on the map at high zoom.** The map always fetches globally at a
    stride, so zooming in shows ~0.4° cells under a 50 m coastline. `derive_stride` already
    takes a bbox; the work is refetching on zoom-settle without giving up "pan never
    refetches". Most visible quality win available.
 
-4. **Pre-warm the demo dates.** Copernicus is ~12 s cold and 0.03 s cached. Before the pitch,
+6. **Pre-warm the demo dates.** Copernicus is ~12 s cold and 0.03 s cached. Before the pitch,
    walk the dates you will actually show so every one is warm. A short script against
    `/api/map/slice/meta` is enough.
 
-5. **Wire the tool dock's remaining buttons or remove them.** Points, Areas and the 2D toggle
-   are live. Lines and Import are not, and a dead control is worse than an absent one.
+7. **Decide what remains of the tool dock.** `designTest` moved Points and the 2D/3D toggle
+   into `CommandPill` and stopped rendering `ToolDock` entirely; the merge kept a slim
+   right-edge dock for the assistant alone (§1d). `ToolDock.tsx` still contains the old
+   Areas/Lines/Import buttons and is now dead code — delete it or wire it, but a file that
+   renders nowhere is worse than either.
 
-6. **Confirm current-speed units with INCOIS** (§11) — unchanged, and still needed before the
+8. **Confirm current-speed units with INCOIS** (§11) — unchanged, and still needed before the
    pitch. Copernicus now gives a cross-check: it publishes u/v in m/s over the same box.
 
-7. **§9 acronyms and dataset-links tables** from the PS PDF. Needed for the report, not the
+9. **§9 acronyms and dataset-links tables** from the PS PDF. Needed for the report, not the
    build.
+
 
 ### Traps added today
 
@@ -101,8 +129,9 @@ down rather than ignored.
 Streamlines (the white current ribbons that are the actual subject of the NASA reference)
 were explicitly deferred, not rejected — see §8.
 
-Nothing is committed. `git init` was run and ~100 files are staged, but **there are zero
-commits**. Committing is the user's call; they have not asked for it.
+> **Stale when written, corrected 2026-09-08.** This paragraph used to say "nothing is
+> committed… there are zero commits", which was true only of the very first session. The
+> repository has full history and `main` is pushed; see §0 for current state.
 
 ---
 
@@ -160,6 +189,135 @@ LayerStack, MapDepthRuler, MapTimeline, PointReadout, map.test.ts),
    trip after touching view switching**, not just one hop.
 8. The point block is expensive in its TIME extent, not its depth extent: 40 levels × 31 days
    is 5–9 s cold, 40 × 60 was ~50 s. Keep the window near a month.
+
+## 1c. The AI assistant (added 2026-09-06, branch `feature/ai-assistant`)
+
+A Gemini-backed assistant, first icon in the right dock ("Ask"), opening a 420 px floating
+panel. It answers questions about the water from real data, answers general questions from
+its own knowledge, and **drives the app** — "add the chlorophyll layer and hide temperature"
+applies as two state changes with one-click undo.
+
+```
+backend/app/assistant/   gemini_client.py (the only place that talks to Gemini)
+                         tools.py (declarations + action validation)
+                         reads.py (read tools, each returning provenance)
+                         prompt.py · store.py (SQLite behind a protocol)
+backend/app/routers/assistant.py    SSE: status → answer → done
+frontend/src/assistant/  AssistantPanel.tsx · useAssistant.ts · actions.ts
+```
+
+**How grounding is enforced, and why it is not just prompt wording.** Read tools return
+values *with* provenance; the panel builds its citation line from the calls that actually
+ran, never from the prose. An answer that fetched nothing has nothing to cite and shows
+"General knowledge — not from your data". Web sources (when search is enabled) are marked
+`kind="web"` and styled apart, because a page Google returned is not the ocean analysis.
+
+**The tool loop is split.** Read tools run on the backend. Action tools cannot — they mutate
+React state — so they are validated server-side against a state snapshot the client sends
+with every message, then returned for the client to apply. That is what lets the model be
+told the truth ("that would need more than 3 layers") instead of assuming success.
+
+### Traps, in the same spirit as §6
+
+1. **Writing a layer from outside has TWO wrong seams and both fail silently.**
+   `dispatchMap({type:"layer/add"})` is overwritten by the `layers/sync` effect. And
+   `setLayerStack` alone changes nothing on screen: **`VariablePanel` owns the stack in its
+   own `useState`** and only mirrors it up, so `App.tsx`'s `layerStack` is downstream, not
+   the source. The working seam sets the mirror *and* hands the panel a stack via the
+   `externalStack` prop, whose **nonce** marks a fresh instruction — a nonce rather than
+   value equality, so undoing back to a stack you were already in still applies. Both
+   failures look identical from outside: the assistant cheerfully reports a change that
+   did not happen. This cost a full debugging cycle; do not rediscover it.
+
+2. **Free-tier quota is per model, and the newest model is the exhausted one.**
+   `gemini-3.8-flash` returned 429 (20/min) while `gemini-3.5-flash` answered the identical
+   request immediately. Default is 3.5-flash; `GEMINI_MODEL` overrides.
+
+3. **Every tool-calling round is one request.** Two rounds is the floor (one call, one
+   summary). The screen state and the variable catalogue are inlined into the system prompt
+   precisely so the model does not spend a round asking for them — that change took a layer
+   command from three rounds to two. Adding a chatty tool costs quota on every question.
+
+4. **Google Search grounding is not in the free tier.** Every request carrying the tool
+   429s with "check your plan and billing details"; the identical request without it
+   succeeds. The client strips it and retries, then remembers — so a missing grounding
+   quota degrades one feature instead of taking down every question.
+
+5. **The Gemini API is not the one you remember.** It is
+   `client.interactions.create(...)` → `Interaction` with `steps`/`output_text`, a
+   `function_call` step answered by a `function_result` entry. Not `generate_content`.
+   Verified against `google-genai` 2.22 and the live docs; do not "fix" it back.
+
+## 1d. The Theme C merge (2026-09-08)
+
+`designTest` and `feature/ai-assistant` landed on `main` together through
+`integrate/theme-c-assistant`. `designTest` merged into `main` with **no conflicts at all**;
+the assistant then conflicted in four files (`context.md`, `next_session.md`, `App.tsx`,
+`tsconfig.tsbuildinfo`). The conflicts were the easy part.
+
+### Traps, and the first one is the important one
+
+1. **A clean merge said nothing about whether the feature still worked.** `designTest`
+   redistributed `ToolDock`'s jobs into the new `CommandPill` and stopped rendering
+   `ToolDock` anywhere. The assistant's "Ask" button lived inside `ToolDock.tsx` — a file
+   both branches edited in *different regions*, so git auto-merged it with no conflict and
+   no warning. Taken as merged, the app compiled, passed every test, and had no way to open
+   the assistant. **When a redesign and a feature merge cleanly, check that the feature is
+   still reachable, not just that it still builds.**
+
+2. **The assistant's props landed on the wrong component.** `<ToolDock assistantOpen … >`
+   textually merged into the `<PointsDrawer …>` that had taken its place in the JSX.
+   `PointsDrawerProps` has no such props, so this one *was* caught — by `tsc`, not by the
+   merge. Without TypeScript it would have been a silent no-op.
+
+3. **The entry point is now `assistant/AssistantDock.tsx`**, a slim right-edge dock holding
+   one button, in the lane §5.1 Principle 11 reserves and clear of the depth ruler's
+   vertically-centred 240px track. `ToolDock.tsx` was taken from `designTest` so the Ask
+   button exists in exactly one place. **`ToolDock.tsx` now renders nowhere** — item 7 in §0
+   is the decision to delete it or wire it.
+
+4. **Theme C never reached the 3D.** `designTest` touched no file under `frontend/src/viz/`,
+   and `viz/scene.ts` carries a hardcoded `TOKEN` table of the original six values. So the
+   float markers draw `bioluminescence` as `#4FE8C4` while the chrome draws it as `#10B981`,
+   in the same frame. Full audit in `context.md` §5.1.4.
+
+5. **Inter is declared and not bundled.** `--rt-font-ui` names Inter first, but there is no
+   `@fontsource/inter` dependency and `main.tsx` imports only IBM Plex Sans and Plex Mono.
+   On a clean demo machine the console renders in Segoe UI. One `npm i` either way — decide
+   before the pitch, not during it.
+
+6. **No `focus-visible` rule exists in any of the six new stylesheets.** `assistant.css` was
+   rewritten with rings at merge time; `command-pill`, `layers-panel`, `tool-dock`,
+   `timeline`, `depth-ruler` and `data-catalogue-modal` all have zero, which §5.4 makes
+   non-negotiable.
+
+7. **`CommandPill` overflows at 414px** — 722px of content in a 414px viewport, and every
+   offender is `command-pill__*`. `CONTRIBUTING.md` §6 asserts no horizontal overflow at that
+   width and it held before the redesign. The assistant panel is not involved; it already
+   collapses under 900px.
+
+8. **`screenshot.mjs` is stale beyond the one selector fixed here.** Its status wait now reads
+   CommandPill, so the run gets past the field step — but it still drives a
+   `.float-list__item` list that renders nowhere (`FloatList` is unmounted, and was already
+   unmounted before this merge), and its step labels — "entry-globe", "ops-temperature" —
+   predate the map landing view, so they name views the shot no longer shows. Verification for
+   this merge was done with a focused script instead. **Someone should bring the harness back
+   in line with the current UI**, because CONTRIBUTING §6 makes a clean pass a precondition for
+   every PR and it currently cannot give one.
+
+### What this merge verified, and how
+
+Not via `screenshot.mjs`, for the reason above:
+
+- **52/52 backend, 28/28 frontend, typecheck and build clean.**
+- **Map → Column → Globe → Map round trip: zero console errors**, all three views drawing to
+  canvas. This is the round trip §0 warns never to test one hop at a time.
+- **The assistant drives the layer panel end to end through designTest's rewritten
+  `VariablePanel`.** Asked live to "add the chlorophyll layer and hide temperature", it added
+  chlorophyll, greyed temperature, answered "Added chlorophyll and hid temperature." and
+  offered undo. This is the §1c trap-1 seam and it survives the 955-line rewrite intact.
+- **Reduced motion: zero errors, no overflow.**
+- **414px: zero errors, overflow present** — trap 7.
 
 ## 2. Running it
 
@@ -369,7 +527,7 @@ session tempted to "fix the inconsistency" would either flatten the globe or cor
 ## 7. Verification
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest tests -v     # 11 integration tests, live data
+cd backend && .venv/Scripts/python -m pytest tests -v     # 52 tests, live data
 cd frontend && npx tsc --noEmit && npm run build          # both clean
 node screenshot.mjs <label>    # full pass: interactions, reduced-motion, mobile
 node shot.mjs <label> --skip   # fast single frame, for iterating on the look
@@ -377,8 +535,9 @@ node shot.mjs <label> --globe        # captures the entry globe
 node shot.mjs <label> --globe-mode  # captures globe mode, reached via the header toggle
 ```
 
-All passing as of session end: 11/11 backend tests, clean typecheck and build, zero console
-errors, no horizontal overflow at 414 px, `prefers-reduced-motion` suppresses the entry.
+All passing as of 2026-09-08: **52/52 backend, 28/28 frontend**, clean typecheck and build,
+zero console errors, no horizontal overflow at 414 px, `prefers-reduced-motion` suppresses
+the entry. (This line read "11/11 backend" for several sessions after the count had grown.)
 
 The globe session additionally verified, with a throwaway puppeteer script (not kept — rebuild
 it if you touch view switching): panels unmount and remount across the toggle; the timeline
@@ -439,8 +598,8 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 ## 9. Working agreement, in short
 
 - `CLAUDE.md` and `context.md` must never drift apart. **Any new colour, shadow, type role or
-  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to seven
-  principles and §10 to ~30 decision-log entries, including two that explicitly *reverse*
+  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to thirteen
+  principles and §10 to ~75 decision-log entries, including several that explicitly *reverse*
   earlier ones. Keep that up — and when reversing a decision, say so and say what survives,
   rather than quietly editing the old entry.
 - Chrome uses the six tokens; data uses cmocean colormaps. They never mix.
@@ -454,16 +613,24 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 
 ## 10. Suggested next steps
 
-1. **Look at it on a real GPU** and decide whether the visual work is done. Still the one
+See §0 for the ordered list — this is the longer tail.
+
+1. **Finish the two assistant checks** (§0 item 0) and **decide Google Search billing**
+   (§0 item 1). Both are minutes, and the second unlocks live answers for the demo.
+2. **Land `feature/ai-assistant`** before anyone else touches the frontend — it sits on
+   four of the five known collision files.
+3. **Look at it on a real GPU** and decide whether the visual work is done. Still the one
    thing no session has been able to do. The globe especially — it was tuned against a
    software renderer at 2–4 fps.
-2. Decide on committing — ~100 files staged, no commits yet.
-3. Decide the basemap month: October (seasonally correct for the demo) or December (matches
+4. Decide the basemap month: October (seasonally correct for the demo) or December (matches
    the supplied reference frames exactly). One line in `backend/app/config.py`; both months
    are already committed.
-4. Confirm the current-speed units with INCOIS.
-5. If pitching soon: fill in `context.md` §9, and rehearse the Phailin narrative — open on the
+5. Confirm the current-speed units with INCOIS.
+6. If pitching soon: fill in `context.md` §9, and rehearse the Phailin narrative — open on the
    globe, dive, select `2901335` for the cold wake, then `2901327` for the −1.21 °C residual.
-   The globe toggle now gives a way back out for a second pass at the story.
-6. If building further: current direction as streamlines (see §8), then OGC endpoints, then
-   Docker.
+   The globe toggle now gives a way back out for a second pass at the story. **The assistant
+   is now a strong demo beat**: ask it to add a layer on stage, then ask it for a value and
+   show the citation line — it makes the provenance argument visible in one gesture.
+7. If building further: current direction as streamlines (see §8), then OGC endpoints, then
+   Docker. Assistant follow-ups: token-streaming the prose (only status streams today), and
+   conversation history in the panel (the store and endpoints exist; nothing reads them yet).

@@ -16,8 +16,16 @@ import {
 import { ProfilePanel } from "./components/ProfilePanel";
 import { Timeline } from "./components/Timeline";
 import { VariablePanel } from "./components/VariablePanel";
-import { ToolDock, type PointAnnotation } from "./components/ToolDock";
+import { PointsDrawer, type PointAnnotation } from "./components/PointsDrawer";
 import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
+import { CommandPill } from "./components/CommandPill";
+import { AssistantPanel } from "./assistant/AssistantPanel";
+import { AssistantDock } from "./assistant/AssistantDock";
+import {
+  applyLayerAction,
+  type AppSnapshot,
+  type AssistantAction,
+} from "./assistant/actions";
 import { MapView } from "./map/MapView";
 import { PointReadout } from "./map/PointReadout";
 import { MapTimeline } from "./map/MapTimeline";
@@ -29,6 +37,7 @@ import {
 } from "./map/state";
 import { MAX_DEPTH } from "./viz/depth";
 import { BASEMAPS } from "./viz/globe";
+import type { ColormapName } from "./viz/colormaps";
 import {
   isWebGL2Available,
   OceanScene,
@@ -68,6 +77,7 @@ export default function App() {
   const [pointLoading, setPointLoading] = useState(false);
   const [pointError, setPointError] = useState<string | null>(null);
   const [sectionLoaded, setSectionLoaded] = useState(false);
+  const [isPointsOpen, setIsPointsOpen] = useState(false);
 
   /** The layer stack the side panel owns, mirrored here so the map can draw it. */
   const [layerStack, setLayerStack] = useState<{
@@ -96,6 +106,17 @@ export default function App() {
   const [depthWindow, setDepthWindow] = useState<[number, number]>([0, MAX_DEPTH]);
   const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  // A stack the assistant has pushed. VariablePanel owns the layer stack during
+  // normal use and only mirrors it up to `layerStack`, so writing that mirror
+  // changes nothing on screen — the panel has to be handed the new stack, and
+  // the nonce is what tells it this is a fresh instruction.
+  const [assistantStack, setAssistantStack] = useState<{
+    keys: string[];
+    visibility: Record<string, boolean>;
+    opacity: Record<string, number>;
+    nonce: number;
+  } | null>(null);
   const [exaggeration, setExaggeration] = useState(0);
 
   const handleDepthIndexChange = useCallback((index: number) => {
@@ -127,6 +148,130 @@ export default function App() {
       else scene?.startEntry();
     }
   }, []);
+
+  // ----------------------------------------------------------- assistant
+  //
+  // The assistant reaches app state through exactly these three functions, and
+  // nowhere else.
+  //
+  // Layers are the awkward one, and there are TWO wrong ways to write them:
+  //
+  //   1. `dispatchMap({type: "layer/add"})` is overwritten by the `layers/sync`
+  //      effect below, which derives map.layers from the stack.
+  //   2. `setLayerStack` alone changes nothing on screen. VariablePanel owns the
+  //      stack in its own useState and only mirrors it up to `layerStack`; the
+  //      mirror is downstream, not the source.
+  //
+  // So a layer change sets the mirror AND hands the panel the new stack through
+  // `externalStack`, whose nonce is what marks it a fresh instruction. Both
+  // failures look like the assistant cheerfully reporting a change that did not
+  // happen, which is the worst shape of bug this feature can have.
+
+  /** What the assistant is told is currently on screen. Actions are validated against it. */
+  const assistantState = useCallback(
+    () => ({
+      view,
+      mode,
+      layers: layerStack.keys.map((key) => ({
+        key,
+        visible: layerStack.visibility[key] ?? true,
+        opacity: layerStack.opacity[key] ?? 1,
+      })),
+      time: map.time ?? "",
+      depth_index: depthIndex,
+      depth_m: DEFAULT_DEPTH_LEVELS[depthIndex]?.depthMeters ?? 0,
+    }),
+    [view, mode, layerStack, map.time, depthIndex],
+  );
+
+  /** Apply a batch of actions, returning the state as it was immediately before. */
+  const applyAssistantActions = useCallback(
+    (actions: AssistantAction[]): AppSnapshot | undefined => {
+      if (actions.length === 0) return undefined;
+      const before: AppSnapshot = {
+        layerStack,
+        view,
+        time: map.time ?? "",
+        depthIndex,
+      };
+
+      for (const action of actions) {
+        switch (action.type) {
+          case "set_layers": {
+            const nextStack = applyLayerAction(layerStack, action);
+            setLayerStack(nextStack);
+            setAssistantStack((prev) => ({
+              ...nextStack,
+              nonce: (prev?.nonce ?? 0) + 1,
+            }));
+            break;
+          }
+          case "set_view":
+            handleView(action.view as AppView);
+            break;
+          case "set_time":
+            dispatchMap({ type: "time/set", time: action.time });
+            break;
+          case "set_depth": {
+            // Nearest real level, not an interpolation: the depth ruler is an
+            // instrument and only has the levels the grid actually has.
+            let nearest = 0;
+            let best = Infinity;
+            DEFAULT_DEPTH_LEVELS.forEach((level, i) => {
+              const d = Math.abs(level.depthMeters - action.depth_m);
+              if (d < best) {
+                best = d;
+                nearest = i;
+              }
+            });
+            handleDepthIndexChange(nearest);
+            break;
+          }
+          case "zoom_to_region": {
+            const [south, north] = action.lat_range;
+            const [west, east] = action.lon_range;
+            dispatchMap({
+              type: "area/begin",
+              corner: { lat: south, lon: west },
+            });
+            dispatchMap({ type: "area/update", corner: { lat: north, lon: east } });
+            dispatchMap({ type: "area/commit" });
+            break;
+          }
+          case "set_pin":
+            dispatchMap({ type: "pin/set", point: { lat: action.lat, lon: action.lon } });
+            break;
+          case "set_area":
+            dispatchMap({
+              type: "area/begin",
+              corner: { lat: action.lat_range[0], lon: action.lon_range[0] },
+            });
+            dispatchMap({
+              type: "area/update",
+              corner: { lat: action.lat_range[1], lon: action.lon_range[1] },
+            });
+            dispatchMap({ type: "area/commit" });
+            break;
+        }
+      }
+      return before;
+    },
+    [layerStack, view, map.time, depthIndex, handleView, handleDepthIndexChange],
+  );
+
+  const undoAssistant = useCallback(
+    (snapshot: AppSnapshot) => {
+      setLayerStack(snapshot.layerStack);
+      setAssistantStack((prev) => ({
+        ...snapshot.layerStack,
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
+      if (snapshot.view !== view) handleView(snapshot.view as AppView);
+      if (snapshot.time) dispatchMap({ type: "time/set", time: snapshot.time });
+      handleDepthIndexChange(snapshot.depthIndex);
+    },
+    [view, handleView, handleDepthIndexChange],
+  );
 
   const activeVariable = variables.find((v) => v.key === variableKey);
   const currentTime = scenario?.timesteps[timeIndex];
@@ -353,12 +498,6 @@ export default function App() {
       sceneRef.current?.setSelected(pt.platform.platform_id);
     }
   }, []);
-
-  // The dock's 2D/3D control was a placeholder mapped onto globe/column. Now
-  // that a real plan view exists it means what it says.
-  const handleToggleProjection = useCallback(() => {
-    handleView(view === "map" ? "column" : "map");
-  }, [handleView, view]);
 
   const openColumnFromMap = useCallback(
     (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
@@ -650,80 +789,33 @@ export default function App() {
           day: "numeric", month: "short", timeZone: "UTC",
         })} · ${upstreamName}`;
 
+  const isLayerActiveInColumn = Boolean(
+    variableKey &&
+      (layerStack.keys.length === 0 ||
+        (layerStack.keys.includes(variableKey) && layerStack.visibility[variableKey] !== false)),
+  );
+
+  const columnActiveColormap = useMemo<ColormapName>(() => {
+    const v = variables.find((item) => item.key === variableKey);
+    return (v?.colormap as ColormapName) || (fieldMeta?.colormap as ColormapName) || "thermal";
+  }, [variables, variableKey, fieldMeta]);
+
   return (
     <div className="console">
-      <header className="console__header">
-        <div className="header__mark">
-          <img
-            className="header__seal"
-            src="/incois-logo-128.png"
-            alt="Indian National Centre for Ocean Information Services"
-            width={30}
-            height={30}
-          />
-          <div className="header__titles">
-            <h1 className="header__title">Ocean data visualization</h1>
-            <span className="header__subtitle">
-              {scenario ? `${scenario.title} · Bay of Bengal, October 2013` : "INCOIS · Ministry of Earth Sciences"}
-            </span>
-          </div>
-        </div>
-
-        <div className="header__spacer" />
-
-        <div className="header__group">
-          <div className="provenance">
-            <span
-              className={`provenance__dot${
-                source?.provenance === "cached" ? " provenance__dot--cached" : ""
-              }${!source ? " provenance__dot--offline" : ""}`}
-              aria-hidden="true"
-            />
-            <span className="provenance__text readout">
-              {mapLoadingLabel ?? provenanceLabel}
-            </span>
-          </div>
-
-          <div className="mode-toggle" role="group" aria-label="View">
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "map"}
-              onClick={() => handleView("map")}
-            >
-              Map
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "globe"} disabled={!entryDone}
-              onClick={() => handleView("globe")}
-            >
-              Globe
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={view === "column"} disabled={!entryDone}
-              onClick={() => handleView("column")}
-            >
-              Water column
-            </button>
-          </div>
-
-          <div className="mode-toggle" role="group" aria-label="Interface mode">
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={mode === "ops"} onClick={() => setMode("ops")}
-            >
-              Ops
-            </button>
-            <button
-              type="button" className="mode-toggle__button"
-              aria-pressed={mode === "explore"} onClick={() => setMode("explore")}
-            >
-              Explore
-            </button>
-          </div>
-        </div>
-      </header>
+      <CommandPill
+        scenario={scenario}
+        source={source}
+        mapLoadingLabel={mapLoadingLabel || (view === "column" && fieldLoading ? "Loading field…" : null)}
+        provenanceLabel={provenanceLabel}
+        view={view}
+        onViewChange={handleView}
+        entryDone={entryDone}
+        mode={mode}
+        onModeChange={setMode}
+        pointsCount={toolPoints.length}
+        isPointsOpen={isPointsOpen}
+        onTogglePoints={() => setIsPointsOpen((prev) => !prev)}
+      />
 
       <div
         className={`console__main${mode === "explore" ? " console__main--explore" : ""}${
@@ -750,6 +842,7 @@ export default function App() {
                     : undefined
                   : undefined
               }
+              externalStack={assistantStack}
               onStackChange={setLayerStack}
               onOpacityChange={handleVolumeOpacityChange}
               onVisibilityChange={handleVolumeVisibilityChange}
@@ -774,21 +867,11 @@ export default function App() {
                   the map draws its own HUD and these would report on a scene
                   the reader is not looking at. */}
               <div className={`viewport__overlay${view === "map" ? " viewport__overlay--hidden" : ""}`}>
-                <div className="viewport__status">
-                  {view === "globe"
-                    ? `${scenario ? "Analysis extent outlined" : "Locating the analysis"} · ${
-                        visibleMarkers.length
-                      } float${visibleMarkers.length === 1 ? "" : "s"} reporting`
-                    : fieldLoading && currentTime
-                    ? `Loading ${activeVariable?.label.toLowerCase() ?? "field"} for ${new Date(
-                        currentTime,
-                      ).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}…`
-                    : fieldError
-                      ? fieldError
-                      : `${visibleMarkers.length} float${visibleMarkers.length === 1 ? "" : "s"} reporting · depth ${Math.round(
-                          depthWindow[0],
-                        )}–${Math.round(depthWindow[1])} m`}
-                </div>
+                {fieldError ? (
+                  <div className="viewport__status viewport__status--error">
+                    {fieldError}
+                  </div>
+                ) : null}
 
                 {/* Drag/click instructions are deliberately absent: they never
                     dismissed, so they sat over the viewport permanently to say
@@ -904,15 +987,30 @@ export default function App() {
               onDepthChange={handleDepthIndexChange}
               window={depthWindow}
               cursorDepth={selected?.max_depth ?? null}
+              colormap={isLayerActiveInColumn ? columnActiveColormap : null}
+              hasActiveLayer={isLayerActiveInColumn}
             />
           ) : null}
 
-          <ToolDock
-            projectionMode={view === "map" ? "2d" : "3d"}
-            onToggleProjection={handleToggleProjection}
+          <PointsDrawer
+            isOpen={isPointsOpen}
+            onClose={() => setIsPointsOpen(false)}
             points={toolPoints}
             selectedPointId={selected?.platform_id}
             onOpenGraphForPoint={handleOpenGraphForPoint}
+          />
+
+          <AssistantDock
+            open={assistantOpen}
+            onToggle={() => setAssistantOpen((open) => !open)}
+          />
+
+          <AssistantPanel
+            open={assistantOpen}
+            onClose={() => setAssistantOpen(false)}
+            onActions={applyAssistantActions}
+            onUndo={undoAssistant}
+            getState={assistantState}
           />
         </div>
       </div>

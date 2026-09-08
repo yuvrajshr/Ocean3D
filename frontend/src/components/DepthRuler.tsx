@@ -10,7 +10,9 @@
  * - Synchronized with Three.js water column volume windowing
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ColormapName } from "../viz/colormaps";
+import { COLORMAP_GRADIENTS } from "./VariablePanel";
 import "../styles/depth-ruler.css";
 
 /** Depth levels can arrive at full float precision from a model grid
@@ -62,6 +64,8 @@ export interface DepthRulerProps {
   onChange?: (window: [number, number]) => void;
   cursorDepth?: number | null;
   levels?: DepthLevel[];
+  colormap?: ColormapName | null;
+  hasActiveLayer?: boolean;
 }
 
 export function DepthRuler({
@@ -71,6 +75,8 @@ export function DepthRuler({
   onChange: externalOnChangeWindow,
   cursorDepth: _cursorDepth,
   levels = DEFAULT_DEPTH_LEVELS,
+  colormap,
+  hasActiveLayer = false,
 }: DepthRulerProps) {
   const [internalIndex, setInternalIndex] = useState<number>(levels.length - 1);
   const [isDragging, setIsDragging] = useState(false);
@@ -96,6 +102,29 @@ export function DepthRuler({
   } else {
     activeIndex = internalIndex;
   }
+
+  const DEFAULT_BLUE_GRADIENT = "linear-gradient(to bottom, #38bdf8, #2563eb 50%, #050810 100%)";
+
+  /** Reverses horizontal colormap gradient so that surface/warm colors are at top (0m) and depth/cold colors are below (2000m) */
+  const reverseGradientToBottom = (gradientStr: string): string => {
+    const colorMatches = gradientStr.match(/rgb\([^)]+\)|rgba\([^)]+\)|#[0-9a-fA-F]+/g);
+    if (!colorMatches || colorMatches.length < 2) {
+      return gradientStr.replace("to right", "to bottom");
+    }
+    const reversedColors = [...colorMatches].reverse();
+    return `linear-gradient(to bottom, ${reversedColors.join(", ")})`;
+  };
+
+  const activeGradient = useMemo(() => {
+    if (!hasActiveLayer || !colormap) {
+      return DEFAULT_BLUE_GRADIENT;
+    }
+    const grad = COLORMAP_GRADIENTS[colormap];
+    if (!grad) {
+      return DEFAULT_BLUE_GRADIENT;
+    }
+    return reverseGradientToBottom(grad);
+  }, [hasActiveLayer, colormap]);
 
   const totalLevels = levels.length;
   const safeIndex = Math.max(0, Math.min(totalLevels - 1, activeIndex));
@@ -222,7 +251,10 @@ export function DepthRuler({
           {/* Depth Gradient Fill */}
           <div
             className="depth-slider-fill"
-            style={{ height: `${percentage}%` }}
+            style={{
+              height: `${percentage}%`,
+              background: activeGradient,
+            }}
           />
 
           {/* Level Tick marks */}

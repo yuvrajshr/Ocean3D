@@ -72,6 +72,13 @@ export function ToolDock({
 
   const activeTool = externalActiveTool ?? internalTool;
   const projectionMode = externalProjectionMode ?? internalProj;
+  const [displayedTool, setDisplayedTool] = useState<ToolMode>(activeTool === "none" ? "points" : activeTool);
+
+  useEffect(() => {
+    if (activeTool !== "none") {
+      setDisplayedTool(activeTool);
+    }
+  }, [activeTool]);
 
   // Clear auto-close timer on unmount
   useEffect(() => {
@@ -204,10 +211,11 @@ export function ToolDock({
       </div>
 
       {/* Floating Side Drawer for Active Tool */}
-      {activeTool !== "none" && (
-        <div className={`tool-dock-drawer ${activeTool === "points" ? "tool-dock-drawer--points" : ""}`}>
-          {/* POINTS DRAWER (FUNCTIONAL & EXPANDED) */}
-          {activeTool === "points" && (
+      <div
+        className={`tool-dock-drawer ${displayedTool === "points" ? "tool-dock-drawer--points" : ""} ${activeTool !== "none" ? "tool-dock-drawer--open" : "tool-dock-drawer--closed"}`}
+      >
+        {/* POINTS DRAWER (FUNCTIONAL & EXPANDED) */}
+        {displayedTool === "points" && (
             <div>
               <div className="tool-dock-drawer-header">
                 <span className="tool-dock-drawer-title">
@@ -430,7 +438,6 @@ export function ToolDock({
           )}
           */}
         </div>
-      )}
     </div>
   );
 }

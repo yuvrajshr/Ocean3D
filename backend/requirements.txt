@@ -20,3 +20,8 @@ pandas>=2.2
 # runtime - without credentials in backend/.env the Copernicus layers simply do
 # not appear, and every other source still works.
 copernicusmarine>=2.4
+
+# The ocean assistant. Optional at runtime exactly like Copernicus above -
+# without GEMINI_API_KEY in backend/.env the assistant does not appear and
+# every other part of the app still works.
+google-genai>=2.22

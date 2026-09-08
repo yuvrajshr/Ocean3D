@@ -363,6 +363,32 @@ only.
     (0.5 m surface down to 2000 m floor). Real-time hover callouts display oceanographic
     physical zones (Mixed Layer, Thermocline Core, D26 Isotherm, Argo Parking Depth) so depth
     selection is grounded in ocean physics.
+13. **An assistant may state a measurement only if it fetched one, and the interface
+    proves which.** The ocean assistant (2026-09-06) is the first thing in the product
+    that can produce a sentence rather than a rendering, which makes it the first thing
+    that can be confidently wrong. Three rules keep it inside the system:
+
+    **Provenance is rendered from tool calls, not from prose.** The citation line under
+    an answer is built from the reads that actually executed, so an answer that fetched
+    nothing has nothing to cite and is marked *"General knowledge — not from your data"*
+    in `advisory` amber, paired with words rather than carrying meaning by colour. The
+    model is asked to obey the rule in its prompt; the interface does not depend on it
+    having obeyed.
+
+    **A readout stays a readout.** Dataset, date, depth and units in the citation line
+    are IBM Plex Mono, the same role §5.1 gives every literal value elsewhere. The
+    medium changed, not the rule.
+
+    **It may act, and it may always be undone.** The assistant changes the workspace
+    without asking first, because a reader who says "add chlorophyll" wants chlorophyll
+    added. That is only reasonable because every message that changed something carries
+    a one-click undo restoring the exact prior state.
+
+    *This principle also admits the one structural device it needs: a wide floating
+    panel, 420 px, on the existing floating-console z-plane — not a fourth level.* It is
+    a genuine exception to §5.1's rule that nothing competes with the viewport, taken
+    knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
+    closes when dismissed, and the viewport is never obscured while it is shut.
 
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
@@ -418,6 +444,91 @@ colour ever encodes a value and no colormap colour appears in chrome. Readouts a
 Plex Mono. A layer housing still states its dataset, resolution, cadence and the upstream
 that drew it. Percentile clipping is still declared. The rounding is a container decision; it
 buys no licence over how a measurement is drawn or described.
+
+### 5.1.3 Two-Palette Split Resolved: Theme C Warm Maritime & Swiss Grid (adopted 2026-09-07)
+
+The unresolved two-palette split recorded in §5.1.2 has been unified across the entire application into a single, cohesive design system — **Theme C: Warm Maritime Chronometer & Copper**:
+- **Palette**: Ground `#15161A`, Surface `#1C1D22`, Inset `#111215`, Border `#2E303A`, Text `#F4EFE6`, Muted `#9698A3`, Accent Copper `#E59858`. Defined canonically in `tokens.css` as `--rt-*` variables and applied across all console surfaces (layers panel, top navbar, data catalogue modal, timeline scrubber, depth ruler, tool dock).
+- **Geometry**: Replaced SaaS rounded cards (radii 4–12px) with a strict **0px border-radius mathematical Swiss grid alignment**, restoring the "Instrument, not dashboard" physical console ethos (§5.1 Principle 2).
+- **Elimination of Performative AI Tropes**: Removed artificial badges (`● 3D ACTIVE`, `HIDDEN`, `⏱ 2s auto-close`, `<FlaskConical>` "Under Testing" chips, fake 4K animation export toasts), relying instead on standard GIS visual semantics (3px copper active indicator, eye visibility toggle, clean JSON/INFO icons).
+- **Authentic Scientific Provenance**: Replaced catalogue marketing chips with genuine oceanographic model/sensor tags (`INCOIS-HYCOM Analysis`, `WRF-Ocean Model`, `MODIS-Aqua Satellite`, `INCOIS-TIO Simulation`, `Reference Dataset`), replacing decorative wave SVGs with subtle technical grid textures.
+- **Micro-Animations**: Smooth, hardware-accelerated cubic-bezier transitions for panel expand/collapse, timeline horizontal folding, modal scale/fade, and float points slide-in.
+
+### 5.1.4 What actually shipped with Theme C, and what §5.1.3 overstates (audited 2026-09-08)
+
+§5.1.3 was written on the `designTest` branch and says the two-palette split "has been
+unified across the entire application". Audited at merge time against the code, that is not
+what shipped, and the gap is recorded here rather than left for someone to rediscover on a
+demo machine. Nothing below reverses Theme C — the team chose it and it stands. These are
+the parts of it that are not yet true.
+
+**The product now has three colour systems, not one.** `designTest` touched no file in
+`frontend/src/viz/`, and `viz/scene.ts` carries its own hardcoded copy of the six tokens:
+
+```
+const TOKEN = { abyss: 0x050b12, thermocline: 0x0d2436, current: 0x1c6e8c,
+                bioluminescence: 0x4fe8c4, advisory: 0xe8a23d, foam: 0xeaf3f1 };
+```
+
+So the 3D viewport still renders in the *original* six values, `app.css` renders in the
+*rewritten* six values, and the console renders in Theme C `--rt-*`. The worst case is
+`bioluminescence`, the token §5.1 defines as "live data": it is `#4FE8C4` on the 3D float
+markers and `#10B981` in the chrome, in the same frame. §11 stated the reason this matters —
+"a reader cannot learn what a colour means when the same role has two values" — and there are
+now three. **This is the open question reopened, not closed.**
+
+**The six named tokens were rewritten, and §5.1.3 does not mention it.** The subsection
+describes adopting a console palette; it does not say that the six tokens §5.1 locks were
+themselves given new values. They were:
+
+| Token | §5.1 | after `designTest` |
+|---|---|---|
+| `abyss` | `#050B12` | `#020408` |
+| `thermocline` | `#0D2436` | `#0C1422` |
+| `current` | `#1C6E8C` | `#38BDF8` |
+| `bioluminescence` | `#4FE8C4` | `#10B981` |
+| `advisory` | `#E8A23D` | `#F59E0B` |
+| `foam` | `#EAF3F1` | `#F8FAFC` |
+
+The four changed hues are Tailwind's `sky-400`, `emerald-500`, `amber-500` and `slate-50`.
+§5.2 checks this palette against generic defaults; that check has not been re-run against
+these values, and should be before the pitch.
+
+**The UI font is declared as Inter and is not bundled.** `--rt-font-ui` names
+`"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`, but there is no
+`@fontsource/inter` dependency and no import — `main.tsx` still imports IBM Plex Sans and
+Plex Mono only. Inter therefore resolves only on a machine that already has it installed; on
+a clean Windows demo machine the whole console falls back to Segoe UI. Either ship the
+dependency or return `--rt-font-ui` to IBM Plex Sans, which §5.1 locks and which is already
+bundled. Mono is unaffected: readouts are Plex Mono in both systems.
+
+**`--linear-blue-rgb: #5E6AD2` is defined and used nowhere.** It is commented "Linear
+signature lavender-blue". A second product's brand colour sitting in this project's token
+file is worth deleting on sight; it is left in place only because this pass was scoped to
+documentation.
+
+**No `focus-visible` rule exists in any of the six new stylesheets** — `command-pill.css`,
+`layers-panel.css`, `tool-dock.css`, `timeline.css`, `depth-ruler.css`,
+`data-catalogue-modal.css` all have zero. §5.4 makes a visible focus ring non-negotiable, and
+`CLAUDE.md`'s quality floor repeats it. `assistant.css` was rewritten with rings in the Theme
+C accent at merge time; the other six need the same pass.
+
+**`CommandPill` overflows a 414px viewport by 308px.** Measured at merge time: every
+element past the right edge is `command-pill__*` — the mode toggle, the points button and the
+view segmented control, which sit at a fixed width with no responsive treatment. §5.4 asks for
+"a single-column layout on mobile/tablet for the Explore/outreach audience" and
+`CONTRIBUTING.md` §6 asserts no horizontal overflow at 414px, which held before this redesign.
+Nothing from the assistant contributes: its panel already collapses to `left/right: 16px`
+under 900px. What the bar should *do* at 414px — wrap, scroll, or collapse behind a control —
+is a design decision, so it is recorded here rather than guessed at.
+
+**The assistant's entry point moved, and this is a real structural change.** `designTest`
+redistributed `ToolDock`'s jobs into `CommandPill` and stopped rendering `ToolDock` at all.
+Since the assistant's button lived in that file, §5.1 Principle 13's entry point is now
+`assistant/AssistantDock.tsx`: a slim right-edge dock holding one control, in the lane
+Principle 11 reserves, clear of the depth ruler's centred 240px track. The panel itself is
+unchanged — 420px, same z-plane, same citation line. `ToolDock.tsx` still exists and renders
+nowhere.
 
 ### 5.2 Self-critique against generic defaults
 
@@ -1074,6 +1185,119 @@ each — component, decision, one-line reason, date.)*
   not move: cmocean still owns data colour, no chrome colour encodes a value, readouts stay
   mono, and every layer still states its source and range. The rounding is a container
   decision and buys no licence over how a measurement is drawn._
+- _2026-09-07 — **Two-palette split resolved (§5.1.3, answers §11 open item 2).** Replaced the
+  conflicting slate+cyan floating styling with Theme C (Warm Maritime Chronometer & Copper:
+  `#15161A` ground, `#1C1D22` surface, `#2E303A` border, `#F4EFE6` text, `#E59858` copper accent)
+  and restored the strict 0px-radius Swiss instrument console architecture across all UI components._
+- _2026-09-07 — **Timeline layout and non-overlapping date calculation.** Replaced overlapping ruler
+  labels with deduplicated landmark stamps (`10 OCT 2013` and `20 OCT 2013`) pinned to ruler edges via
+  flex space-between. Upgraded chevrons to dedicated `[EXPAND]` / `[SHRINK]` instrument controls, added
+  `[CADENCE DAY]` selector, and removed the fake 4K video export alert toast._
+- _2026-09-07 — **Systematic removal of performative AI design tropes.** Removed `● 3D ACTIVE` and
+  `HIDDEN` badges (active layer denoted by 3px copper stripe; visibility by eye toggle), removed
+  `⏱ 2s auto-close` badges and `<FlaskConical>` testing banners, streamlined JSON/INFO/Opacity footer
+  buttons, and restored authentic scientific provenance in the Data Catalogue._
+- _2026-09-07 — **Smooth hardware-accelerated transitions.** Implemented cubic-bezier transitions
+  for `VariablePanel` (width collapse/expand, dropdown slide, opacity drawer easing), `DataCatalogue`
+  (fade and scale), `FloatPoints` (slide-in drawer), and `Timeline` (ruler unfolding and slide-up
+  entrance)._
+
+- _2026-09-06 — **An AI assistant, and the grounding rule is structural rather than
+  prompted.** The assistant can answer about the water and drive the app ("add the
+  chlorophyll layer and hide temperature"). The danger it introduces is specific: a
+  plausible invented sea temperature inside an INCOIS-branded tool is worse than no
+  assistant. So the panel builds its citation line from the tool calls that actually
+  ran, never from the prose — an answer that fetched nothing has nothing to cite and is
+  visibly marked as general knowledge. The prompt states the rule too, but the interface
+  does not rely on the model having followed it. See §5.1 Principle 13._
+- _2026-09-06 — **Gemini, and the API is not the one in anyone's memory.** `gemini-3.8-flash`
+  through `google-genai` 2.22, which is `client.interactions.create(...)` returning an
+  `Interaction` with `steps` and `output_text` — a `function_call` step answered by a
+  `function_result` entry. This replaced the `generate_content` surface; verified against
+  the installed package and the live docs, not recalled. Key in gitignored `backend/.env`,
+  server-side only (§5.5). `store=False`, so no transcript persists on Google's servers —
+  the defensible choice for a government deliverable. Without a key the dock button states
+  the reason and everything else works, the same degradation the Copernicus layers have._
+- _2026-09-06 — **The tool loop is split, because half of it cannot run on the server.**
+  Read tools execute in the backend against the endpoints the UI already uses. Action
+  tools mutate React state in a browser, so they are *validated* server-side against a
+  state snapshot the client sends with every message, then returned for the client to
+  apply. That is what lets the model be told the truth about whether an action succeeded —
+  it learns "that would need more than 3 layers" rather than assuming it worked._
+- _2026-09-06 — **`zoom_to_region` resolves a fixed table and nothing else.** A model
+  supplying its own bounding box for a place name is the most dangerous kind of wrong
+  here, because a plausible-looking box is indistinguishable from a correct one on screen._
+- _2026-09-06 — **SQLite, not Supabase, for conversations and cached analyses.** Asked for
+  Supabase first, then delegated the choice. §1 requires deployability on INCOIS
+  infrastructure and a hosted database is an outbound dependency a government network may
+  refuse; §4 already sanctions "SQLite for demo". Behind a `ConversationStore` protocol —
+  the same shape as `DataSource` — so a later swap is a class, not a rewrite. The
+  `analysis_cache` table is also the free-tier mitigation: a repeated question skips both
+  the upstream and the model._
+- _2026-09-06 — **Writing a layer from outside has TWO wrong seams, and both fail
+  silently.** Found by building the assistant, and corrected once during the build.
+  (a) `dispatchMap({type:"layer/add"})` is overwritten by the `layers/sync` effect, which
+  derives `map.layers` from the stack. (b) `setLayerStack` alone changes nothing on screen:
+  **`VariablePanel` owns the stack in its own `useState`** and only mirrors it up, so
+  `App.tsx`'s `layerStack` is downstream, not the source. The working seam is to set the
+  mirror AND hand the panel a stack through a new `externalStack` prop, whose nonce marks
+  it a fresh instruction — a nonce rather than value equality, so undoing back to a stack
+  you were already in still applies. Lifting the state out of `VariablePanel` would be the
+  cleaner fix and is a much larger change to a file several people touch. Both failure
+  modes look identical from outside: the assistant cheerfully reports a change that did not
+  happen, which is the worst shape of bug this feature can have._
+- _2026-09-06 — **Gemini's free-tier quota is per model, and the newest model is the
+  exhausted one.** Measured on a real key: `gemini-3.8-flash` returned 429 (limit 20/min,
+  ~55 s to reset) while `gemini-3.5-flash` answered immediately with the same request.
+  Default moved to 3.5-flash; `GEMINI_MODEL` overrides it. Also measured: inlining the
+  screen state and the variable catalogue into the system prompt cut a layer command from
+  three rounds to two, and two is the floor for a tool loop (one call, one summary). Each
+  round is one request, so on a per-minute quota that is the difference between working and
+  not. A 429 is surfaced as "the free Gemini quota is used up for the moment" with the
+  retry delay Gemini itself names, and nothing else in the app is affected._
+
+- _2026-09-06 — **The assistant answers beyond the ocean, and Google Search grounding is
+  wired but unusable on a free key.** It first refused "what is a barrel of oil worth"
+  with "I can only assist with oceanographic data" — untrue and the worst answer it can
+  give. Two causes: the prompt scoped it, and a current price is genuinely not in any
+  model's weights, so widening the prompt alone would have produced a stale figure stated
+  as current. Both fixed: the prompt now allows general knowledge, and `google_search` is
+  in the tool list with web sources rendering as clickable citations, marked `kind="web"`
+  and styled apart from measured ones — a page Google returned is not the ocean analysis.
+  **Measured: grounding is billed separately and is NOT in the free tier.** Every request
+  carrying the tool returns 429 "check your plan and billing details" while the identical
+  request without it succeeds, so adding it unconditionally would have broken every
+  question including ocean ones. The client strips search and retries on a quota error,
+  remembers the result for the process, and `GEMINI_SEARCH=off` skips the probe. Enable
+  billing and live answers begin with no code change; until then it says "I cannot check
+  a live value from here" and dates what it does remember._
+
+- _2026-09-08 — **`designTest` and `feature/ai-assistant` merged to `main` together.** They
+  collide in a way git does not report: `designTest` moved the right-hand dock's jobs into
+  `CommandPill` and stopped rendering `ToolDock`, and the assistant's button lived inside
+  `ToolDock.tsx`, which merges without a conflict. The naive result compiles, passes 52/28
+  tests, and has no way to open the assistant. Entry point rebuilt as
+  `assistant/AssistantDock.tsx`; `ToolDock.tsx` is now dead code and named as such in
+  `next_session.md` item 7. **The lesson generalises: a clean merge between a redesign and a
+  feature says nothing about whether the feature is still reachable.**_
+- _2026-09-08 — The assistant panel restyled to Theme C: every colour resolves through an
+  `--rt-*` token, 0px radii, the 8px spacing scale. Two things deliberately did not move.
+  Readouts stay IBM Plex Mono, because §5.1 assigns literal values to mono wherever they
+  appear and the medium changing does not change the role. And the ungrounded marker stays
+  `advisory` rather than copper: Theme C's accent `#E59858` and advisory `#F59E0B` are near
+  neighbours, so an unsourced answer marked in the accent would read as ordinary chrome. It
+  stays paired with words (§5.1 Principle 13), so the meaning never rests on colour._
+- _2026-09-08 — **§5.1.3's claim that the split is "unified across the entire application" is
+  not what shipped, and §5.1.4 records the audit.** `designTest` touched no file in
+  `frontend/src/viz/`, and `viz/scene.ts` hardcodes its own copy of the six tokens — so the
+  3D viewport renders in the original values while chrome renders in the rewritten ones.
+  `bioluminescence` is `#4FE8C4` on the float markers and `#10B981` in the chrome, in one
+  frame. Three systems where §11 wanted one. The open question is reopened rather than closed._
+- _2026-09-08 — Recorded, not fixed, at merge time (scope was documentation): the six named
+  tokens were given new values without §5.1.3 saying so; `--rt-font-ui` names Inter with no
+  `@fontsource/inter` dependency, so the console falls back to Segoe UI on a clean machine;
+  `--linear-blue-rgb` (another product's brand colour) is defined and unused; and none of the
+  six new stylesheets carry a single `focus-visible` rule, which §5.4 makes non-negotiable._
 
 ---
 
@@ -1094,14 +1318,29 @@ each — component, decision, one-line reason, date.)*
 - **New, still open:** the value-added hazard fields (D26, HTCNT, GEO_U/V) stop at
   2019-03-30, while the 3D grid runs to Jul 2026. If a "recent data" mode is added later,
   those layers must degrade with a stated reason rather than silently vanish.
-- **New, still open (design, and the biggest one):** **the product now has two chrome
-  palettes.** The 3D viewport uses the six named tokens; the floating console uses slate+cyan
-  (`#22d3ee` and seven greys) that `tokens.css` does not define. Two of them duplicate roles
-  the tokens already fill — `#22d3ee` does what `bioluminescence` does, `#020617` what `abyss`
-  does. Either the six tokens absorb the console (restyle the panels to the tokens) or the
-  console's palette is adopted into `tokens.css` and the viewport follows it. Leaving both is
-  the one option that is actively wrong, because a reader cannot learn what a colour means
-  when the same role has two values. See §5.1.2.
+- **Reopened 2026-09-08 (design, and still the biggest one): the product now has THREE
+  colour systems, not two.** `designTest` adopted Theme C for the console and rewrote the six
+  named tokens in `tokens.css`, but touched no file in `frontend/src/viz/` — and
+  `viz/scene.ts` hardcodes its own copy of the six tokens. So the 3D viewport renders in the
+  original values, `app.css` in the rewritten ones, and the console in Theme C `--rt-*`.
+  `bioluminescence`, which §5.1 defines as "live data", is `#4FE8C4` on the float markers and
+  `#10B981` in the chrome at the same time. The original framing still applies and is now
+  sharper: a reader cannot learn what a colour means when the same role has three values.
+  Resolving it means picking one system and making `viz/scene.ts` read from it rather than
+  restate it. See §5.1.4 for the full audit.
+- **New, still open (assistant, one-line decision):** **enable billing on the Google Cloud
+  project, or accept that the assistant cannot look anything up.** Google Search grounding
+  is implemented and inert on a free key (§10, 2026-09-06). With billing it answers live
+  questions with real cited sources; without it, it honestly declines and dates what it
+  remembers. Nothing else changes either way. Free-tier generation is **20 requests per
+  minute per model**, and one answer costs two, so roughly ten questions a minute — fine
+  for a demo, tight if judges pass a laptop around.
+- **New, still open (assistant, unverified):** two paths have never been run end to end
+  because the per-minute quota ran out during testing: a **general-knowledge question**
+  ("who was Alan Turing"), and the **ocean measurement path since search grounding was
+  added**. The oil-price question did exercise the strip-and-retry fallback successfully,
+  so the mechanism works; what is unconfirmed is that the ocean path still cites correctly
+  through it. Run both first thing next session — they are two questions and one minute.
 - **New, still open:** **nothing has been judged on a real GPU.** Every visual decision so
   far — water fog constants, the globe's shadow lift, the terminator softness — was tuned
   against a SwiftShader software renderer at 1-4 fps. The team chose fixed maximum quality

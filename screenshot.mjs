@@ -38,7 +38,16 @@ async function shot(page, label) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function statusText(page) {
-  return page.evaluate(() => document.querySelector(".viewport__status")?.textContent?.trim() ?? "");
+  // designTest (2026-09-07) removed the non-error `.viewport__status` readout and
+  // moved the loading/provenance line into CommandPill's status tooltip. The old
+  // selector still matches `.viewport__status--error`, so this waited 90s for an
+  // element that only appears when something has gone wrong. Read the new home
+  // first and keep the old one as a fallback for the error state.
+  return page.evaluate(() => {
+    const pill = document.querySelector(".command-pill__status-tooltip");
+    if (pill?.textContent?.trim()) return pill.textContent.trim();
+    return document.querySelector(".viewport__status")?.textContent?.trim() ?? "";
+  });
 }
 
 /** Wait until the field has finished loading, or give up loudly. */
