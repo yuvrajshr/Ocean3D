@@ -45,7 +45,6 @@ class ScreenStatePayload(BaseModel):
     """What the client says is on screen. Actions are validated against this."""
 
     view: str = "map"
-    mode: str = "ops"
     layers: list[dict[str, Any]] = Field(default_factory=list)
     time: str = ""
     depth_index: int = 0
@@ -158,7 +157,6 @@ def message(req: MessageRequest) -> StreamingResponse:
                     history=history,
                     state=state,
                     catalogue=catalogue,
-                    mode=req.state.mode,
                     store=_store,
                     on_status=lambda text: events.put(("status", {"text": text})),
                 )

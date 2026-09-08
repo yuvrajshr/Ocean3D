@@ -96,7 +96,6 @@ is not available, say which are.
 
 def build_system_prompt(
     *,
-    mode: str = "ops",
     state: Any | None = None,
     catalogue: list[str] | None = None,
 ) -> str:
@@ -113,18 +112,13 @@ def build_system_prompt(
     """
     parts = [SYSTEM_PROMPT]
 
-    if mode == "explore":
-        parts.append(
-            "This reader is in Explore mode: likely a student or a curious member "
-            "of the public. Define a term the first time you use it, and prefer one "
-            "clear sentence over a precise but dense one. The grounding rule does "
-            "not relax."
-        )
-    else:
-        parts.append(
-            "This reader is in Ops mode: an INCOIS forecaster. Assume the "
-            "vocabulary. Lead with the number and the date."
-        )
+    # One register, since the Ops/Explore toggle was removed (context.md §5.1
+    # Principle 4, 2026-09-08). The forecaster's voice is the one an INCOIS
+    # deliverable is judged on, so it is the one that stays.
+    parts.append(
+        "The reader is an INCOIS forecaster. Assume the vocabulary. Lead with "
+        "the number and the date."
+    )
 
     if state is not None:
         layers = getattr(state, "layers", []) or []

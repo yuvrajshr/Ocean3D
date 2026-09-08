@@ -80,7 +80,6 @@ class ScreenState:
     """What the frontend says is currently true. Actions are checked against it."""
 
     view: str
-    mode: str
     layers: list[dict[str, Any]] = field(default_factory=list)
     time: str = ""
     depth_index: int = 0

@@ -241,7 +241,6 @@ def run_turn(
     history: list[dict[str, Any]],
     state: ScreenState,
     catalogue: list[str],
-    mode: str = "ops",
     store: Any | None = None,
     on_status: Callable[[str], None] | None = None,
 ) -> TurnResult:
@@ -253,7 +252,7 @@ def run_turn(
     """
     client = _client()
     result = TurnResult()
-    system = build_system_prompt(mode=mode, state=state, catalogue=catalogue)
+    system = build_system_prompt(state=state, catalogue=catalogue)
 
     for _ in range(ASSISTANT_MAX_STEPS):
         interaction = _create_with_retry(

@@ -176,7 +176,7 @@ instruments, each one doing double duty as both control and readout:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Ocean Data Visualization · INCOIS            [Ops mode ⟷ Explore] │
+│ Ocean Data Visualization · INCOIS          [Map ⟷ Globe ⟷ Column] │
 ├───────────┬──────────────────────────────────────────┬───────────┤
 │ Variable  │                                          │  degC     │
 │ ○ Temp    │                                          │  30 ─┐    │
@@ -245,9 +245,17 @@ only.
    in the water column, not on the sphere" — argued against a *locator* as the
    default; a plan view carrying real measured fields is not a locator.
 
-4. **Two audiences, one system.** "Ops mode ⟷ Explore" is a single toggle, top-right, not a
-   separate skin: Explore mode hides advanced controls (isosurface, colorbar editing) and
-   adds one short caption per selected variable, in the same visual language.
+4. **Two audiences, one interface.** *(Rewritten 2026-09-08 — see §10. This principle used
+   to specify an "Ops mode ⟷ Explore" toggle; the toggle is removed.)* One density serves the
+   forecaster and the newcomer, because the three things Explore mode was specified to do it
+   never did: isosurface extraction was never built, there is no colorbar editor, and the
+   per-variable captions were never written. What it actually did was hide one diagnostic
+   readout and change the assistant's register. **PS requirement 7 — "doubles as a public
+   science-communication / outreach tool" — is met by the interface being approachable by
+   default rather than by a mode that strips it:** the load-in descent, the globe, real place
+   names on the map, plain-language empty and error states (§5.3), and an assistant anyone can
+   ask a question in words. If a control is ever built that a newcomer genuinely should not
+   see, that is the moment to reconsider a second mode — not before.
 5. **Structure carries information.** The depth ruler, the colorbar, the timeline scrubber
    are all literally true to their data — no numbered eyebrows or decorative dividers that
    don't correspond to real structure.
@@ -569,8 +577,9 @@ Checked against common AI-generated tells before locking this in:
 - Colorbar palettes must remain distinguishable for common color-vision deficiencies
   (avoid red-green as the sole encoding for hazard vs. normal; pair color with the
   `advisory` amber and an icon/label, never color alone).
-- Responsive down to a single-column layout on mobile/tablet for the Explore/outreach
-  audience — Ops mode's denser controls can assume a larger screen.
+- Responsive down to a single-column layout on mobile/tablet. There is no denser variant to
+  except: one interface serves both audiences (Principle 4), so the narrow layout is simply
+  the layout. **Not currently true — `CommandPill` overflows 414px by 308px (§5.1.4).**
 
 ### 5.5 Standing external references — design and data
 
@@ -869,7 +878,12 @@ each — component, decision, one-line reason, date.)*
   worse: a flat floor with a hard rim, which is itself a wall. What worked: the analysis keeps
   a power-curve axis at ~425×, the seafloor gets its own *linear* axis about a quarter as
   steep, and the seafloor dissolves out below ~250 m because that is where light stops. The
-  cost, stated in the UI, is that seafloor height is indicative; nothing reads a depth off it._
+  cost is that seafloor height is indicative; nothing reads a depth off it. **Amended
+  2026-09-08: that cost is no longer stated in the UI.** The readout that carried it was the
+  one thing Explore mode hid, and it was removed with the modes. The physical claim is
+  unchanged and the seafloor is still on its own axis; what is gone is the sentence telling
+  the reader so. If a viewer is ever likely to read a depth off the relief, this needs a new
+  home — the layer housing is the obvious one, since it already states resolution and source._
 - _2026-09-01 — Depth axis exponent moved from 0.5 (square root) to 0.65. Square root has
   infinite slope at zero, which made the coastline itself a vertical cliff once the seafloor
   shared the axis. 0.65 keeps most of the surface emphasis and is well-behaved at zero._
@@ -1298,6 +1312,31 @@ each — component, decision, one-line reason, date.)*
   `@fontsource/inter` dependency, so the console falls back to Segoe UI on a clean machine;
   `--linear-blue-rgb` (another product's brand colour) is defined and unused; and none of the
   six new stylesheets carry a single `focus-visible` rule, which §5.4 makes non-negotiable._
+
+- _2026-09-08 — **The Ops/Explore toggle is removed, and §5.1 Principle 4 is rewritten around
+  one interface.** Audited before deleting: of the four things `mode` controlled, two were
+  already dead — `VariablePanel`'s `mode` prop was destructured as `_mode` and never read, and
+  `.console__main--explore` set `grid-template-columns: minmax(0, 1fr)`, byte-identical to the
+  base rule, because the panels float now and there is no side column left to collapse. The two
+  live ones were hiding the exaggeration readout and switching the assistant's register.
+  Principle 4 had promised Explore would hide isosurface extraction and colorbar editing and add
+  per-variable captions; none of the three exists. A control that advertises three behaviours,
+  delivers none, and silently changes a fourth thing is worse than no control._
+- _2026-09-08 — **The assistant is pinned to the forecaster's register.** It previously took
+  `mode` through `ScreenState` and branched in `build_system_prompt`: Explore defined terms and
+  preferred one clear sentence, Ops assumed the vocabulary and led with the number and date. Ops
+  is the voice an INCOIS deliverable is judged on, so it is the one that stays, and the branch,
+  the parameter, and `mode` on both `ScreenStatePayload` and `ScreenState` are gone rather than
+  left defaulted. `get_screen_state` no longer reports a mode, which also stops the model being
+  told about a control the reader cannot see._
+- _2026-09-08 — **PS requirement 7 is now met by the interface, not by a mode.** "Doubles as a
+  public science-communication / outreach tool" was answered by a toggle that stripped controls;
+  it is now answered by defaults — the load-in descent, the globe, real place names, plain
+  empty and error states (§5.3), and an assistant anyone can ask in words. Recorded explicitly
+  because the pitch may still describe the two-mode design, and it no longer exists._
+- _2026-09-08 — Removing the toggle also removed the furthest-right element in the 414px
+  overflow measured at the Theme C merge (`command-pill__mode-toggle`, right edge 767px, 141px
+  wide). The overflow is reduced, **not fixed** — §5.1.4 still stands._
 
 ---
 

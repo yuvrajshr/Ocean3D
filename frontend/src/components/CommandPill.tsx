@@ -6,7 +6,10 @@
  * - Contextual title (truncating)
  * - Provenance/status dot with tooltip
  * - View mode segmented control (Map / Globe / Water column) always showing icon + name
- * - Ops / Explore mode tabs
+ *
+ * The Ops/Explore tabs were removed on 2026-09-08: they promised to hide advanced
+ * controls that were never built, and two of their four behaviours were already
+ * dead code. See context.md §5.1 Principle 4.
  */
 
 import {
@@ -20,7 +23,6 @@ import type { SceneView } from "../viz/scene";
 import "../styles/command-pill.css";
 
 export type AppView = SceneView | "map";
-export type InterfaceMode = "ops" | "explore";
 
 export interface CommandPillProps {
   scenario: Scenario | null;
@@ -30,8 +32,6 @@ export interface CommandPillProps {
   view: AppView;
   onViewChange: (view: AppView) => void;
   entryDone: boolean;
-  mode: InterfaceMode;
-  onModeChange: (mode: InterfaceMode) => void;
   pointsCount?: number;
   isPointsOpen?: boolean;
   onTogglePoints?: () => void;
@@ -45,8 +45,6 @@ export function CommandPill({
   view,
   onViewChange,
   entryDone,
-  mode,
-  onModeChange,
   pointsCount,
   isPointsOpen,
   onTogglePoints,
@@ -174,32 +172,6 @@ export function CommandPill({
               <div className="command-pill__divider" />
             </>
           )}
-
-          {/* Ops / Explore Tabs */}
-          <div className="command-pill__mode-toggle" role="group" aria-label="Interface mode">
-            <button
-              type="button"
-              id="btn-mode-ops"
-              className={`command-pill__mode-btn ${
-                mode === "ops" ? "command-pill__mode-btn--active" : ""
-              }`}
-              aria-pressed={mode === "ops"}
-              onClick={() => onModeChange("ops")}
-            >
-              Ops
-            </button>
-            <button
-              type="button"
-              id="btn-mode-explore"
-              className={`command-pill__mode-btn ${
-                mode === "explore" ? "command-pill__mode-btn--active" : ""
-              }`}
-              aria-pressed={mode === "explore"}
-              onClick={() => onModeChange("explore")}
-            >
-              Explore
-            </button>
-          </div>
         </div>
       </div>
     </nav>

@@ -26,7 +26,6 @@ CATALOGUE = ["temperature", "salinity", "currents", "chlorophyll", "mixed_layer_
 def state(**over) -> ScreenState:
     base = dict(
         view="map",
-        mode="ops",
         layers=[{"key": "temperature", "visible": True, "opacity": 1.0}],
         time="2013-10-10T00:00:00Z",
         depth_index=0,

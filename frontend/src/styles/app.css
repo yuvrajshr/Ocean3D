@@ -106,35 +106,6 @@
 
 .provenance__text { color: var(--text-muted); }
 
-/* ------------------------------------------------------------- mode toggle */
-
-.mode-toggle {
-  display: inline-flex;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-control);
-  overflow: hidden;
-}
-
-.mode-toggle__button {
-  appearance: none;
-  border: 0;
-  background: var(--control-idle);
-  color: var(--text-muted);
-  font-family: var(--font-ui);
-  font-size: var(--size-label);
-  font-weight: var(--weight-medium);
-  padding: var(--space-1) var(--space-3);
-  cursor: pointer;
-  transition: background var(--transition-state), color var(--transition-state);
-}
-
-.mode-toggle__button:hover:not(:disabled) { background: var(--control-hover); color: var(--text-primary); }
-.mode-toggle__button:active:not(:disabled) { background: var(--control-active); }
-/* The view toggle is disabled until the entry descent finishes — there is nothing
-   coherent to switch to mid-gesture. "Skip intro" is the control for cutting it short. */
-.mode-toggle__button:disabled { opacity: 0.4; cursor: not-allowed; }
-.mode-toggle__button[aria-pressed="true"] { background: var(--control-on); color: var(--foam); }
-
 /* -------------------------------------------------------------------- main */
 
 .console__main {
@@ -143,8 +114,6 @@
   min-height: 0;
   position: relative;
 }
-
-.console__main--explore { grid-template-columns: minmax(0, 1fr); }
 
 /* Globe mode drops the side panels entirely */
 .console__main--globe { grid-template-columns: minmax(0, 1fr); }
@@ -496,12 +465,6 @@
   color: var(--rt-red, #ff0000) !important;
 }
 
-.viewport__hint {
-  align-self: flex-end;
-  font-size: var(--size-caption);
-  color: var(--text-faint);
-}
-
 /* Map attribution, in the corner convention every basemap uses. Absolutely positioned so
    it stays out of the overlay's space-between flow, which only expects two children. */
 .viewport__credit {
@@ -802,11 +765,10 @@
 
 /* -------------------------------------------------------------- responsive */
 
-/* Explore mode is the outreach audience and must work on a phone. Ops mode's
-   denser controls assume a larger screen (context.md §5.4). */
+/* One interface serves both audiences, so the narrow layout is simply the
+   narrow layout — there is no denser variant to except (context.md §5.4). */
 @media (max-width: 900px) {
-  .console__main,
-  .console__main--explore {
+  .console__main {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
   }
