@@ -5,7 +5,8 @@
  * - Circular logo mark
  * - Contextual title (truncating)
  * - Provenance/status dot with tooltip
- * - View mode segmented control (Map / Globe / Water column) always showing icon + name
+ * - View mode segmented control (Map / Globe / Water column / Chunk) always showing
+ *   icon + name
  *
  * The Ops/Explore tabs were removed on 2026-09-08: they promised to hide advanced
  * controls that were never built, and two of their four behaviours were already
@@ -16,13 +17,15 @@ import {
   Map as MapIcon,
   Globe as GlobeIcon,
   Waves as WavesIcon,
+  Box as BoxIcon,
   MapPin,
 } from "lucide-react";
 import type { Scenario, SourceStatus } from "../api/client";
 import type { SceneView } from "../viz/scene";
 import "../styles/command-pill.css";
 
-export type AppView = SceneView | "map";
+/** The chunk view is a fourth view with its own canvas, like the map. */
+export type AppView = SceneView | "map" | "chunk";
 
 export interface CommandPillProps {
   scenario: Scenario | null;
@@ -65,6 +68,7 @@ export function CommandPill({
     { id: "map", label: "Map", icon: MapIcon },
     { id: "globe", label: "Globe", icon: GlobeIcon },
     { id: "column", label: "Water column", icon: WavesIcon },
+    { id: "chunk", label: "Chunk", icon: BoxIcon },
   ];
 
   return (

@@ -538,6 +538,43 @@ Principle 11 reserves, clear of the depth ruler's centred 240px track. The panel
 unchanged — 420px, same z-plane, same citation line. `ToolDock.tsx` still exists and renders
 nowhere.
 
+### 5.1.5 The chunk view carries its own palette and typeface (adopted 2026-09-09)
+
+The chunk view (`components/chunk/`, `viz/chunk/`) is the one screen in this product that
+does **not** resolve through `tokens.css`. This is a deliberate, fenced exception, recorded
+here because CLAUDE.md's hard rule is that a colour cannot exist in CSS without existing in
+this section first.
+
+**What it is.** A full-screen instrument for one 5°×5° block of ocean, 0–2000 m, reached from
+the globe and left by the breadcrumb's back control. It covers the console rather than
+docking into it, because the question it answers is a different one — not "what does the
+model say at this depth today", which the console answers, but "what is the structure of this
+block of water, and does the instrument inside it agree".
+
+**Its palette.** Cold glass over deep water: void `#04070A`, panel glass a 180° gradient from
+`rgba(16,29,41,0.8)` to `rgba(7,13,20,0.76)` with a lit top edge, ink `#D8E6EE` down a
+nine-step ramp to `#3D5568`, one accent cyan `#6FE3F0` meaning "this control is on", and one
+amber `#F2B45C` meaning "model, as opposed to observation" in the profile chart. Type is
+Archivo for UI and JetBrains Mono for every literal readout — the same two-role split
+`tokens.css` enforces with IBM Plex, in a different pair of faces.
+
+**Why it is allowed to differ.** Every value is declared as a `--cv-*` custom property on the
+single `.chunk-view` root in `styles/chunk-view.css`. Nothing in that file can reach the
+console, and nothing in `tokens.css` is overridden — the two systems cannot mix, which is the
+property that makes this an exception rather than drift. Being one self-contained screen, it
+also cannot produce the failure §5.1.2 and §5.1.4 record, where two palettes met inside one
+view and neither won.
+
+**What it does not change.** The chunk view still obeys everything §5.1 asks of an
+instrument: hairline dividers, square housings, literal rulers with real units, one
+orchestrated motion (the load-in descent, skipped under `prefers-reduced-motion` along with
+the panel entrances), instant feedback everywhere else, and no numbered markers outside the
+timeline's real scrubber. The data ramps remain cmocean, and remain distinct from the chrome.
+
+**If this spreads, it stops being an exception.** A second screen wanting `--cv-*` is the
+signal to fold this palette into `tokens.css` as a named theme, or to drop it — not to copy
+the block.
+
 ### 5.2 Self-critique against generic defaults
 
 Checked against common AI-generated tells before locking this in:
@@ -1367,6 +1404,26 @@ each — component, decision, one-line reason, date.)*
   2026-09-01: the fill is the data's own no-data mask and may never be invented); only the
   coastline and border strokes now draw unconditionally. They encode nothing, so they cannot
   claim coverage the data lacks — the same argument §5.1 Principle 7 makes for the graticule._
+
+- _2026-09-09 — **Chunk view added as a fourth view, with its own palette, typeface and
+  renderer.** A full-screen instrument for one 5°×5° block (85–90°E, 10–15°N, 0–2000 m):
+  scalar field as slices / stacked volume / isosurface, advected current traces, shaded
+  bathymetry, instrument tracks, and an editable live scene spec. Three decisions worth
+  keeping: (1) the palette and type are scoped to `.chunk-view` and recorded in §5.1.5 — a
+  fenced exception, not drift; (2) everything on screen derives from one scene spec, so
+  adding a sensor is a descriptor plus a module in `viz/chunk/registry.ts` and the view does
+  not change; (3) the console is concealed with `visibility: hidden` and its ocean scene is
+  paused via `OceanScene.setPaused` rather than unmounted — tearing it down would reset the
+  camera, re-fetch the basemap, and reintroduce exactly the view-toggle trap in
+  `next_session.md` §6. Verified end to end: Map → Chunk → Globe → Chunk → Column → Map with
+  the scene's own view following correctly and no console errors._
+- _2026-09-09 — **The chunk view's bathymetry surface writes through its colour attribute.**
+  `THREE.Float32BufferAttribute` copies the array it is constructed from, so recolouring the
+  array the geometry was built from reaches nothing. The seabed stayed at its initial black
+  and the bathymetry colormap picker did nothing — a dead control that looked like a styling
+  choice, and a black seafloor that §6 lesson 2 specifically warns reads as a silhouette. The
+  layer now writes into `geometry.attributes.color.array`. Worth remembering generally: only
+  the skirt and the isosurface in that file ever did it correctly._
 
 ---
 

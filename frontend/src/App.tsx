@@ -27,6 +27,7 @@ import {
   type AssistantAction,
 } from "./assistant/actions";
 import { MapView } from "./map/MapView";
+import { ChunkView } from "./components/chunk/ChunkView";
 import { PointReadout } from "./map/PointReadout";
 import { MapTimeline } from "./map/MapTimeline";
 import {
@@ -46,10 +47,10 @@ import {
 } from "./viz/scene";
 
 
-/** The map is a third view but not a SceneView: it owns a separate canvas and
- *  never touches viz/scene.ts. Widening here is what keeps the 3D camera rig
- *  and bloom composer out of this. */
-type AppView = SceneView | "map";
+/** The map and the chunk view are views but not SceneViews: each owns a
+ *  separate canvas and never touches viz/scene.ts. Widening here is what keeps
+ *  the 3D camera rig and bloom composer out of both. */
+type AppView = SceneView | "map" | "chunk";
 
 /** Floats within half a model step of the current run are "concurrent" with it. */
 const MARKER_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
@@ -130,7 +131,9 @@ export default function App() {
    */
   const handleView = useCallback((next: AppView) => {
     setView(next);
-    if (next === "map") return; // the map owns its own canvas
+    // The map and the chunk view own their own canvases; the ocean scene is
+    // told nothing about either.
+    if (next === "map" || next === "chunk") return;
     if (next === "globe") {
       sceneRef.current?.enterGlobe();
     } else {
@@ -145,6 +148,12 @@ export default function App() {
       else scene?.startEntry();
     }
   }, []);
+
+  // The chunk view draws its own WebGL surface over this one, so the console's
+  // scene stops rendering rather than competing with it for frames.
+  useEffect(() => {
+    sceneRef.current?.setPaused(view === "chunk");
+  }, [view]);
 
   // ----------------------------------------------------------- assistant
   //
@@ -796,7 +805,7 @@ export default function App() {
   }, [variables, variableKey, fieldMeta]);
 
   return (
-    <div className="console">
+    <div className={`console${view === "chunk" ? " console--concealed" : ""}`}>
       <CommandPill
         scenario={scenario}
         source={source}
@@ -1002,6 +1011,15 @@ export default function App() {
           onSeek={setTimeIndex}
           onTogglePlay={() => setPlaying((p) => !p)}
         />
+      ) : null}
+
+      {/* The chunk view is full-screen and self-contained: it covers the
+          console rather than docking into it, because the question it answers
+          is a different one and its own chrome is the whole instrument. */}
+      {view === "chunk" ? (
+        <div className="chunk-overlay">
+          <ChunkView onBack={() => handleView("globe")} />
+        </div>
       ) : null}
     </div>
   );

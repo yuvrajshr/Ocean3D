@@ -6,6 +6,9 @@
  * view — enough to judge whether the scene reads as an ocean.
  *
  *   node shot.mjs <label> [--skip] [--dive]
+ *   node shot.mjs <label> --chunk [--profile] [--spec] [--hover] [--at=ms]
+ *                          [--preset=Top-down|Section] [--mode=Volume|Iso]
+ *                          [--var=Salinity|Chlorophyll|Current speed] [--reduced]
  */
 
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
@@ -42,6 +45,11 @@ const browser = await puppeteer.launch({
 });
 
 const page = await browser.newPage();
+if (process.argv.includes("--reduced")) {
+  await page.emulateMediaFeatures([
+    { name: "prefers-reduced-motion", value: "reduce" },
+  ]);
+}
 await page.setViewport({ width: 1600, height: 1000, deviceScaleFactor: 1 });
 
 const errors = [];
@@ -94,6 +102,107 @@ if (process.argv.includes("--globe-mode")) {
     return s ? { fps: Math.round(s.fps), view: s.currentView } : { error: "scene not exposed" };
   });
   console.log("scene:", JSON.stringify(report));
+  const name = `screenshot-${nextIndex()}-${label}.png`;
+  await page.screenshot({ path: join(OUT_DIR, name) });
+  console.log("saved", name);
+  console.log("console errors:", errors.length);
+  errors.slice(0, 8).forEach((e) => console.log("  !", e));
+  await browser.close();
+  process.exit(0);
+}
+
+// --chunk: the chunk view, reached through the header's view toggle. It owns its
+// own canvas and its own chrome, so none of the console selectors below apply —
+// wait on .chunk-layers, which only mounts once the engine has started.
+if (process.argv.includes("--chunk")) {
+  await sleep(1500);
+  await page.evaluate(() => document.querySelector(".skip-entry")?.click());
+  const clicked = await page.evaluate(() => {
+    const button = document.querySelector("#btn-view-chunk");
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  });
+  console.log("chunk toggle clicked:", clicked);
+  try {
+    await page.waitForSelector(".chunk-layers", { timeout: 60000 });
+  } catch {
+    console.log("!! chunk panels never mounted");
+  }
+  // The load-in descent runs 1.5 s; the currents need a few frames beyond that.
+  await sleep(Number(process.argv.find((a) => a.startsWith("--at="))?.slice(5) ?? 9000));
+
+  const pick = (selector, text) =>
+    page.evaluate(
+      (sel, want) => {
+        // Variable rows carry a unit alongside the label, so match on the
+        // start of the text and click the button the match lives in.
+        const el = [...document.querySelectorAll(sel)].find((b) =>
+          b.textContent.trim().toLowerCase().startsWith(want.toLowerCase()),
+        );
+        const button = el?.closest("button") ?? el;
+        if (!button) return false;
+        button.click();
+        return true;
+      },
+      selector,
+      text,
+    );
+
+  const varName = process.argv.find((a) => a.startsWith("--var="))?.slice(6);
+  if (varName) {
+    console.log("variable:", varName, await pick(".chunk-var__label", varName));
+    await sleep(1500);
+  }
+  const modeName = process.argv.find((a) => a.startsWith("--mode="))?.slice(7);
+  if (modeName) {
+    console.log("mode:", modeName, await pick(".chunk-seg__btn", modeName));
+    await sleep(2500);
+  }
+  const presetName = process.argv.find((a) => a.startsWith("--preset="))?.slice(9);
+  if (presetName) {
+    console.log("preset:", presetName, await pick(".chunk-presets__btn", presetName));
+    await sleep(2500);
+  }
+
+  if (process.argv.includes("--hover")) {
+    // Park the cursor over the middle of the active plane and let one frame's
+    // raycast land.
+    await page.mouse.move(800, 430);
+    await page.mouse.move(802, 432);
+    await sleep(900);
+  }
+
+  if (process.argv.includes("--profile")) {
+    await page.evaluate(() => {
+      const layers = [...document.querySelectorAll(".chunk-layer")];
+      const row = layers.find((l) => l.textContent.includes("Instrument traces"));
+      row?.querySelector(".chunk-layer__chev")?.click();
+    });
+    await sleep(600);
+    await page.evaluate(() => document.querySelector(".chunk-platform")?.click());
+    await sleep(1200);
+  }
+  if (process.argv.includes("--spec")) {
+    await page.evaluate(() => document.querySelector(".chunk-time__spec")?.click());
+    await sleep(600);
+  }
+
+  const report = await page.evaluate(() => ({
+    fps: document.querySelector(".chunk-fps")?.textContent ?? "?",
+    res: document.querySelector(".chunk-res__label")?.textContent ?? "?",
+    extent: document.querySelector(".chunk-crumb__extent")?.textContent ?? "?",
+    layers: document.querySelectorAll(".chunk-layer").length,
+    ticks: [...document.querySelectorAll(".chunk-ruler__tick")].filter(
+      (t) => t.style.opacity === "1",
+    ).length,
+    canvas: (() => {
+      const all = document.querySelectorAll(".chunk-view__canvas canvas");
+      return all.length === 1 ? `${all[0].width}x${all[0].height}` : `count=${all.length}`;
+    })(),
+    rulerNodes: document.querySelectorAll(".chunk-ruler__tick").length,
+  }));
+  console.log("chunk:", JSON.stringify(report));
   const name = `screenshot-${nextIndex()}-${label}.png`;
   await page.screenshot({ path: join(OUT_DIR, name) });
   console.log("saved", name);

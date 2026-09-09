@@ -1,0 +1,1270 @@
+/* ============================================================================
+   chunk-view.css — the chunk view's instrument chrome.
+
+   This screen carries its own palette, declared as local custom properties on
+   `.chunk-view` below and recorded in context.md §5.1.5 / §10 (2026-09-09).
+   It is a deliberate, documented exception to the six-token rule in §5.1, not
+   drift: the chunk view is a self-contained full-screen instrument reached from
+   the globe, and every value here is scoped to that one root — nothing in this
+   file can reach the console, and nothing in tokens.css is overridden.
+
+   Everything is a glass instrument panel over the water: a 180° surface
+   gradient, a hairline border with a lit top edge, and one cyan accent that
+   means "this control is on" and nothing else.
+   ========================================================================== */
+
+/* The chunk view covers the console rather than docking into it. Fixed, so it
+   is unaffected by the console's grid, and above every docked panel. */
+.chunk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  /* The overlay is a child of the console, which is concealed with
+     `visibility: hidden` while the chunk view is up. Visibility inherits, so
+     the chunk view has to opt back in — this is what keeps the console's
+     controls out of the tab order without also hiding what replaced them. */
+  visibility: visible;
+}
+
+.chunk-view {
+  /* --- ground and water --------------------------------------------------- */
+  --cv-void: #04070a;
+  --cv-glass-top: rgba(16, 29, 41, 0.8);
+  --cv-glass-bottom: rgba(7, 13, 20, 0.76);
+  --cv-glass-top-strong: rgba(16, 29, 41, 0.82);
+  --cv-glass-bottom-strong: rgba(7, 13, 20, 0.78);
+  --cv-inset: rgba(4, 10, 16, 0.5);
+
+  /* --- edges -------------------------------------------------------------- */
+  --cv-edge: rgba(126, 166, 196, 0.2);
+  --cv-edge-lit: rgba(160, 205, 230, 0.28);
+  --cv-rule: rgba(126, 166, 196, 0.13);
+  --cv-rule-faint: rgba(126, 166, 196, 0.09);
+
+  /* --- ink ---------------------------------------------------------------- */
+  --cv-ink: #d8e6ee;
+  --cv-ink-bright: #eaf5fa;
+  --cv-ink-strong: #dce9f1;
+  --cv-ink-body: #c3d6e2;
+  --cv-ink-mono: #b8d0de;
+  --cv-ink-value: #a8c2d2;
+  --cv-ink-dim: #8fb2c6;
+  --cv-ink-label: #7d9cb0;
+  --cv-ink-caption: #6d8a9d;
+  --cv-ink-faint: #5b7688;
+  --cv-ink-ghost: #3d5568;
+
+  /* --- accents ------------------------------------------------------------ */
+  --cv-accent: #6fe3f0;
+  --cv-accent-soft: rgba(111, 227, 240, 0.16);
+  --cv-accent-line: rgba(111, 227, 240, 0.4);
+  --cv-model: #f2b45c;
+  --cv-alarm: #f28c6c;
+  --cv-off: rgba(126, 166, 196, 0.07);
+
+  --cv-shadow: 0 18px 46px -18px rgba(0, 0, 0, 0.8);
+  --cv-font: Archivo, system-ui, sans-serif;
+  --cv-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  overflow: hidden;
+  background: var(--cv-void);
+  font-family: var(--cv-font);
+  color: var(--cv-ink);
+}
+
+.chunk-view *,
+.chunk-view *::before,
+.chunk-view *::after {
+  box-sizing: border-box;
+}
+
+/* The one orchestrated moment: panels rise as the camera settles into the box.
+   Suppressed wholesale under prefers-reduced-motion, along with the camera
+   descent the engine skips. */
+@keyframes chunk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chunk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ------------------------------------------------------------------- water */
+
+.chunk-view__depth {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 90% at 50% 42%,
+    #0d2130 0%,
+    #071420 38%,
+    #04080d 68%,
+    #020407 100%
+  );
+}
+
+/* A single soft light source behind the chunk, so the box sits *in* water
+   rather than on a flat field. */
+.chunk-view__glow {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 1100px;
+  height: 1100px;
+  margin: -550px 0 0 -550px;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(58, 166, 196, 0.16) 0%,
+    rgba(30, 110, 150, 0.07) 34%,
+    rgba(0, 0, 0, 0) 66%
+  );
+}
+
+.chunk-view__canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+.chunk-view__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    115% 85% at 50% 45%,
+    rgba(0, 0, 0, 0) 52%,
+    rgba(2, 5, 9, 0.55) 88%,
+    rgba(2, 4, 7, 0.85) 100%
+  );
+}
+
+/* ------------------------------------------------------------------- ruler */
+
+.chunk-ruler {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 74px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Positioned by the engine every frame against the box's near-left edge. */
+.chunk-ruler__tick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.chunk-ruler__rule {
+  width: 16px;
+  height: 1px;
+  background: rgba(126, 166, 196, 0.4);
+}
+
+.chunk-ruler__label {
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--cv-ink-label);
+}
+
+/* ------------------------------------------------------------------- glass */
+
+.chunk-panel {
+  background: linear-gradient(180deg, var(--cv-glass-top), var(--cv-glass-bottom));
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--cv-edge);
+  border-top-color: var(--cv-edge-lit);
+  border-radius: 3px;
+}
+
+.chunk-panel--lifted {
+  box-shadow: var(--cv-shadow);
+}
+
+.chunk-panel--strong {
+  background: linear-gradient(
+    180deg,
+    var(--cv-glass-top-strong),
+    var(--cv-glass-bottom-strong)
+  );
+  border-top-color: rgba(160, 205, 230, 0.3);
+}
+
+.chunk-panel__title {
+  padding: 11px 13px 9px;
+  border-bottom: 1px solid var(--cv-rule);
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cv-ink-label);
+}
+
+/* ---------------------------------------------------------------- controls */
+
+/* Every control is a real button so it is reachable by keyboard; these rules
+   strip the UA look without losing the element. */
+.chunk-view button {
+  appearance: none;
+  margin: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chunk-view :focus-visible {
+  outline: 2px solid var(--cv-accent);
+  outline-offset: 2px;
+}
+
+.chunk-view input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 2px;
+  background: rgba(146, 182, 206, 0.26);
+  border-radius: 2px;
+  outline: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+.chunk-view input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cv-accent);
+  border: none;
+  cursor: grab;
+}
+
+.chunk-view input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--cv-accent);
+  border: none;
+  cursor: grab;
+}
+
+.chunk-view input[type="range"]:focus-visible {
+  outline: 2px solid var(--cv-accent);
+  outline-offset: 4px;
+}
+
+.chunk-view textarea {
+  outline: none;
+}
+
+.chunk-view ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.chunk-view ::-webkit-scrollbar-thumb {
+  background: rgba(146, 182, 206, 0.22);
+}
+
+.chunk-view ::selection {
+  background: rgba(111, 227, 240, 0.3);
+}
+
+/* A segmented toggle: uppercase, tight, and lit only when it is the state the
+   scene is actually in. */
+.chunk-seg {
+  display: flex;
+  gap: 3px;
+}
+
+.chunk-seg__btn {
+  flex: 1;
+  text-align: center;
+  padding: 5px 0;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  background: var(--cv-off);
+  color: var(--cv-ink-dim);
+}
+
+.chunk-seg__btn:hover {
+  background: rgba(126, 166, 196, 0.14);
+  color: var(--cv-ink-strong);
+}
+
+.chunk-seg__btn--on,
+.chunk-seg__btn--on:hover {
+  background: var(--cv-accent-soft);
+  color: var(--cv-accent);
+}
+
+/* A panel-section heading, same role as .chunk-panel__title but without the
+   panel's top border — used inside a panel body. */
+.chunk-heading {
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cv-ink-label);
+}
+
+.chunk-caption {
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cv-ink-caption);
+}
+
+.chunk-note {
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--cv-ink-faint);
+}
+
+/* A label on the left, a live value on the right. The value is always mono. */
+.chunk-kv {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--cv-ink-dim);
+}
+
+.chunk-kv__key {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 8.5px;
+  color: var(--cv-ink-caption);
+}
+
+.chunk-kv__value {
+  font-family: var(--cv-mono);
+}
+
+.chunk-kv__value--accent {
+  color: var(--cv-accent);
+}
+
+/* A square checkbox that reads as a layer's eye. */
+.chunk-dot {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border-radius: 2px;
+  border: 1px solid rgba(126, 166, 196, 0.4);
+  background: transparent;
+}
+
+.chunk-dot--on {
+  border-color: var(--cv-accent);
+  background: var(--cv-accent);
+}
+
+.chunk-dot--small {
+  width: 9px;
+  height: 9px;
+}
+
+/* -------------------------------------------------------------- breadcrumb */
+
+.chunk-crumb {
+  position: absolute;
+  left: 20px;
+  top: 18px;
+  z-index: 6;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  animation: chunk-rise 0.6s ease-out both;
+}
+
+.chunk-crumb__body {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 15px 9px 10px;
+}
+
+.chunk-crumb__back {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(126, 166, 196, 0.28);
+  border-radius: 2px;
+  color: var(--cv-ink-dim);
+  font-size: 12px;
+}
+
+.chunk-crumb__back:hover {
+  border-color: var(--cv-accent-line);
+  color: var(--cv-accent);
+}
+
+.chunk-crumb__divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(126, 166, 196, 0.16);
+}
+
+.chunk-crumb__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chunk-crumb__row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.chunk-crumb__mark {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--cv-ink-bright);
+}
+
+.chunk-crumb__view {
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--cv-accent);
+}
+
+.chunk-crumb__path {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chunk-crumb__parent {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-crumb__sep {
+  color: var(--cv-ink-ghost);
+  font-size: 9px;
+}
+
+.chunk-crumb__extent {
+  font-family: var(--cv-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--cv-ink-mono);
+}
+
+.chunk-res {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+}
+
+.chunk-res__pulse {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cv-accent);
+  animation: chunk-pulse 2s ease-in-out infinite;
+}
+
+.chunk-res__label {
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--cv-ink-label);
+}
+
+/* --------------------------------------------------------- presets/locator */
+
+.chunk-corner {
+  position: absolute;
+  right: 20px;
+  top: 18px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  animation: chunk-rise 0.7s 0.05s ease-out both;
+}
+
+.chunk-presets {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+}
+
+.chunk-presets__btn {
+  padding: 6px 11px;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--cv-ink-dim);
+}
+
+.chunk-presets__btn:hover {
+  background: rgba(126, 166, 196, 0.12);
+  color: var(--cv-ink-strong);
+}
+
+.chunk-presets__btn--on,
+.chunk-presets__btn--on:hover {
+  background: var(--cv-accent-soft);
+  color: var(--cv-accent);
+}
+
+.chunk-locator {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.chunk-locator__label {
+  font-family: var(--cv-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--cv-ink-label);
+}
+
+.chunk-fps {
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--cv-ink-faint);
+  padding-right: 2px;
+}
+
+/* -------------------------------------------------------------- layer stack */
+
+.chunk-layers {
+  position: absolute;
+  left: 84px;
+  top: 92px;
+  width: 252px;
+  max-height: calc(100% - 218px);
+  overflow-y: auto;
+  z-index: 5;
+  animation: chunk-rise 0.7s 0.08s ease-out both;
+}
+
+.chunk-layer {
+  border-bottom: 1px solid var(--cv-rule-faint);
+  padding: 9px 13px 10px;
+}
+
+.chunk-layer__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.chunk-layer__name {
+  flex: 1;
+  text-align: left;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--cv-ink-strong);
+}
+
+.chunk-layer__name--off {
+  color: var(--cv-ink-faint);
+}
+
+.chunk-layer__pct {
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-layer__chev {
+  width: 12px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--cv-ink-caption);
+}
+
+.chunk-layer__chev:hover,
+.chunk-layer__name:hover {
+  color: var(--cv-accent);
+}
+
+.chunk-layer__opacity {
+  margin-top: 9px;
+}
+
+.chunk-layer__body {
+  margin-top: 11px;
+  padding: 10px 11px;
+  background: var(--cv-inset);
+  border: 1px solid rgba(126, 166, 196, 0.1);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.chunk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.chunk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.chunk-check__label {
+  flex: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 8.5px;
+  color: var(--cv-ink-caption);
+}
+
+.chunk-platforms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chunk-platform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 2px;
+  width: 100%;
+  text-align: left;
+  background: rgba(126, 166, 196, 0.05);
+}
+
+.chunk-platform:hover {
+  background: rgba(126, 166, 196, 0.12);
+}
+
+.chunk-platform--on,
+.chunk-platform--on:hover {
+  background: rgba(111, 227, 240, 0.12);
+}
+
+.chunk-platform__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.chunk-platform__id {
+  flex: 1;
+  font-family: var(--cv-mono);
+  font-size: 9.5px;
+  color: var(--cv-ink-body);
+}
+
+.chunk-platform__kind {
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.chunk-swatch {
+  flex: 1;
+  height: 16px;
+  border-radius: 2px;
+  border: 1px solid rgba(126, 166, 196, 0.2);
+  padding: 0;
+}
+
+.chunk-swatch--on {
+  border-color: var(--cv-accent);
+}
+
+.chunk-axis {
+  padding: 11px 13px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+/* ------------------------------------------------------ variable + colorbar */
+
+.chunk-inspector {
+  position: absolute;
+  right: 20px;
+  top: 262px;
+  width: 276px;
+  max-height: calc(100% - 352px);
+  overflow-y: auto;
+  z-index: 5;
+  animation: chunk-rise 0.7s 0.16s ease-out both;
+}
+
+.chunk-vars {
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-bottom: 1px solid var(--cv-rule);
+}
+
+.chunk-var {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+}
+
+.chunk-var:hover {
+  background: rgba(126, 166, 196, 0.1);
+}
+
+.chunk-var--on,
+.chunk-var--on:hover {
+  background: var(--cv-accent-soft);
+}
+
+.chunk-var__label {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--cv-ink-body);
+}
+
+.chunk-var--on .chunk-var__label {
+  color: var(--cv-accent);
+}
+
+.chunk-var__unit {
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-range {
+  padding: 12px 13px 14px;
+}
+
+.chunk-range__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 9px;
+}
+
+.chunk-range__title {
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cv-ink-label);
+}
+
+.chunk-range__auto {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cv-accent);
+}
+
+.chunk-range__auto:hover {
+  color: #a9f2f8;
+}
+
+/* The histogram, the ramp and the two handles are one instrument: the handles
+   sit on the real distribution, so clipping is a visible decision. */
+.chunk-range__bar {
+  position: relative;
+  user-select: none;
+}
+
+.chunk-range__hist {
+  display: block;
+  width: 100%;
+  height: 58px;
+}
+
+.chunk-range__ramp {
+  position: relative;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(126, 166, 196, 0.22);
+  overflow: hidden;
+}
+
+.chunk-range__mask {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(4, 7, 10, 0.72);
+}
+
+.chunk-range__mask--min {
+  left: 0;
+}
+
+.chunk-range__mask--max {
+  right: 0;
+}
+
+.chunk-range__handle {
+  position: absolute;
+  bottom: -5px;
+  width: 9px;
+  height: 22px;
+  margin-left: -4.5px;
+  border-radius: 2px;
+  background: #0a1620;
+  border: 1px solid var(--cv-accent);
+  cursor: ew-resize;
+  padding: 0;
+}
+
+.chunk-range__ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-family: var(--cv-mono);
+  font-size: 9.5px;
+  color: var(--cv-ink-value);
+}
+
+.chunk-range__unit {
+  color: var(--cv-ink-faint);
+  letter-spacing: 0.1em;
+}
+
+.chunk-palettes {
+  display: flex;
+  gap: 4px;
+}
+
+.chunk-palette {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+}
+
+.chunk-palette__chip {
+  height: 15px;
+  border-radius: 2px;
+  border: 1px solid rgba(126, 166, 196, 0.2);
+}
+
+.chunk-palette--on .chunk-palette__chip {
+  border-color: var(--cv-accent);
+}
+
+.chunk-palette__name {
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-palette--on .chunk-palette__name {
+  color: var(--cv-accent);
+}
+
+.chunk-range__scale {
+  margin-top: 14px;
+}
+
+.chunk-range__palette-title {
+  margin-top: 15px;
+  margin-bottom: 8px;
+}
+
+/* ------------------------------------------------------------ hover readout */
+
+.chunk-hover {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  padding: 8px 11px;
+  background: rgba(6, 12, 18, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(111, 227, 240, 0.3);
+  border-radius: 3px;
+  font-family: var(--cv-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--cv-ink);
+}
+
+.chunk-hover__value {
+  color: var(--cv-accent);
+}
+
+.chunk-hover__meta {
+  color: #89a8bb;
+}
+
+/* ---------------------------------------------------------------- timeline */
+
+.chunk-time {
+  position: absolute;
+  left: 84px;
+  right: 20px;
+  bottom: 20px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 15px;
+  animation: chunk-rise 0.7s 0.24s ease-out both;
+}
+
+.chunk-time__play {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  border: 1px solid var(--cv-accent-line);
+  color: var(--cv-accent);
+  font-size: 10px;
+}
+
+.chunk-time__play:hover {
+  background: var(--cv-accent-soft);
+}
+
+.chunk-time__date {
+  font-family: var(--cv-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--cv-ink-strong);
+  width: 112px;
+  flex: none;
+}
+
+.chunk-time__scrub {
+  flex: 1;
+}
+
+.chunk-time__step {
+  font-family: var(--cv-mono);
+  font-size: 9.5px;
+  color: var(--cv-ink-faint);
+  flex: none;
+}
+
+.chunk-time__speeds {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+
+.chunk-time__speed {
+  padding: 5px 8px;
+  font-family: var(--cv-mono);
+  font-size: 9.5px;
+  border-radius: 2px;
+  background: var(--cv-off);
+  color: var(--cv-ink-dim);
+}
+
+.chunk-time__speed:hover {
+  background: rgba(126, 166, 196, 0.14);
+  color: var(--cv-ink-strong);
+}
+
+.chunk-time__speed--on,
+.chunk-time__speed--on:hover {
+  background: var(--cv-accent-soft);
+  color: var(--cv-accent);
+}
+
+.chunk-time__spec {
+  padding: 6px 11px;
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  background: var(--cv-off);
+  color: var(--cv-ink-dim);
+}
+
+.chunk-time__spec:hover {
+  background: rgba(126, 166, 196, 0.14);
+  color: var(--cv-ink-strong);
+}
+
+.chunk-time__spec--on,
+.chunk-time__spec--on:hover {
+  background: var(--cv-accent-soft);
+  color: var(--cv-accent);
+}
+
+/* --------------------------------------------------------- spec inspector */
+
+.chunk-spec {
+  position: absolute;
+  right: 20px;
+  bottom: 80px;
+  width: 430px;
+  max-height: calc(100% - 300px);
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  background: rgba(7, 13, 20, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(111, 227, 240, 0.24);
+  border-radius: 3px;
+}
+
+.chunk-spec__head {
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(126, 166, 196, 0.14);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.chunk-spec__title {
+  flex: 1;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cv-ink-label);
+}
+
+.chunk-spec__action {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cv-accent);
+}
+
+.chunk-spec__action--muted {
+  color: var(--cv-ink-label);
+}
+
+.chunk-spec__action:hover {
+  color: #a9f2f8;
+}
+
+.chunk-spec__editor {
+  flex: 1;
+  min-height: 260px;
+  resize: none;
+  padding: 12px 13px;
+  border: none;
+  background: transparent;
+  color: var(--cv-ink-mono);
+  font-family: var(--cv-mono);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.chunk-spec__status {
+  padding: 9px 13px;
+  border-top: 1px solid rgba(126, 166, 196, 0.14);
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-spec__status--error {
+  color: var(--cv-alarm);
+}
+
+/* ----------------------------------------------------------- profile panel */
+
+.chunk-profile {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 396px;
+  z-index: 9;
+  background: rgba(7, 13, 20, 0.93);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(111, 227, 240, 0.26);
+  border-radius: 3px;
+}
+
+.chunk-profile__head {
+  padding: 12px 15px;
+  border-bottom: 1px solid rgba(126, 166, 196, 0.14);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chunk-profile__id {
+  font-family: var(--cv-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--cv-ink-strong);
+}
+
+.chunk-profile__meta {
+  margin-top: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cv-ink-caption);
+}
+
+.chunk-profile__close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(126, 166, 196, 0.26);
+  border-radius: 2px;
+  color: var(--cv-ink-dim);
+  font-size: 11px;
+}
+
+.chunk-profile__close:hover {
+  border-color: var(--cv-accent-line);
+  color: var(--cv-accent);
+}
+
+.chunk-profile__legend {
+  padding: 14px 15px 6px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.chunk-profile__key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chunk-profile__swatch {
+  width: 14px;
+  height: 2px;
+}
+
+.chunk-profile__key-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--cv-ink-value);
+}
+
+.chunk-profile__rmsd {
+  flex: 1;
+  text-align: right;
+  font-family: var(--cv-mono);
+  font-size: 9px;
+  color: var(--cv-ink-faint);
+}
+
+.chunk-profile__chart {
+  padding: 4px 15px 15px;
+}
+
+.chunk-profile__chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ----------------------------------------------------------------- loading */
+
+.chunk-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cv-void);
+  font-family: var(--cv-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #4d6a7c;
+  padding: 0 var(--space-6, 32px);
+  text-align: center;
+}
+
+/* An unavailable viewport is a sentence, not a status code, so it drops the
+   ruled-out tracking the loading line uses. */
+.chunk-loading--error {
+  font-family: var(--cv-font);
+  font-size: 13px;
+  line-height: 1.6;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--cv-ink-value);
+  max-width: 46ch;
+}
+
+/* --------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .chunk-crumb,
+  .chunk-corner,
+  .chunk-layers,
+  .chunk-inspector,
+  .chunk-time {
+    animation: none;
+  }
+
+  .chunk-res__pulse {
+    animation: none;
+  }
+}

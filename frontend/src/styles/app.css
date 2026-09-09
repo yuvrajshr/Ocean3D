@@ -19,6 +19,14 @@
 
 /* ------------------------------------------------------------------ header */
 
+/* Concealed, not unmounted: the chunk view covers the console, and tearing the
+   ocean scene down and rebuilding it on every visit would reset the camera and
+   re-fetch the basemap. `visibility` also takes the console's controls out of
+   the tab order, which `opacity` would not. */
+.console--concealed {
+  visibility: hidden;
+}
+
 .console__header {
   display: flex;
   align-items: center;
@@ -803,7 +811,15 @@
 
   /* The header wraps rather than truncating: the provenance readout must stay
      legible as text, since colour alone may not carry its meaning (§5.4). */
-  .console__header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
+  /* Concealed, not unmounted: the chunk view covers the console, and tearing the
+   ocean scene down and rebuilding it on every visit would reset the camera and
+   re-fetch the basemap. `visibility` also takes the console's controls out of
+   the tab order, which `opacity` would not. */
+.console--concealed {
+  visibility: hidden;
+}
+
+.console__header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
   .header__mark { min-width: 0; flex: 1 1 auto; }
   .header__title { overflow: hidden; text-overflow: ellipsis; }
   .header__subtitle { display: none; }

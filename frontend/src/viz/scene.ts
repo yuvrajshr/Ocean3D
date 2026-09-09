@@ -374,6 +374,22 @@ export class OceanScene {
 
   // ---------------------------------------------------------------- lifecycle
 
+  /**
+   * Stop or resume the render loop.
+   *
+   * The chunk view is a second full-screen WebGL surface laid over this one.
+   * Two contexts drawing at once costs real frames on a mid-range laptop, and
+   * the console is not visible underneath, so this scene stands down while the
+   * chunk view is up. It is a pause, not a teardown: the camera, the volume
+   * texture and the markers all survive, so returning is instant and the view
+   * toggle never has to re-derive which view the scene is on — which is the
+   * failure mode recorded in next_session.md §6.
+   */
+  setPaused(paused: boolean): void {
+    if (this.disposed) return;
+    this.renderer.setAnimationLoop(paused ? null : () => this.tick());
+  }
+
   dispose(): void {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
