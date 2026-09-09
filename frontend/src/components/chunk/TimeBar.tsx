@@ -13,6 +13,8 @@ const SPEEDS = [1, 2, 4];
 
 interface Props {
   spec: SceneSpec;
+  /** The window's real stamps, one per step, as the upstream reported them. */
+  times: string[];
   playing: boolean;
   speed: number;
   specOpen: boolean;
@@ -24,6 +26,7 @@ interface Props {
 
 export function TimeBar({
   spec,
+  times,
   playing,
   speed,
   specOpen,
@@ -33,6 +36,10 @@ export function TimeBar({
   onToggleSpec,
 }: Props) {
   const { index, steps } = spec.time;
+  // The stamp the upstream actually served, not the date we asked for. HYCOM is
+  // daily and complete here, but a product with a gap answers with its nearest
+  // step and the timeline has to say which one it got.
+  const label = dateLabel(times[index] ?? "");
 
   return (
     <div className="chunk-time chunk-panel chunk-panel--lifted">
@@ -44,7 +51,7 @@ export function TimeBar({
       >
         {playing ? "■" : "▶"}
       </button>
-      <div className="chunk-time__date">{dateLabel(index)}</div>
+      <div className="chunk-time__date">{label}</div>
       <input
         type="range"
         className="chunk-time__scrub"
@@ -53,7 +60,7 @@ export function TimeBar({
         step={1}
         value={index}
         aria-label="Timeline"
-        aria-valuetext={dateLabel(index)}
+        aria-valuetext={label}
         onChange={(e) => onSeek(+e.target.value)}
       />
       <div className="chunk-time__step">

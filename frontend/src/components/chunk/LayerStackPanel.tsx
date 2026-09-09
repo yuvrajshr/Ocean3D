@@ -9,13 +9,8 @@
  * the panel.
  */
 
-import {
-  GRID,
-  VARIABLES,
-  instruments,
-  type CmapName,
-  type VariableKey,
-} from "../../viz/chunk/model";
+import { VARIABLES, type CmapName, type VariableKey } from "../../viz/chunk/model";
+import type { ChunkPlatform, ChunkSource } from "../../viz/chunk/source";
 import type { CutAxis, LayerDesc, ScalarMode, SceneSpec } from "../../viz/chunk/spec";
 import { fmt, gradient } from "./util";
 
@@ -23,6 +18,9 @@ const BATHY_PALETTES: CmapName[] = ["deep", "thermal", "haline"];
 
 interface Props {
   spec: SceneSpec;
+  /** The loaded chunk. Its grid, not a constant, bounds every control here. */
+  source: ChunkSource;
+  platforms: ChunkPlatform[];
   expanded: Record<string, boolean>;
   selectedPlatform: string | null;
   onToggleExpand: (id: string) => void;
@@ -32,46 +30,56 @@ interface Props {
 }
 
 /** The cut the active axis exposes: which prop it writes, and in what units. */
-function cutFor(axis: CutAxis, props: LayerDesc["props"]) {
+function cutFor(axis: CutAxis, props: LayerDesc["props"], source: ChunkSource) {
   const p = props ?? {};
+  const G = source.grid;
   if (axis === "lon") {
-    const value = p.sliceLon ?? 87.35;
+    const value = p.sliceLon ?? (G.lon0 + G.lon1) / 2;
     return {
       key: "sliceLon" as const,
       name: "Longitude",
-      min: 85,
-      max: 90,
+      min: G.lon0,
+      max: G.lon1,
       step: 0.05,
       value,
       label: value.toFixed(2) + "°E",
+      note: "",
     };
   }
   if (axis === "lat") {
-    const value = p.sliceLat ?? 12.65;
+    const value = p.sliceLat ?? (G.lat0 + G.lat1) / 2;
     return {
       key: "sliceLat" as const,
       name: "Latitude",
-      min: 10,
-      max: 15,
+      min: G.lat0,
+      max: G.lat1,
       step: 0.05,
       value,
       label: value.toFixed(2) + "°N",
+      note: "",
     };
   }
+  // The slider is continuous but the analysis is not: it has levels, and the
+  // plane drawn is the nearest one. The readout names that level rather than
+  // the number under the handle, so the two can never disagree on screen.
   const value = p.sliceDepth ?? 0;
+  const level = G.levels[source.levelIndex(value)] ?? value;
   return {
     key: "sliceDepth" as const,
     name: "Depth",
     min: 0,
-    max: GRID.maxDepth,
+    max: G.maxDepth,
     step: 5,
     value,
-    label: Math.round(value) + " m",
+    label: Math.round(level) + " m",
+    note: Math.abs(level - value) > 1 ? "nearest level" : "",
   };
 }
 
 export function LayerStackPanel({
   spec,
+  source,
+  platforms,
   expanded,
   selectedPlatform,
   onToggleExpand,
@@ -81,7 +89,30 @@ export function LayerStackPanel({
 }: Props) {
   const variable: VariableKey = spec.field.variable;
   const info = VARIABLES[variable];
-  const platforms = instruments();
+
+  // Much of the Bay of Bengal floor lies below the 2000 m this chunk covers, so
+  // the layer often has nothing to draw. Saying which is better than an empty
+  // control that looks broken.
+  // A variable with one level is not a volume, and the controls that cut
+  // through one have nothing to cut. Disabled and explained rather than hidden:
+  // the reader should be able to see that the mode exists and why it is not
+  // available here.
+  const flat = source.grid.nz <= 1;
+  const flatNote = `${source.meta.label} is a surface product (${source.meta.provider}). There is no depth axis to slice, stack or contour.`;
+
+  const relief = source.relief;
+  const seabedNote = !relief
+    ? "Seabed relief unavailable — the field still draws, since its own mask is what stops it."
+    : (() => {
+        const shallow = Math.round(-relief.maxElevation);
+        const deep = Math.round(-relief.minElevation);
+        if (relief.maxElevation > 0) {
+          return `ETOPO1 relief. Land in this chunk reaches ${Math.round(relief.maxElevation)} m; the floor drops to ${deep} m.`;
+        }
+        return shallow > source.grid.maxDepth
+          ? `Seabed ${shallow}–${deep} m, entirely below this chunk's ${source.grid.maxDepth} m — nothing to draw here.`
+          : `ETOPO1 relief. Seabed ${shallow}–${deep} m.`;
+      })();
 
   return (
     <div className="chunk-layers chunk-panel chunk-panel--lifted">
@@ -97,7 +128,7 @@ export function LayerStackPanel({
           const open = !!expanded[layer.id];
           const mode: ScalarMode = props.mode ?? "slices";
           const axis: CutAxis = props.activeAxis ?? "depth";
-          const cut = cutFor(axis, props);
+          const cut = cutFor(axis, props, source);
           const isoValue = props.isoValue ?? 20;
           const isoSpan = info.range[1] - info.range[0];
 
@@ -166,6 +197,7 @@ export function LayerStackPanel({
                             type="button"
                             className={`chunk-seg__btn${mode === id ? " chunk-seg__btn--on" : ""}`}
                             aria-pressed={mode === id}
+                            disabled={flat && id !== "slices"}
                             onClick={() => {
                               props.mode = id;
                               layer.props = props;
@@ -176,6 +208,7 @@ export function LayerStackPanel({
                           </button>
                         ))}
                       </div>
+                      {flat ? <div className="chunk-note">{flatNote}</div> : null}
 
                       <div className="chunk-caption">Cut plane</div>
                       <div className="chunk-seg" role="group" aria-label="Cut plane">
@@ -191,6 +224,7 @@ export function LayerStackPanel({
                             type="button"
                             className={`chunk-seg__btn${axis === id ? " chunk-seg__btn--on" : ""}`}
                             aria-pressed={axis === id}
+                            disabled={flat && id !== "depth"}
                             onClick={() => {
                               props.activeAxis = id;
                               layer.props = props;
@@ -266,6 +300,17 @@ export function LayerStackPanel({
 
                   {layer.type === "currents" ? (
                     <div className="chunk-field">
+                      {source.hasVector ? (
+                        <div className="chunk-note">
+                          {`Each trace is ${props.trail ?? 10} h of drift at the cut depth, ` +
+                            "replayed at six ocean-hours a second."}
+                        </div>
+                      ) : (
+                        <div className="chunk-note">
+                          No current direction for this chunk — the upstream serves speed
+                          here, and a magnitude cannot be advected.
+                        </div>
+                      )}
                       <div className="chunk-kv">
                         <span className="chunk-kv__key">Particles</span>
                         <span className="chunk-kv__value">{props.count ?? 900}</span>
@@ -346,15 +391,19 @@ export function LayerStackPanel({
                           />
                         ))}
                       </div>
-                      <div className="chunk-note">
-                        Shelf break on the western edge; seamount at 88.7°E.
-                      </div>
+                      <div className="chunk-note">{seabedNote}</div>
                     </div>
                   ) : null}
 
                   {layer.type === "instruments" ? (
                     <div className="chunk-platforms">
                       <div className="chunk-caption">Platforms</div>
+                      {platforms.length === 0 ? (
+                        <div className="chunk-note">
+                          No Argo or glider data in this chunk and window — try a
+                          neighbouring chunk, or widen the dates.
+                        </div>
+                      ) : null}
                       {platforms.map((p) => (
                         <button
                           key={p.id}
@@ -366,14 +415,20 @@ export function LayerStackPanel({
                         >
                           <span
                             className="chunk-platform__dot"
-                            style={{ background: p.type === "argo" ? "#6fe3f0" : "#f2b45c" }}
+                            style={{
+                              background: p.type === "argo_float" ? "#6fe3f0" : "#f2b45c",
+                            }}
                           />
                           <span className="chunk-platform__id">{p.id}</span>
                           <span className="chunk-platform__kind">
-                            {p.type === "argo" ? "Argo" : "Glider"}
+                            {`${p.fixes.length} cast${p.fixes.length === 1 ? "" : "s"}`}
                           </span>
                         </button>
                       ))}
+                      <div className="chunk-note">
+                        The track joins real surfacings, roughly ten days apart. What a
+                        float does between them is not measured, so it is not drawn.
+                      </div>
                     </div>
                   ) : null}
 

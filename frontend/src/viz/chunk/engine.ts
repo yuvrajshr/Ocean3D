@@ -15,15 +15,8 @@
 
 import * as THREE from "three";
 
-import {
-  GRID,
-  LEVELS,
-  CMAPS,
-  VARIABLES,
-  bathymetry,
-  value,
-  type VariableKey,
-} from "./model";
+import { CMAPS, VARIABLES, type VariableKey } from "./model";
+import type { ChunkPlatform, ChunkSource } from "./source";
 import {
   createRegistry,
   makeCmapTexture,
@@ -70,7 +63,10 @@ interface Tween {
   to: Orbit;
 }
 
-type MountedHandle = LayerHandle & { _type?: string; _ax?: number };
+// `_grid` is the third rebuild trigger, alongside type and depth axis: layer
+// geometry is sized from the chunk's real grid, so a new tile — or a switch
+// between a volume variable and a surface one — has to re-bake it.
+type MountedHandle = LayerHandle & { _type?: string; _ax?: number; _grid?: string };
 
 const prefersReducedMotion = (): boolean =>
   typeof window !== "undefined" &&
@@ -79,6 +75,16 @@ const prefersReducedMotion = (): boolean =>
 
 export class ChunkEngine {
   spec: SceneSpec = structuredClone(DEFAULT_SPEC);
+
+  /**
+   * The chunk as fetched. Null before the first step lands.
+   *
+   * The engine draws nothing at all until this is set, rather than drawing an
+   * empty box: an empty box looks like an ocean with no water in it, and this
+   * view has no synthetic field to fall back on by design.
+   */
+  private data: ChunkSource | null = null;
+  private platforms: ChunkPlatform[] = [];
 
   /** Fired when the measured frame rate changes, not every frame. */
   onFps: ((fps: number) => void) | null = null;
@@ -131,12 +137,40 @@ export class ChunkEngine {
     this.initThree();
     // The colour range opens on the variable's published range, not on the
     // chunk's own extremes: a forecaster reads this against the same scale
-    // every day, and auto-ranging on load would move it under them.
+    // every day, and auto-ranging on load would move it under them. The
+    // chunk's own 2nd-98th percentile is what the panel's "Auto" applies.
     const range = VARIABLES[this.spec.field.variable].range;
     this.spec.colorRange.min = range[0];
     this.spec.colorRange.max = range[1];
     this.syncScene();
     this.loop();
+  }
+
+  /**
+   * Hand the engine a freshly loaded chunk.
+   *
+   * A source is one variable at one instant, so this is called on every step
+   * and every variable change. Platforms move less often — they are per tile
+   * and window — but travel together so the scene can never be reconciled
+   * against a field from one tile and floats from another.
+   */
+  setData(data: ChunkSource, platforms: ChunkPlatform[]): void {
+    this.data = data;
+    this.platforms = platforms;
+    // The spec describes the chunk, so it has to describe the one that arrived
+    // rather than the one that was asked for. The inspector shows this object
+    // verbatim; leaving the requested extent in it would put a number on screen
+    // that nothing on screen was drawn from.
+    const G = data.grid;
+    this.spec.chunk.bbox = [...data.meta.bbox];
+    this.spec.chunk.resolution = [G.nx, G.ny, G.nz];
+    this.spec.chunk.depthRange = [0, G.maxDepth];
+    this.spec.chunk.source = data.meta.dataset;
+    this.syncScene();
+  }
+
+  get chunk(): ChunkSource | null {
+    return this.data;
   }
 
   dispose(): void {
@@ -450,17 +484,27 @@ export class ChunkEngine {
     let lon: number;
     let lat: number;
     let depth: number;
+    const data = this.data;
+    if (!data) {
+      this.emitHover(null);
+      return;
+    }
+    const G = data.grid;
+    const spanLon = G.lon1 - G.lon0;
+    const spanLat = G.lat1 - G.lat0;
+    const levelAt = (f: number): number =>
+      G.levels[Math.max(0, Math.min(G.nz - 1, Math.round(f * (G.nz - 1))))] ?? 0;
     if (kind === "sec-lon") {
-      lon = props.sliceLon ?? GRID.lon0;
-      lat = GRID.lat0 + uv.x * 5;
-      depth = LEVELS[Math.round(uv.y * (GRID.nz - 1))]!;
+      lon = props.sliceLon ?? G.lon0;
+      lat = G.lat0 + uv.x * spanLat;
+      depth = levelAt(uv.y);
     } else if (kind === "sec-lat") {
-      lat = props.sliceLat ?? GRID.lat0;
-      lon = GRID.lon0 + uv.x * 5;
-      depth = LEVELS[Math.round(uv.y * (GRID.nz - 1))]!;
+      lat = props.sliceLat ?? G.lat0;
+      lon = G.lon0 + uv.x * spanLon;
+      depth = levelAt(uv.y);
     } else {
-      lon = GRID.lon0 + uv.x * 5;
-      lat = GRID.lat0 + uv.y * 5;
+      lon = G.lon0 + uv.x * spanLon;
+      lat = G.lat0 + uv.y * spanLat;
       const axis: CutAxis = props.activeAxis ?? "depth";
       depth =
         hit.object.userData.depth !== undefined
@@ -469,9 +513,11 @@ export class ChunkEngine {
             ? props.sliceDepth ?? 0
             : 0;
     }
-    const floor = bathymetry(lon, lat);
     const v = this.spec.field.variable;
-    const val = value(v, lon, lat, Math.min(depth, floor), this.spec.time.index);
+    // Read at the depth actually under the cursor, not at a relief-clamped one.
+    // Where the analysis has nothing the value is NaN, and the readout says so
+    // rather than reporting the last valid cell above it.
+    const val = data.value(lon, lat, depth);
     const r = this.renderer.domElement.getBoundingClientRect();
     this.hovering = true;
     this.onHover?.({
@@ -487,11 +533,14 @@ export class ChunkEngine {
 
   /* ---------------- spec to scene ---------------- */
 
-  private ctx(): LayerContext {
+  private ctx(): LayerContext | null {
     const sc = this.spec.layers.find((l) => l.type === "scalar-field");
     const cr = this.spec.colorRange;
+    if (!this.data) return null;
     return {
       geo: this.geo,
+      data: this.data,
+      platforms: this.platforms,
       global: {
         variable: this.spec.field.variable,
         sliceDepth: sc ? sc.props?.sliceDepth ?? 0 : 50,
@@ -514,12 +563,14 @@ export class ChunkEngine {
    */
   syncScene(): void {
     const ctx = this.ctx();
+    if (!ctx) return;
+    const gridKey = `${ctx.data.grid.nx}x${ctx.data.grid.ny}x${ctx.data.grid.nz}@${ctx.data.grid.lon0},${ctx.data.grid.lat0}`;
     const seen = new Set<string>();
     for (const desc of this.spec.layers) {
       if (!desc || !desc.id) continue;
       seen.add(desc.id);
       let h = this.handles.get(desc.id);
-      if (h && (h._type !== desc.type || h._ax !== this.axisVersion)) {
+      if (h && (h._type !== desc.type || h._ax !== this.axisVersion || h._grid !== gridKey)) {
         h.dispose();
         this.root.remove(h.group);
         h = undefined;
@@ -533,6 +584,7 @@ export class ChunkEngine {
         h = factory(ctx) as MountedHandle;
         h._type = desc.type;
         h._ax = this.axisVersion;
+        h._grid = gridKey;
         this.root.add(h.group);
         this.handles.set(desc.id, h);
       }
@@ -671,7 +723,13 @@ export class ChunkEngine {
     this.camera.lookAt(o.tx, o.ty, o.tz);
 
     const cur = this.handles.get("currents");
-    if (cur?.tick && cur.group.visible) cur.tick(dt, this.ctx());
+    if (cur?.tick && cur.group.visible) {
+      // Rebuilt each frame rather than cached: the advection reads the current
+      // step's velocities through it, and a stale context would keep advecting
+      // yesterday's field after the timeline moved.
+      const ctx = this.ctx();
+      if (ctx) cur.tick(dt, ctx);
+    }
 
     this.renderer.render(this.scene, this.camera);
     this.positionRuler();

@@ -15,7 +15,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { CMAPS, VARIABLES, type CmapName, type Histogram, type VariableKey } from "../../viz/chunk/model";
+import { CMAPS, VARIABLES, type CmapName, type VariableKey } from "../../viz/chunk/model";
+import type { Histogram } from "../../viz/chunk/source";
 import { sampleCmap } from "../../viz/chunk/registry";
 import type { SceneSpec } from "../../viz/chunk/spec";
 import { fmt, gradient } from "./util";

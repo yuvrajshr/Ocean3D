@@ -742,6 +742,27 @@ makes the "add a new sensor with minimal code change" requirement achievable.
 | `GET /wms` / `GET /wcs` | OGC-compliant endpoints for external interoperability. |
 | `GET /colorbars` | Available palettes + default min/max per variable. |
 
+### As built, added 2026-09-10
+
+The chunk view's routes. A third gridded router beside `field.py` (whole INCOIS volumes for
+the water column) and `map.py` (one depth level of a global product): this one serves a whole
+*sub-volume* of a global product, which neither of the other two can do without changing a
+contract an existing view depends on. All three share the colour-scale rule in `scaling.py`.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/chunk/meta?variable=&time=&lon_min=&lat_min=` | Grid, real depth levels, value range, provenance and attribution for one 5° tile. Bounds are snapped server-side; a tile with nothing finite in it answers **404**, which is how the globe finds the nearest chunk that does exist. |
+| `GET /api/chunk/data?…` | Raw `<f4`, C order `(depth, lat, lon)`. NaN is land, seabed or no data — and is the view's only water mask. A surface variable reports a depth axis of 1 rather than none, so the client has one code path. |
+| `GET /api/chunk/vector?…` | Two `<f4` volumes, u then v, on the same grid. Separate from `/chunk/data`, which carries speed: a magnitude cannot be advected. |
+
+`GET /api/terrain/meta` and `/api/terrain/data` now take optional `lat_min`/`lat_max`/
+`lon_min`/`lon_max`/`stride` — all four bounds or none. Omitting them gives the Bay of Bengal
+box the globe has always used, so the existing call is unchanged.
+
+`GET /api/instruments/{platform_id}/profile` now accepts the same bounds as `/api/instruments`.
+They were pinned to the Phailin box while the dates beside them were not, so a float the
+caller had just been handed for another area could not have its cast fetched.
+
 ---
 
 ## 8. Repo structure (as built)
@@ -1424,6 +1445,106 @@ each — component, decision, one-line reason, date.)*
   choice, and a black seafloor that §6 lesson 2 specifically warns reads as a silhouette. The
   layer now writes into `geometry.attributes.color.array`. Worth remembering generally: only
   the skirt and the isosurface in that file ever did it correctly._
+
+---
+
+### 2026-09-10 — The chunk view reads real data, and navigation collapses to two views
+
+**The chunk view's field comes from HYCOM GLBv0.08, not INCOIS.** A 5° tile of INCOIS's
+`incois_argo_10d_VAM` is 6×6×24 cells — thirty-six columns of water, not a block of it. HYCOM
+at 0.08° gives 63×64×36 over the same tile, which is what the view was designed around and
+what makes a cut plane mean anything. INCOIS remains the map's and the water column's source
+and is still named on screen there; the chunk view names HYCOM on screen for the same reason.
+This follows the rule §10 (2026-09-05) already set: a layer is a *variable*, and each view
+resolves it to whichever source serves that view best. The table lives in one place,
+`CHUNK_DATASETS` in `backend/app/config.py`.
+
+**Chunks are fixed 5° tiles, snapped on both sides.** A click is a point; a chunk is a tile.
+`snapTile` in `viz/chunk/loader.ts` and `_tile` in `routers/chunk.py` floor to the same grid,
+so two clients cannot ask two different questions about one click or cache two answers to it.
+This is a request-shaping convention and **not** the storage tiling layer §12 rules out —
+nothing is reorganised on disk, and there is still no `tiling/` directory. A tile with no
+ocean data answers 404, and that 404 *is* the coverage test: the globe walks outward through
+two rings of neighbours until one resolves, then says which tile it landed on.
+
+**The field's own NaN is the water mask; ETOPO only draws the seabed.** Two sources disagree
+about where the ocean stops, and letting the relief clip the field would carve one dataset's
+coastline out of another's. The shader discards on the field's own missing cells, exactly as
+§10 (2026-09-01) settled for the water column. The relief is used for the bathymetry surface
+and the hover readout and for nothing else — and where the seabed lies below the chunk's
+2000 m, which is most of the Bay of Bengal, that surface is simply not meshed and the panel
+says so.
+
+**The water column left the navigation.** The rail is Map, Globe, Chunk. The chunk view
+answers the same question the column did — the structure of a body of water — at a real model
+resolution and with a scene spec behind it, and it is reached by clicking the globe rather
+than by a fourth toggle. The column's code is untouched and unreachable; deleting
+`viz/volume.ts`, `lattice.ts`, `terrain.ts`, `ocean.ts` and the column half of `scene.ts` is a
+separate commit, so a regression in the globe has an obvious owner.
+
+**Argo tracks are surfacings, not dives.** A float fixes its position when it comes up, about
+every ten days, and what it does in between is not measured. The track is now the polyline
+through real fixes with a vertical stem at each showing the depth that cast actually reached.
+The synthetic model drew a continuous sawtooth; that shape was invented, and drawing it
+beside real measurements is what CONTRIBUTING §8 forbids. Gliders keep their seam in the type
+and render an empty state, because §2 still owes a glider ingestion path and there is none.
+
+**The profile card samples the chunk, not `/api/compare`.** That endpoint samples INCOIS's 1°
+analysis, which is right for the map and the column but would put a different model in the
+chart than in the box around it. Pairing the cast against the loaded chunk costs no request
+and cannot disagree with what is on screen. `/api/compare` is unchanged.
+
+**Chlorophyll is surface-only, and its source moved to INCOIS.** No upstream anywhere serves
+3D chlorophyll. CoastWatch had been serving it in 2D until `noaacwNPPVIIRSSQchlaDaily` was
+retired upstream and began answering 404 "Currently unknown datasetID" — which nothing
+noticed, because the response was still in the disk cache and `test_map.py` was green from it
+while a clean machine would have drawn an empty map. That row now points at the live
+near-real-time dataset, whose window is a rolling year, and the test derives its date from the
+dataset's own coverage so it cannot go stale the same way again. Chlorophyll itself now
+resolves to INCOIS's own `incois_oceansat2_datasets` — 0.04°, 2011–2020, the only source that
+still covers the demo window at all. In the chunk view it disables the display modes that need
+a depth axis and states why.
+
+**Never ask APDRC for a depth range.** Requesting exactly the 36 HYCOM levels between 0 and
+2000 m makes their server return a bare Tomcat HTTP 500 on some time steps — 2013-10-05, -06
+and -09 among them — while 35 levels, all 40 levels, or the same step's surface all return
+fine. It reproduces on every retry, so it is a boundary bug in their aggregation rather than a
+transient fault, and it is invisible from the error, which says only "Internal Server Error".
+`fetch_volume` now asks for the whole depth axis with `[]` and trims in numpy. That costs four
+extra levels, about 11% more bytes, and cannot hit it.
+
+**A flow trace is a span of ocean time, not a span of frames.** The ported particle layer kept
+one frame of drift per trail segment, so the whole trace was a function of frame rate — and at
+any real frame rate it came out under a pixel long, which is why 900 particles were being
+advected invisibly. Each trace is now built by integrating backwards from the head through a
+fixed number of ocean-hours, so it means something statable: ten hours of drift, replayed at
+six ocean-hours a second. Traces are also lifted a hair above the cut plane and given an
+explicit render order — two exactly coplanar transparent surfaces with `depthWrite: false`
+composite in whatever order the sort happens to pick, and the scalar slice was winning.
+
+**A shared fetch promise must not carry one caller's abort signal.** `ChunkStore.load` briefly
+passed the caller's `AbortSignal` into the task it cached. React's StrictMode unmounts and
+remounts every effect, so the first mount aborted the request *and* left the dead promise in
+`inflight` for the remount to join — the chunk never loaded and nothing retried. The store's
+fetches now always run to completion and callers check their own signal after awaiting; the
+result is cached either way, and the step a caller just abandoned is usually the one it asks
+for next.
+
+**The engine must outlive its callbacks.** `ChunkView`'s engine effect depended on
+`openProfile`, which changes identity whenever the platform list does — so the WebGL context
+was torn down and rebuilt the moment the instrument fetch returned, aborting the chunk request
+in flight. The pick callback is now held in a ref and the engine is created once. This is the
+same shape as the view-toggle trap in `next_session.md` §6.
+
+**The assistant is reachable in every view, including the chunk.** `AssistantDock` lived inside
+`.viewport`, so `.console--concealed`'s `visibility: hidden` inherited onto it and the Ask
+button was simply not on screen in the chunk view — the feature present in the bundle and
+absent from the interface, which is the exact failure that component's own header was written
+about. It now sits in an `.assistant-layer` that re-asserts `visibility: visible` the way
+`.chunk-overlay` does, above the overlay's stacking order, and moves to the left rail in the
+chunk view because the right one is taken. The assistant also gains `open_chunk`, fenced the
+same way `zoom_to_region` is: it resolves a named region from the fixed table and the tile is
+chosen client-side by the same snap a click uses, so it cannot open a chunk a reader could not.
 
 ---
 

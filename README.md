@@ -25,9 +25,13 @@ successfully, prompting the evacuation of over a million people from the Odisha 
 - **Currents, chlorophyll**, and the cyclone-specific hazard fields (**depth of the 26 °C
   isotherm, upper-ocean heat content, mixed layer depth**) — the fields that actually explain
   cyclone intensification.
-- **Ops** and **Explore** modes: one visual system at two control densities.
+- A **chunk view**: one 5° block of ocean from the surface to 2000 m, opened by clicking the
+  globe. Scalar field as slices, a stacked volume or an isosurface; current traces advected
+  through the real u/v field; the seabed; Argo tracks; and a live scene spec you can edit.
 
-All of it runs against INCOIS's own public ERDDAP server. No data is synthesized.
+Everything runs against public ERDDAP servers — INCOIS's own for the analysis, the Argo
+floats and ocean colour, HYCOM via APDRC for the chunk view's finer grid, and NOAA NCEI for
+the seabed. Each is named on screen wherever it is drawn. No data is synthesized.
 
 ---
 

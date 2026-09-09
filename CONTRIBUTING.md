@@ -185,6 +185,10 @@ explained in `next_session.md` §6.
   interface in `backend/app/ingestion/base.py`. New sources implement that
   interface — don't special-case them elsewhere.
 - Nothing is synthesized. If a variable you need doesn't exist upstream, say so
+  (this stopped being true between 2026-09-09 and 2026-09-10, while the chunk view
+  shipped against a synthetic model; it is true again, and the analytic ocean it
+  used has been deleted rather than kept as a fallback — a plausible field
+  standing in for a failed request is the failure this rule exists to prevent)
   rather than generating plausible numbers.
 - The globe basemap is NASA Blue Marble, credited in the UI. It is a *basemap*,
   not data: no measurement is ever painted onto the sphere (`context.md` §5.1,

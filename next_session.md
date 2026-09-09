@@ -597,6 +597,44 @@ applies a gamma shadow-lift (≈1.5). This is **not** a violation of lesson 3: t
 shader, on a basemap that by §5.1 Principle 7 encodes nothing. Keep the distinction — a future
 session tempted to "fix the inconsistency" would either flatten the globe or corrupt the data.
 
+**11. A shared fetch promise cannot carry one caller's abort signal.** `ChunkStore.load`
+cached a promise built with the caller's `AbortSignal`. StrictMode unmounts and remounts every
+effect, so the first mount aborted the request *and* left the dead promise in `inflight` for
+the remount to join — the chunk never loaded and nothing ever retried. It looked exactly like
+a backend failure. Store fetches now always run to completion; callers check their own signal
+after awaiting.
+
+**12. The chunk engine must outlive its callbacks.** `ChunkView`'s engine effect depended on
+`openProfile`, which changes identity whenever the platform list does. The WebGL context was
+therefore torn down and rebuilt the moment the instrument fetch returned, aborting the field
+request in flight. Pick callbacks go through a ref; the engine is created once and disposed
+once. Same family as lesson 9 and the view-toggle trap.
+
+**13. `visibility` inherits, so anything inside `.console` disappears in the chunk view.**
+`.console--concealed` is how the chunk view hides the console without taking it out of the
+DOM. The assistant dock lived inside `.viewport` and so was invisible on exactly the screen it
+was most wanted on — present in the bundle, absent from the interface. Anything that must
+survive the chunk view lives outside `.console` and re-asserts `visibility: visible`, as
+`.chunk-overlay` and `.assistant-layer` both do.
+
+**14. Never ask APDRC for a depth *range*.** Requesting the 36 HYCOM levels between 0 and
+2000 m returns a bare Tomcat 500 on some time steps, while 35 levels, all 40, or the same
+step's surface are all fine. It reproduces every time and the error says nothing useful.
+Fetch `[]` and trim in numpy — four extra levels, ~11% more bytes, and immune.
+
+**15. A green test can be a cached test.** `test_map.py`'s VIIRS case passed for weeks after
+CoastWatch retired the dataset it names, because the response was still in
+`backend/app/cache_store/` and the live server was answering 404. Any test that hardcodes a
+date against a rolling-window product will do this. Derive the date from the dataset's own
+`time_range`, and be suspicious of a suite that only ever passes on your machine.
+
+**16. Frame-rate-shaped motion is invisible motion.** The particle layer kept one frame of
+drift per trail segment. At every real frame rate that made the whole trace sub-pixel, so 900
+particles advected perfectly and drew nothing. Motion that represents a physical quantity
+should be built from a span of *simulated* time, which also makes it statable: "ten hours of
+drift". And two coplanar transparent surfaces with `depthWrite: false` composite in whatever
+order the sort picks — give the one that must win an explicit `renderOrder`.
+
 ---
 
 ## 7. Verification

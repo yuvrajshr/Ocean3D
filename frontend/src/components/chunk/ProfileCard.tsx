@@ -12,20 +12,51 @@
 
 import { VARIABLES, dateLabel, type Profile, type VariableKey } from "../../viz/chunk/model";
 
-export interface ProfileView extends Profile {
-  variable: VariableKey;
-}
+/**
+ * Either a real pair of curves, or the reason there is not one.
+ *
+ * "This float does not measure chlorophyll" is an answer worth showing, and a
+ * different one from "the request failed" — both land here rather than leaving
+ * the card empty or, worse, drawing one curve and letting the missing one read
+ * as a gap in the data.
+ */
+export type ProfileView =
+  | (Profile & { variable: VariableKey; unavailable?: undefined })
+  | { unavailable: string; id: string; variable: VariableKey };
 
 interface Props {
   profile: ProfileView;
-  timeIndex: number;
+  /** The model step the cast is being compared against, as a real stamp. */
+  modelTime: string;
   onClose: () => void;
 }
 
 const PLOT = { left: 46, top: 10, width: 300, height: 266 };
 
-export function ProfileCard({ profile, timeIndex, onClose }: Props) {
+export function ProfileCard({ profile, modelTime, onClose }: Props) {
   const info = VARIABLES[profile.variable];
+
+  if (profile.unavailable !== undefined) {
+    return (
+      <div className="chunk-profile" role="dialog" aria-label={`Profile for ${profile.id}`}>
+        <div className="chunk-profile__head">
+          <div style={{ flex: 1 }}>
+            <div className="chunk-profile__id">{profile.id}</div>
+            <div className="chunk-profile__meta">{info.label}</div>
+          </div>
+          <button
+            type="button"
+            className="chunk-profile__close"
+            onClick={onClose}
+            aria-label="Close profile"
+          >
+            ×
+          </button>
+        </div>
+        <div className="chunk-profile__empty">{profile.unavailable}</div>
+      </div>
+    );
+  }
 
   const all = profile.obs.concat(profile.model).map((p) => p[0]);
   let lo = Math.min(...all);
@@ -58,14 +89,23 @@ export function ProfileCard({ profile, timeIndex, onClose }: Props) {
   }
   const rmsd = Math.sqrt(sum / profile.obs.length).toFixed(3) + " " + info.unit;
 
+  // The cast's own time, not the model step it is being compared against. They
+  // are usually a few hours apart and occasionally a day, and saying which is
+  // which is the whole point of putting the two curves on one axis.
+  const platformLabel = profile.type === "argo_float" ? "Argo float" : profile.type;
+  const cycle = profile.cycle === null ? "" : ` · cycle ${profile.cycle}`;
   const meta =
-    (profile.type === "argo" ? "Argo float" : "Seaglider") +
+    platformLabel +
+    cycle +
     " · " +
     profile.lat.toFixed(3) +
     "°N " +
     profile.lon.toFixed(3) +
     "°E · " +
-    dateLabel(timeIndex);
+    dateLabel(profile.observedTime) +
+    (profile.observedTime.slice(0, 10) === modelTime.slice(0, 10)
+      ? ""
+      : ` · model ${dateLabel(modelTime)}`);
 
   return (
     <div className="chunk-profile" role="dialog" aria-label={`Profile for ${profile.id}`}>

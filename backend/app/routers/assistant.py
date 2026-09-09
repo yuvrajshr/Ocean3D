@@ -49,6 +49,10 @@ class ScreenStatePayload(BaseModel):
     time: str = ""
     depth_index: int = 0
     depth_m: float = 0.0
+    # (lon_min, lat_min, lon_max, lat_max) when the chunk view is open, else
+    # None. The assistant is told which block of ocean is on screen so it does
+    # not answer about the map's layers while the reader is inside a chunk.
+    chunk_bbox: list[float] | None = None
 
 
 class MessageRequest(BaseModel):

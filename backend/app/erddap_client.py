@@ -52,7 +52,25 @@ def _client_for(url: str) -> httpx.Client:
 
 
 class UpstreamUnavailable(RuntimeError):
-    """INCOIS could not be reached and nothing was cached."""
+    """The upstream did not answer usefully and nothing was cached.
+
+    Deliberately not only "unreachable": this also covers a server that answers
+    a 500 for one particular query, which APDRC does for some HYCOM steps when
+    a depth *range* is requested even though the same step's surface is fine.
+    Callers that can say something more specific should.
+    """
+
+
+def _host(url: str) -> str:
+    """The server actually being talked to.
+
+    This module serves four upstreams now. Naming INCOIS in every failure — as
+    it used to — sent people to check the wrong server.
+    """
+    try:
+        return urllib.parse.urlsplit(url).netloc or "The upstream"
+    except ValueError:
+        return "The upstream"
 
 
 def _iso(ts: float) -> str:
@@ -91,10 +109,10 @@ def fetch(url: str, *, allow_cache: bool = True) -> tuple[bytes, SourceStatus]:
                 provenance="cached",
                 fetched_at=_iso(cached.fetched_at),
                 upstream=url,
-                note="INCOIS ERDDAP was unreachable — showing the last copy we fetched.",
+                note=f"{_host(url)} did not answer — showing the last copy we fetched.",
             )
         raise UpstreamUnavailable(
-            "INCOIS ERDDAP is unreachable and this request has not been cached."
+            f"{_host(url)} did not answer this request and it has not been cached."
         ) from exc
 
 

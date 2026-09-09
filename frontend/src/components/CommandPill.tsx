@@ -16,7 +16,6 @@
 import {
   Map as MapIcon,
   Globe as GlobeIcon,
-  Waves as WavesIcon,
   Box as BoxIcon,
   MapPin,
 } from "lucide-react";
@@ -63,11 +62,14 @@ export function CommandPill({
 
   const fullStatusText = mapLoadingLabel ?? provenanceLabel;
 
-  // View mode options
+  // Two views and a destination. The water column left the rail on 2026-09-10:
+  // the chunk view answers the same question about a block of water at a real
+  // model resolution, and is reached by clicking the globe rather than by a
+  // fourth toggle. Its button stays so the view is keyboard-reachable and so
+  // there is a way back into the chunk you were last looking at.
   const viewModes: { id: AppView; label: string; icon: typeof MapIcon }[] = [
     { id: "map", label: "Map", icon: MapIcon },
     { id: "globe", label: "Globe", icon: GlobeIcon },
-    { id: "column", label: "Water column", icon: WavesIcon },
     { id: "chunk", label: "Chunk", icon: BoxIcon },
   ];
 
@@ -121,7 +123,7 @@ export function CommandPill({
           >
             {viewModes.map(({ id, label, icon: Icon }) => {
               const isActive = view === id;
-              const isDisabled = !entryDone && (id === "globe" || id === "column");
+              const isDisabled = !entryDone && id === "globe";
 
               return (
                 <button

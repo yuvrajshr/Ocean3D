@@ -380,3 +380,41 @@
   outline: 2px solid var(--rt-copper, #e59858);
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------------------------ layer */
+
+/* The assistant's own stacking context, a sibling of `.console` rather than a
+   child of it. `.console--concealed` sets `visibility: hidden` for the chunk
+   view, and visibility inherits — so while the dock lived inside the viewport
+   the Ask button vanished on exactly the screen that most needed it.
+
+   z-index clears `.chunk-overlay` (60) so the panel opens over the chunk. */
+.assistant-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  /* `visibility` inherits, and the chunk view conceals its ancestor with it.
+     Re-asserting here is the same move `.chunk-overlay` makes, and for the same
+     reason: the console's controls must leave the tab order without taking the
+     thing that replaced them with it. */
+  visibility: visible;
+}
+.assistant-layer > * {
+  pointer-events: auto;
+}
+
+/* In the chunk view the right rail is taken: the variable panel, the camera
+   presets and the spec inspector all sit at right: 20px. The dock moves to the
+   left of them rather than on top, keeping §5.1 Principle 11's one-rail rule. */
+.assistant-layer--chunk .assistant-dock {
+  right: auto;
+  left: var(--rt-space-4, 16px);
+  bottom: 96px;
+  top: auto;
+}
+.assistant-layer--chunk .assistant-panel {
+  right: auto;
+  left: var(--rt-space-4, 16px);
+  bottom: 140px;
+}

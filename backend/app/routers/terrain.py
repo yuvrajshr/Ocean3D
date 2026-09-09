@@ -3,12 +3,17 @@
 Same split as the field endpoints: small JSON metadata, and the heightfield
 itself as raw Float32 so the browser can push it straight into a geometry
 buffer without parsing.
+
+Bounds are optional. Omitting them gives the Bay of Bengal box the globe and the
+water column have always used; passing them gives one chunk's seabed. The
+default is spelled out in the signature rather than applied inside, so the
+`data_url` a client is handed always names the box it will get back.
 """
 
 from __future__ import annotations
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from ..config import TERRAIN_LAT_RANGE, TERRAIN_LON_RANGE, TERRAIN_STRIDE
 from ..erddap_client import UpstreamUnavailable
@@ -17,9 +22,34 @@ from ..ingestion import etopo_terrain
 router = APIRouter()
 
 
-def _load() -> etopo_terrain.TerrainResult:
+def _bounds(
+    lat_min: float | None,
+    lat_max: float | None,
+    lon_min: float | None,
+    lon_max: float | None,
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """All four or none. A half-given box would silently mix two extents."""
+    given = [v for v in (lat_min, lat_max, lon_min, lon_max) if v is not None]
+    if not given:
+        return TERRAIN_LAT_RANGE, TERRAIN_LON_RANGE
+    if len(given) != 4:
+        raise HTTPException(
+            400,
+            "Give all four of lat_min, lat_max, lon_min and lon_max, or none of "
+            "them for the default Bay of Bengal box.",
+        )
+    lat = (float(lat_min), float(lat_max))  # type: ignore[arg-type]
+    lon = (float(lon_min), float(lon_max))  # type: ignore[arg-type]
+    if lat[0] >= lat[1] or lon[0] >= lon[1]:
+        raise HTTPException(400, "The relief box must have a positive extent.")
+    return lat, lon
+
+
+def _load(lat_range, lon_range, stride: int) -> etopo_terrain.TerrainResult:
     try:
-        return etopo_terrain.fetch_relief()
+        return etopo_terrain.fetch_relief(
+            lat_range=lat_range, lon_range=lon_range, stride=stride
+        )
     except UpstreamUnavailable as exc:
         raise HTTPException(
             503,
@@ -28,32 +58,55 @@ def _load() -> etopo_terrain.TerrainResult:
         ) from exc
 
 
+def _query(lat_range, lon_range, stride: int) -> str:
+    return (
+        f"lat_min={lat_range[0]}&lat_max={lat_range[1]}"
+        f"&lon_min={lon_range[0]}&lon_max={lon_range[1]}&stride={stride}"
+    )
+
+
 @router.get("/terrain/meta")
-def terrain_meta() -> dict[str, object]:
-    result = _load()
+def terrain_meta(
+    lat_min: float | None = None,
+    lat_max: float | None = None,
+    lon_min: float | None = None,
+    lon_max: float | None = None,
+    stride: int = Query(TERRAIN_STRIDE, ge=1, le=60),
+) -> dict[str, object]:
+    lat_range, lon_range = _bounds(lat_min, lat_max, lon_min, lon_max)
+    result = _load(lat_range, lon_range, stride)
     stats = etopo_terrain.summarize(result)
     return {
-        "lat_range": list(TERRAIN_LAT_RANGE),
-        "lon_range": list(TERRAIN_LON_RANGE),
+        "lat_range": list(lat_range),
+        "lon_range": list(lon_range),
         "lat": [float(v) for v in result.lats],
         "lon": [float(v) for v in result.lons],
         "shape": [int(result.elevation.shape[0]), int(result.elevation.shape[1])],
-        "stride_arcmin": TERRAIN_STRIDE,
+        "stride_arcmin": stride,
         "units": "m",
-        "data_url": "/api/terrain/data",
-        "attribution": "ETOPO relief via NOAA CoastWatch ERDDAP",
+        "data_url": "/api/terrain/data?" + _query(lat_range, lon_range, stride),
+        # NCEI's ImageServer, not CoastWatch — the PFEG hosts died and the
+        # transport moved on 2026-09-05. This line said otherwise until now.
+        "attribution": "ETOPO1 bedrock relief via NOAA NCEI",
         **stats,
         "source": result.source.model_dump(),
     }
 
 
 @router.get("/terrain/data")
-def terrain_data() -> Response:
+def terrain_data(
+    lat_min: float | None = None,
+    lat_max: float | None = None,
+    lon_min: float | None = None,
+    lon_max: float | None = None,
+    stride: int = Query(TERRAIN_STRIDE, ge=1, le=60),
+) -> Response:
     """Raw little-endian Float32 elevation in metres, C order (lat, lon).
 
     Positive is land, negative is seafloor; zero is sea level.
     """
-    result = _load()
+    lat_range, lon_range = _bounds(lat_min, lat_max, lon_min, lon_max)
+    result = _load(lat_range, lon_range, stride)
     payload = np.ascontiguousarray(result.elevation, dtype="<f4").tobytes()
     return Response(
         content=payload,

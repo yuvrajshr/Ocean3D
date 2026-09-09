@@ -15,6 +15,7 @@ import pytest
 
 from app.assistant.tools import (
     NAMED_REGIONS,
+    VIEWS,
     ScreenState,
     ActionError,
     validate_action,
@@ -113,13 +114,29 @@ def test_refuses_an_unknown_region_rather_than_guessing_coordinates() -> None:
 
 
 def test_switches_between_the_three_real_views() -> None:
-    for view in ("map", "globe", "column"):
+    # Derived from VIEWS rather than listed: the rail changed once already, when
+    # the water column left it on 2026-09-10, and a hardcoded copy here went
+    # stale silently.
+    for view in VIEWS:
         assert validate_action("set_view", {"view": view}, state(), CATALOGUE)["view"] == view
 
 
 def test_refuses_a_view_that_does_not_exist() -> None:
     with pytest.raises(ActionError):
         validate_action("set_view", {"view": "orbital"}, state(), CATALOGUE)
+    # The water column is gone from the navigation, so naming it is now wrong.
+    with pytest.raises(ActionError):
+        validate_action("set_view", {"view": "column"}, state(), CATALOGUE)
+
+
+def test_open_chunk_resolves_only_named_regions() -> None:
+    """The same fence `zoom_to_region` has: a model must never supply a bbox."""
+    action = validate_action("open_chunk", {"region": "Bay of Bengal"}, state(), CATALOGUE)
+    assert action["type"] == "open_chunk"
+    assert 5.0 <= action["lat"] <= 23.0
+    assert 78.0 <= action["lon"] <= 95.0
+    with pytest.raises(ActionError):
+        validate_action("open_chunk", {"region": "Atlantis"}, state(), CATALOGUE)
 
 
 # --------------------------------------------------------------------------

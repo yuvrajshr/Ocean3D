@@ -1268,3 +1268,85 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------ provenance */
+
+/* Which product actually drew this chunk, at what spacing, and whether it came
+   off the network or the cache. §5.1 Principle 9 asks every layer to state its
+   own resolution; this view draws one product at a time, so it states it once,
+   here, always visible and never in a tooltip. */
+.chunk-provenance {
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+  max-width: 168px;
+}
+.chunk-provenance__provider {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cv-ink-value);
+}
+.chunk-provenance__detail {
+  font-family: var(--cv-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--cv-ink-faint);
+}
+
+/* The chunk that was opened was not the one under the cursor. Said plainly and
+   left on screen rather than flashed, because it changes what the reader is
+   looking at. */
+.chunk-notice {
+  position: absolute;
+  left: 50%;
+  top: 92px;
+  transform: translateX(-50%);
+  z-index: 14;
+  padding: 7px 13px;
+  border: 1px solid var(--cv-line);
+  background: var(--cv-panel-strong, rgba(16, 29, 41, 0.92));
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--cv-ink-value);
+}
+
+/* A step still in flight, while the previous one stays on screen. It does not
+   cover the viewport the way the first load does: there is already a chunk
+   drawn, and blanking it to say so would be a worse answer than a quiet line. */
+.chunk-loading--inline {
+  inset: auto auto 62px 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  padding: 6px 12px;
+  background: var(--cv-panel-strong, rgba(16, 29, 41, 0.92));
+  border: 1px solid var(--cv-line);
+  color: var(--cv-ink-faint);
+  letter-spacing: 0.14em;
+}
+
+/* Nothing to compare — a real answer, in the voice §5.3 asks for. */
+.chunk-profile__empty {
+  padding: 22px 4px 8px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--cv-ink-caption);
+}
+
+/* A step the upstream cannot build, while the previous one stays on screen.
+   Amber and labelled, never colour alone — §5.4. */
+.chunk-notice--warn {
+  border-color: rgba(242, 180, 92, 0.5);
+  color: var(--cv-warn, #f2b45c);
+}
+
+/* A control that exists but cannot apply here — a depth mode on a surface
+   product. Dimmed and inert, never removed: seeing that the mode exists is
+   part of understanding why this variable does not have it. */
+.chunk-seg__btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}

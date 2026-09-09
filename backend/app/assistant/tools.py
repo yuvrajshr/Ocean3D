@@ -33,7 +33,9 @@ MAX_LAYERS = 3
 # The analysis grid runs 5-2000 m (context.md §8, GRID_DEPTH_RANGE).
 MAX_DEPTH_M = 2000.0
 
-VIEWS = ("map", "globe", "column")
+# The water column left the navigation on 2026-09-10; the chunk view answers
+# the same question at a real model resolution. Mirrors AppView in App.tsx.
+VIEWS = ("map", "globe", "chunk")
 
 # Coordinates the model is never allowed to supply for a place name. Keys are
 # lowercased for lookup; the label is what gets echoed back to the reader.
@@ -84,6 +86,8 @@ class ScreenState:
     time: str = ""
     depth_index: int = 0
     depth_m: float = 0.0
+    #: (lon_min, lat_min, lon_max, lat_max) when the chunk view is open.
+    chunk_bbox: list[float] | None = None
 
     @property
     def layer_keys(self) -> list[str]:
@@ -156,6 +160,34 @@ def _validate_zoom_to_region(args: dict[str, Any]) -> dict[str, Any]:
         "label": region["label"],
         "lat_range": list(region["lat_range"]),
         "lon_range": list(region["lon_range"]),
+    }
+
+
+def _validate_open_chunk(args: dict[str, Any]) -> dict[str, Any]:
+    """Open the chunk over a named region's centre.
+
+    Resolves through NAMED_REGIONS and nothing else, for the same reason
+    `zoom_to_region` does (context.md §10, 2026-09-06): a model supplying its
+    own coordinates for a place name is the most dangerous kind of wrong here,
+    because the answer looks exactly as confident when it is 500 km out.
+
+    The tile itself is chosen client-side by the same snap the globe uses, so
+    the assistant cannot open a chunk a click could not.
+    """
+    name = str(args.get("region", "")).strip()
+    region = NAMED_REGIONS.get(name.lower())
+    if region is None:
+        raise ActionError(
+            f"I do not have coordinates for {name!r}, and I will not guess them. "
+            f"Known regions: {', '.join(r['label'] for r in NAMED_REGIONS.values())}."
+        )
+    lat_range = region["lat_range"]
+    lon_range = region["lon_range"]
+    return {
+        "type": "open_chunk",
+        "label": region["label"],
+        "lat": (lat_range[0] + lat_range[1]) / 2,
+        "lon": (lon_range[0] + lon_range[1]) / 2,
     }
 
 
@@ -236,11 +268,22 @@ def validate_action(
         if view not in VIEWS:
             raise ActionError(f"There is no {view!r} view. Choose one of: {', '.join(VIEWS)}.")
         return {"type": "set_view", "view": view}
+    if name == "open_chunk":
+        return _validate_open_chunk(args)
     raise ActionError(f"There is no {name!r} action.")
 
 
 ACTION_TOOLS = frozenset(
-    {"set_layers", "set_view", "set_time", "set_depth", "zoom_to_region", "set_pin", "set_area"}
+    {
+        "set_layers",
+        "set_view",
+        "set_time",
+        "set_depth",
+        "zoom_to_region",
+        "set_pin",
+        "set_area",
+        "open_chunk",
+    }
 )
 
 
@@ -327,7 +370,7 @@ DECLARATIONS: list[dict] = [
     ),
     _fn(
         "set_view",
-        "Switch between the 2D map, the 3D globe, and the water column.",
+        "Switch between the 2D map, the 3D globe, and the chunk view.",
         {"view": {**_STR, "enum": list(VIEWS)}},
         ["view"],
     ),
@@ -347,6 +390,14 @@ DECLARATIONS: list[dict] = [
         "zoom_to_region",
         "Move the map to a named ocean region. Only the listed regions are available — "
         "if the user names somewhere else, say so rather than guessing coordinates.",
+        {"region": {**_STR, "enum": [r["label"] for r in NAMED_REGIONS.values()]}},
+        ["region"],
+    ),
+    _fn(
+        "open_chunk",
+        "Open the 3D chunk view over a named region — one 5-degree block of "
+        "ocean from the surface to 2000 m. Only the listed regions are "
+        "available; never supply coordinates of your own.",
         {"region": {**_STR, "enum": [r["label"] for r in NAMED_REGIONS.values()]}},
         ["region"],
     ),

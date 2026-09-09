@@ -123,6 +123,49 @@ export interface Comparison {
   source: SourceStatus;
 }
 
+export interface ChunkMeta {
+  /** The chunk view's own variable key, not the upstream's variable name. */
+  variable: string;
+  /** Which product actually served it. Named on screen, never inferred. */
+  dataset: string;
+  label: string;
+  time: string;
+  /** (lon_min, lat_min, lon_max, lat_max), snapped to the tile grid by the server. */
+  bbox: [number, number, number, number];
+  depth_levels: number[];
+  grid: { lat: number[]; lon: number[] };
+  /** C order (depth, lat, lon). A surface field reports a depth axis of 1. */
+  shape: [number, number, number];
+  stride: number;
+  kind: "volume" | "surface" | "vector";
+  data_url: string;
+  /** Present only where the upstream carries current direction in 3D. */
+  vector_url: string | null;
+  units: string;
+  units_declared_by_us: boolean;
+  colormap: ColormapName;
+  value_range: [number, number];
+  full_range: [number, number];
+  clipped: boolean;
+  provider: string;
+  attribution: string;
+  source: SourceStatus;
+}
+
+/** u and v over the whole chunk, on the same grid as the scalar field. */
+export interface ChunkVectorField {
+  u: Float32Array;
+  v: Float32Array;
+  shape: [number, number, number];
+}
+
+export type ChunkParams = {
+  variable: string;
+  time: string;
+  lon_min: number;
+  lat_min: number;
+};
+
 export interface TerrainMeta {
   lat_range: [number, number];
   lon_range: [number, number];
@@ -328,7 +371,11 @@ export const api = {
     return new Float32Array(buffer);
   },
 
-  terrainMeta: (signal?: AbortSignal) => getJson<TerrainMeta>("/terrain/meta", signal),
+  /** Bounds are all-or-nothing; omitting them gives the default Bay of Bengal box. */
+  terrainMeta: (
+    params?: { lat_min: number; lat_max: number; lon_min: number; lon_max: number; stride?: number },
+    signal?: AbortSignal,
+  ) => getJson<TerrainMeta>(params ? `/terrain/meta?${query(params)}` : "/terrain/meta", signal),
 
   /** Raw Float32 elevation in metres, C order (lat, lon); positive is land. */
   async terrainData(meta: TerrainMeta, signal?: AbortSignal): Promise<Float32Array> {
@@ -346,7 +393,15 @@ export const api = {
 
   profile: (
     platformId: string,
-    params: { cycle?: number; time_start?: string; time_end?: string },
+    params: {
+      cycle?: number;
+      time_start?: string;
+      time_end?: string;
+      lat_min?: number;
+      lat_max?: number;
+      lon_min?: number;
+      lon_max?: number;
+    },
     signal?: AbortSignal,
   ) => getJson<InstrumentProfile>(`/instruments/${platformId}/profile?${query(params)}`, signal),
 
@@ -405,6 +460,52 @@ export const api = {
       nLon: shape[1] ?? 0,
       stride,
     };
+  },
+
+  chunkMeta: (params: ChunkParams, signal?: AbortSignal) =>
+    getJson<ChunkMeta>(`/chunk/meta?${query(params)}`, signal),
+
+  /**
+   * Raw Float32, C order (depth, lat, lon). NaN marks land, seabed or no data.
+   *
+   * Length is checked against the metadata for the reason `mapSliceData` gives:
+   * a mismatch here would reshape into a plausible-looking chunk of the wrong
+   * shape rather than fail, and nothing downstream could tell.
+   */
+  async chunkData(meta: ChunkMeta, signal?: AbortSignal): Promise<Float32Array> {
+    const response = await fetch(meta.data_url, { signal });
+    if (!response.ok) {
+      throw new ApiError(`Could not load ${meta.label.toLowerCase()} for this chunk.`, response.status);
+    }
+    const values = new Float32Array(await response.arrayBuffer());
+    const expected = meta.shape[0] * meta.shape[1] * meta.shape[2];
+    if (values.length !== expected) {
+      throw new ApiError(
+        `${meta.label} returned ${values.length} values, expected ${expected}.`,
+        502,
+      );
+    }
+    return values;
+  },
+
+  /** Two Float32 volumes, u then v. Direction is the payload — speed is not. */
+  async chunkVector(meta: ChunkMeta, signal?: AbortSignal): Promise<ChunkVectorField> {
+    if (!meta.vector_url) {
+      throw new ApiError(`${meta.label} carries no current direction.`, 400);
+    }
+    const response = await fetch(meta.vector_url, { signal });
+    if (!response.ok) {
+      throw new ApiError("Could not load current direction for this chunk.", response.status);
+    }
+    const all = new Float32Array(await response.arrayBuffer());
+    const n = meta.shape[0] * meta.shape[1] * meta.shape[2];
+    if (all.length !== 2 * n) {
+      throw new ApiError(
+        `Current direction returned ${all.length} values, expected ${2 * n}.`,
+        502,
+      );
+    }
+    return { u: all.subarray(0, n), v: all.subarray(n, 2 * n), shape: meta.shape };
   },
 
   mapPoint: (

@@ -14,23 +14,8 @@
 
 import * as THREE from "three";
 
-import {
-  CMAPS,
-  GRID,
-  LEVELS,
-  bathymetry as bathymetryAt,
-  instrumentAt,
-  instruments as instrumentList,
-  isoDepthField,
-  latAt,
-  levelTexture,
-  lonAt,
-  profileSamples,
-  sectionTexture,
-  velocity,
-  type CmapName,
-  type VariableKey,
-} from "./model";
+import { CMAPS, type CmapName, type VariableKey } from "./model";
+import type { ChunkPlatform, ChunkSource } from "./source";
 import type { DepthAxis, LayerDesc, ScalarMode } from "./spec";
 
 /* ---------------- colormaps ---------------- */
@@ -103,6 +88,15 @@ export interface GlobalContext {
 export interface LayerContext {
   geo: GeoMap;
   global: GlobalContext;
+  /**
+   * The chunk as fetched: one variable at one instant, plus this tile's relief.
+   *
+   * A layer reads the field through this and never imports data of its own, so
+   * two layers in one frame cannot be showing two different days.
+   */
+  data: ChunkSource;
+  /** Argo platforms in this tile and window. Empty until they land, or if none. */
+  platforms: ChunkPlatform[];
 }
 
 /** A descriptor with its optional fields resolved, as the view passes it down. */
@@ -258,6 +252,13 @@ export function createRegistry(): Registry {
   function scalarField(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
     const group = new THREE.Group();
+    // The grid is whatever the upstream returned for this tile, so geometry is
+    // sized at build time rather than from a constant. The view rebuilds this
+    // handle when the grid changes, which is what makes that safe.
+    const G = ctx.data.grid;
+    const LEVELS = G.levels;
+    const spanLon = G.lon1 - G.lon0;
+    const spanLat = G.lat1 - G.lat0;
     const pickables: THREE.Object3D[] = [];
 
     let built: ScalarMode | null = null;
@@ -294,7 +295,7 @@ export function createRegistry(): Registry {
         const slice: FieldMesh = new THREE.Mesh(
           horizontalQuad(geo),
           fieldMaterial(
-            fieldTexture(new Float32Array(GRID.nx * GRID.ny * 4), GRID.nx, GRID.ny),
+            fieldTexture(new Float32Array(G.nx * G.ny * 4), G.nx, G.ny),
             ctx.global.cmapTex,
           ),
         );
@@ -302,7 +303,7 @@ export function createRegistry(): Registry {
         const secLon: FieldMesh = new THREE.Mesh(
           sectionQuad(geo, LEVELS, "lon"),
           fieldMaterial(
-            fieldTexture(new Float32Array(GRID.ny * GRID.nz * 4), GRID.ny, GRID.nz),
+            fieldTexture(new Float32Array(G.ny * G.nz * 4), G.ny, G.nz),
             ctx.global.cmapTex,
             1.0,
           ),
@@ -311,7 +312,7 @@ export function createRegistry(): Registry {
         const secLat: FieldMesh = new THREE.Mesh(
           sectionQuad(geo, LEVELS, "lat"),
           fieldMaterial(
-            fieldTexture(new Float32Array(GRID.nx * GRID.nz * 4), GRID.nx, GRID.nz),
+            fieldTexture(new Float32Array(G.nx * G.nz * 4), G.nx, G.nz),
             ctx.global.cmapTex,
             1.0,
           ),
@@ -330,12 +331,15 @@ export function createRegistry(): Registry {
         pickables.push(slice, secLon, secLat);
       } else if (mode === "volume") {
         const idxs: number[] = [];
-        for (let k = 0; k < GRID.nz; k += 2) idxs.push(k);
+        // Every other level, or every level when there are few enough that
+        // skipping would visibly thin the stack.
+        const step = G.nz > 24 ? 2 : 1;
+        for (let k = 0; k < G.nz; k += step) idxs.push(k);
         stack = idxs.map((k) => {
           const m: FieldMesh = new THREE.Mesh(
             horizontalQuad(geo),
             fieldMaterial(
-              fieldTexture(new Float32Array(GRID.nx * GRID.ny * 4), GRID.nx, GRID.ny),
+              fieldTexture(new Float32Array(G.nx * G.ny * 4), G.nx, G.ny),
               ctx.global.cmapTex,
             ),
           );
@@ -353,11 +357,11 @@ export function createRegistry(): Registry {
         const g = new THREE.BufferGeometry();
         g.setAttribute(
           "position",
-          new THREE.Float32BufferAttribute(new Float32Array(GRID.nx * GRID.ny * 3), 3),
+          new THREE.Float32BufferAttribute(new Float32Array(G.nx * G.ny * 3), 3),
         );
         g.setAttribute(
           "color",
-          new THREE.Float32BufferAttribute(new Float32Array(GRID.nx * GRID.ny * 3), 3),
+          new THREE.Float32BufferAttribute(new Float32Array(G.nx * G.ny * 3), 3),
         );
         g.setIndex([]);
         iso = new THREE.Mesh(
@@ -402,8 +406,8 @@ export function createRegistry(): Registry {
           const ctxOn = p.contextWalls !== false;
           // Inactive planes retreat to the box faces and read as context.
           const depth = active === "depth" ? p.sliceDepth ?? 0 : 0;
-          const fLon = active === "lon" ? ((p.sliceLon ?? GRID.lon0) - GRID.lon0) / 5 : 0;
-          const fLat = active === "lat" ? ((p.sliceLat ?? GRID.lat0) - GRID.lat0) / 5 : 1;
+          const fLon = active === "lon" ? ((p.sliceLon ?? G.lon0) - G.lon0) / spanLon : 0;
+          const fLat = active === "lat" ? ((p.sliceLat ?? G.lat0) - G.lat0) / spanLat : 1;
           slice.position.y = -geo.yn(depth);
           secLon.position.x = 10 * fLon;
           secLat.position.z = -10 * fLat;
@@ -413,15 +417,15 @@ export function createRegistry(): Registry {
 
           if (dirty) {
             texData(secLon.material.uniforms.uData.value).set(
-              sectionTexture(g.variable, "lon", fLon, g.timeIndex).data,
+              ctx.data.sectionTexture("lon", fLon).data,
             );
             secLon.material.uniforms.uData.value.needsUpdate = true;
             texData(secLat.material.uniforms.uData.value).set(
-              sectionTexture(g.variable, "lat", fLat, g.timeIndex).data,
+              ctx.data.sectionTexture("lat", fLat).data,
             );
             secLat.material.uniforms.uData.value.needsUpdate = true;
             texData(slice.material.uniforms.uData.value).set(
-              levelTexture(g.variable, depth, g.timeIndex),
+              ctx.data.levelTexture(depth),
             );
             slice.material.uniforms.uData.value.needsUpdate = true;
           }
@@ -449,7 +453,7 @@ export function createRegistry(): Registry {
           for (const m of stack) {
             if (dirty) {
               texData(m.material.uniforms.uData.value).set(
-                levelTexture(g.variable, LEVELS[m.userData.level as number]!, g.timeIndex),
+                ctx.data.levelTexture(LEVELS[m.userData.level as number]!),
               );
               m.material.uniforms.uData.value.needsUpdate = true;
             }
@@ -460,17 +464,17 @@ export function createRegistry(): Registry {
           const m = iso;
           m.material.opacity = desc.opacity * 0.62;
           if (!dirty) return;
-          const field = isoDepthField(g.variable, p.isoValue ?? 20, g.timeIndex);
+          const field = ctx.data.isoDepthField(p.isoValue ?? 20);
           const pos = m.geometry.attributes.position!.array as Float32Array;
           const col = m.geometry.attributes.color!.array as Float32Array;
           const idx: number[] = [];
-          for (let j = 0; j < GRID.ny; j++) {
-            for (let i = 0; i < GRID.nx; i++) {
-              const n = j * GRID.nx + i;
+          for (let j = 0; j < G.ny; j++) {
+            for (let i = 0; i < G.nx; i++) {
+              const n = j * G.nx + i;
               const d = field[n]!;
-              pos[n * 3] = geo.x(i / (GRID.nx - 1));
+              pos[n * 3] = geo.x(i / (G.nx - 1));
               pos[n * 3 + 1] = d < 0 ? 0 : -geo.yn(d);
-              pos[n * 3 + 2] = geo.z(j / (GRID.ny - 1));
+              pos[n * 3 + 2] = geo.z(j / (G.ny - 1));
               const f = d < 0 ? 0 : Math.min(1, d / 260);
               const shade = d < 0 ? 0 : 1;
               col[n * 3] = (0.52 - 0.42 * f) * shade;
@@ -480,11 +484,11 @@ export function createRegistry(): Registry {
           }
           // A cell is only meshed where all four corners carry the surface;
           // elsewhere the isovalue genuinely does not occur in the column.
-          for (let j = 0; j < GRID.ny - 1; j++) {
-            for (let i = 0; i < GRID.nx - 1; i++) {
-              const a = j * GRID.nx + i;
+          for (let j = 0; j < G.ny - 1; j++) {
+            for (let i = 0; i < G.nx - 1; i++) {
+              const a = j * G.nx + i;
               const b = a + 1;
-              const c = a + GRID.nx;
+              const c = a + G.nx;
               const e = c + 1;
               if (field[a]! < 0 || field[b]! < 0 || field[c]! < 0 || field[e]! < 0) continue;
               idx.push(a, c, e, a, e, b);
@@ -525,25 +529,53 @@ void main(){
 
   type PartMaterial = THREE.ShaderMaterial & { uniforms: { uOpacity: { value: number } } };
 
-  function currents(_ctx: LayerContext): LayerHandle {
+  /**
+   * How the flow layer turns metres per second into something a person can see.
+   *
+   * A current of 0.3 m/s moves 2.7e-6 degrees in a wall-clock second, so drawn
+   * at true rate the traces would never appear to move and a trail built from
+   * frames would be far under a pixel long. Both numbers below are therefore
+   * time-lapse factors, and both are chosen so the result can be *stated*:
+   * the trail is `TRAIL` hours of drift, replayed at six ocean-hours a second.
+   */
+  const DEG_PER_METRE = 1 / 111_000;
+  const FLOW_TIME_LAPSE = 6 * 3600;
+  const TRAIL_STEP_SECONDS = 3600;
+  /** Speed at which a trace reaches the top of its colour ramp, in m/s. */
+  const SPEED_REFERENCE = 0.9;
+  /**
+   * How far above the cut plane the traces are drawn, in normalized depth.
+   *
+   * They describe the flow *at* that depth and belong on it, but both this and
+   * the scalar slice are transparent with `depthWrite: false`, so two exactly
+   * coplanar surfaces composite in whatever order the sort happens to pick —
+   * and the slice won, hiding the whole layer. A nudge toward the surface plus
+   * an explicit render order settles it, and reads correctly: flow over the cut.
+   */
+  const TRACE_LIFT = 0.004;
+
+  function currents(ctx0: LayerContext): LayerHandle {
     const group = new THREE.Group();
+    // Seeding needs the tile's own bounds; advection needs the current step's
+    // vectors and reads them from the context handed to `tick`.
+    const G0 = ctx0.data.grid;
+    const spanLon = G0.lon1 - G0.lon0;
+    const spanLat = G0.lat1 - G0.lat0;
     let N = 0;
     let TRAIL = 0;
-    let hist = new Float32Array(0);
+    /** Head position per particle: lon, lat, speed. */
+    let head = new Float32Array(0);
     let life = new Float32Array(0);
+    /** Trail vertices, rebuilt every frame by integrating back from the head. */
+    let hist = new Float32Array(0);
     let mesh: THREE.LineSegments<THREE.BufferGeometry, PartMaterial> | null = null;
     let seedDepth = -1;
     let pspeed = 1;
 
     function seed(i: number, spread: boolean): void {
-      const lon = GRID.lon0 + Math.random() * 5;
-      const lat = GRID.lat0 + Math.random() * 5;
-      for (let k = 0; k < TRAIL; k++) {
-        const o = (i * TRAIL + k) * 3;
-        hist[o] = lon;
-        hist[o + 1] = lat;
-        hist[o + 2] = 0;
-      }
+      head[i * 3] = G0.lon0 + Math.random() * spanLon;
+      head[i * 3 + 1] = G0.lat0 + Math.random() * spanLat;
+      head[i * 3 + 2] = 0;
       life[i] = spread ? Math.random() * 5 : 0;
     }
 
@@ -555,6 +587,7 @@ void main(){
       }
       N = count;
       TRAIL = trail;
+      head = new Float32Array(N * 3); // lon, lat, speed
       hist = new Float32Array(N * TRAIL * 3); // lon, lat, speed
       life = new Float32Array(N);
       const g = new THREE.BufferGeometry();
@@ -575,6 +608,7 @@ void main(){
       );
       // The trails move every frame and their bounds are the whole box anyway.
       mesh.frustumCulled = false;
+      mesh.renderOrder = 3;
       group.add(mesh);
       for (let i = 0; i < N; i++) seed(i, true);
     }
@@ -589,61 +623,87 @@ void main(){
         seedDepth = ctx.global.sliceDepth;
         if (mesh) mesh.material.uniforms.uOpacity.value = desc.opacity;
         pspeed = p.speed ?? 1;
+        // No vector field means no direction, and a magnitude cannot be
+        // advected. Traces frozen in place would read as a still current
+        // rather than as an absent one, so the layer withdraws and the panel
+        // says why.
+        group.visible = ctx.data.hasVector;
       },
       tick(dt, ctx) {
-        if (!mesh) return;
+        if (!mesh || !ctx.data.hasVector) return;
         const geoX = ctx.geo.x;
         const geoZ = ctx.geo.z;
         const depth = seedDepth < 0 ? 50 : seedDepth;
-        const y = -ctx.geo.yn(depth);
-        const t = ctx.global.timeIndex;
-        const k = pspeed * dt * 0.55;
+        const y = -ctx.geo.yn(depth) + TRACE_LIFT;
         const pos = mesh.geometry.attributes.position!.array as Float32Array;
         const al = mesh.geometry.attributes.aAlpha!.array as Float32Array;
         const sp = mesh.geometry.attributes.aSpeed!.array as Float32Array;
         let w = 0;
         let wa = 0;
+        // How far the head advances this frame, in ocean-seconds.
+        const step = dt * FLOW_TIME_LAPSE * pspeed;
         for (let i = 0; i < N; i++) {
-          // Shift the trail history back one slot, newest first.
-          const base = i * TRAIL * 3;
-          for (let s = TRAIL - 1; s > 0; s--) {
-            hist[base + s * 3] = hist[base + (s - 1) * 3]!;
-            hist[base + s * 3 + 1] = hist[base + (s - 1) * 3 + 1]!;
-            hist[base + s * 3 + 2] = hist[base + (s - 1) * 3 + 2]!;
-          }
-          let lon = hist[base]!;
-          let lat = hist[base + 1]!;
-          const [u, v] = velocity(lon, lat, depth, t);
+          const h = i * 3;
+          let lon = head[h]!;
+          let lat = head[h + 1]!;
+          const [u, v] = ctx.data.velocity(lon, lat, depth);
           const spd = Math.hypot(u, v);
-          // m/s to degrees: one degree of latitude is ~111 km.
-          lon += u * k * 0.009;
-          lat += v * k * 0.009;
-          hist[base] = lon;
-          hist[base + 1] = lat;
-          hist[base + 2] = spd / 0.9;
+          lon += u * step * DEG_PER_METRE;
+          lat += v * step * DEG_PER_METRE;
+          head[h] = lon;
+          head[h + 1] = lat;
+          head[h + 2] = spd / SPEED_REFERENCE;
           life[i] = life[i]! + dt;
-          const floor = bathymetryAt(lon, lat);
+
+          // Respawn on the field's own mask rather than on the relief: a
+          // particle that has drifted over land or under the seabed is one the
+          // analysis has no velocity for, and it would otherwise sit still for
+          // nine seconds looking like a rendering fault.
+          const dry = !Number.isFinite(ctx.data.value(lon, lat, depth));
           if (
             life[i]! > 9 ||
-            lon < GRID.lon0 ||
-            lon > GRID.lon1 ||
-            lat < GRID.lat0 ||
-            lat > GRID.lat1 ||
-            depth > floor
+            lon < G0.lon0 ||
+            lon > G0.lon1 ||
+            lat < G0.lat0 ||
+            lat > G0.lat1 ||
+            dry
           ) {
             seed(i, false);
+            lon = head[h]!;
+            lat = head[h + 1]!;
           }
+
+          // Integrate BACKWARDS from the head to build the trail.
+          //
+          // The first version of this kept one frame of drift per trail segment,
+          // which made the whole trace a function of frame rate — and at any
+          // real frame rate it came out under a pixel long, so the layer drew
+          // 900 invisible specks. A trail is now a fixed span of ocean time, so
+          // it means something a reader can be told: TRAIL_HOURS of drift.
+          const base = i * TRAIL * 3;
+          let bx = lon;
+          let by = lat;
+          for (let t = 0; t < TRAIL; t++) {
+            const o = base + t * 3;
+            hist[o] = bx;
+            hist[o + 1] = by;
+            hist[o + 2] = head[h + 2]!;
+            const [bu, bv] = ctx.data.velocity(bx, by, depth);
+            bx -= bu * TRAIL_STEP_SECONDS * DEG_PER_METRE;
+            by -= bv * TRAIL_STEP_SECONDS * DEG_PER_METRE;
+          }
+
           for (let s = 0; s < TRAIL - 1; s++) {
             const o0 = base + s * 3;
             const o1 = base + (s + 1) * 3;
             const fade = 1 - s / (TRAIL - 1);
             const grow = Math.min(1, life[i]! * 2.5);
-            pos[w++] = geoX((hist[o0]! - GRID.lon0) / 5);
+            pos[w++] = geoX((hist[o0]! - G0.lon0) / spanLon);
             pos[w++] = y;
-            pos[w++] = geoZ((hist[o0 + 1]! - GRID.lat0) / 5);
-            pos[w++] = geoX((hist[o1]! - GRID.lon0) / 5);
+            pos[w++] = geoZ((hist[o0 + 1]! - G0.lat0) / spanLat);
+            pos[w++] = geoX((hist[o1]! - G0.lon0) / spanLon);
             pos[w++] = y;
-            pos[w++] = geoZ((hist[o1 + 1]! - GRID.lat0) / 5);
+            pos[w++] = geoZ((hist[o1 + 1]! - G0.lat0) / spanLat);
             al[wa] = fade * grow;
             sp[wa++] = hist[o0 + 2]!;
             al[wa] = fade * 0.75 * grow;
@@ -669,23 +729,35 @@ void main(){
   function bathymetry(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
     const group = new THREE.Group();
-    const nx = GRID.nx;
-    const ny = GRID.ny;
+    const G = ctx.data.grid;
+    // Sampled onto the field's grid rather than the relief's own: the two are
+    // within a cell of each other at this tile size, and one grid means the
+    // seabed cannot drift away from the water sitting on it.
+    const nx = G.nx;
+    const ny = G.ny;
+    const maxDepth = G.maxDepth;
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(nx * ny * 3);
     const depths = new Float32Array(nx * ny);
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const n = j * nx + i;
-        const lon = lonAt(i);
-        const lat = latAt(j);
-        const d = bathymetryAt(lon, lat);
+        const d = ctx.data.bathymetry(ctx.data.lonAt(i), ctx.data.latAt(j));
         depths[n] = d;
         pos[n * 3] = geo.x(i / (nx - 1));
-        pos[n * 3 + 1] = -geo.yn(d);
+        // A NaN reaching the vertex buffer tears the whole mesh, so an unknown
+        // cell is parked at the floor and left out of the index below instead.
+        pos[n * 3 + 1] = -geo.yn(Number.isFinite(d) ? Math.min(d, maxDepth) : maxDepth);
         pos[n * 3 + 2] = geo.z(j / (ny - 1));
       }
     }
+    // Only cells whose seabed is actually inside this chunk are meshed. Much of
+    // the Bay of Bengal floor lies below 2000 m, and a surface clamped to the
+    // box floor would draw a flat plane that is not the seabed and invite it to
+    // be read as one — the same reason the isosurface leaves out columns where
+    // its value never occurs.
+    const inChunk = (n: number): boolean =>
+      Number.isFinite(depths[n]!) && depths[n]! <= maxDepth;
     const idx: number[] = [];
     for (let j = 0; j < ny - 1; j++) {
       for (let i = 0; i < nx - 1; i++) {
@@ -693,6 +765,7 @@ void main(){
         const b = a + 1;
         const c = a + nx;
         const e = c + 1;
+        if (!inChunk(a) || !inChunk(b) || !inChunk(c) || !inChunk(e)) continue;
         idx.push(a, c, e, a, e, b);
       }
     }
@@ -727,7 +800,7 @@ void main(){
     const sPos: number[] = [];
     const sCol: number[] = [];
     const sIdx: number[] = [];
-    const yFloor = -geo.yn(GRID.maxDepth);
+    const yFloor = -geo.yn(maxDepth);
     let v = 0;
     for (const run of runs) {
       for (const n of run) {
@@ -758,7 +831,7 @@ void main(){
         for (const n of run) {
           // A fixed sediment ramp — never keyed to the bathymetry colormap,
           // which goes near-white at the shallow end and would outshine the data.
-          const t = Math.min(1, depths[n]! / GRID.maxDepth);
+          const t = Math.min(1, (Number.isFinite(depths[n]!) ? depths[n]! : maxDepth) / maxDepth);
           c[w++] = 0.15 - 0.075 * t;
           c[w++] = 0.138 - 0.062 * t;
           c[w++] = 0.118 - 0.03 * t;
@@ -775,6 +848,10 @@ void main(){
       group,
       update(_ctx, desc) {
         const pal: CmapName = desc.props?.palette ?? "deep";
+        // Nothing meshed means either no relief was fetched or the whole floor
+        // lies below this chunk. Either way there is no seabed to show here, and
+        // the layer panel states which.
+        group.visible = idx.length > 0;
         mesh.material.opacity = desc.opacity;
         wire.material.opacity = desc.opacity * 0.07;
         skirt.material.opacity = desc.opacity;
@@ -785,7 +862,7 @@ void main(){
         for (let j = 0; j < ny; j++) {
           for (let i = 0; i < nx; i++) {
             const n = j * nx + i;
-            const t = depths[n]! / GRID.maxDepth;
+            const t = Math.min(1, (Number.isFinite(depths[n]!) ? depths[n]! : maxDepth) / maxDepth);
             const c = shadeAt(stops, t, depths, i, j, nx, ny);
             col[n * 3] = c[0];
             col[n * 3 + 1] = c[1];
@@ -832,19 +909,35 @@ void main(){
 
   /* ---------------- instruments ---------------- */
 
+  /**
+   * Argo platforms, drawn as what they actually reported.
+   *
+   * A float fixes its position when it surfaces, roughly every ten days, and
+   * the path between two surfacings is not measured. So the track here is the
+   * polyline through real fixes at the surface, and the vertical stem at each
+   * one runs to the depth that cast actually reached. The synthetic model drew
+   * a continuous sawtooth dive; that shape was invented, and drawing it beside
+   * real measurements would be the one thing CONTRIBUTING §8 forbids.
+   */
   function instrumentsLayer(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
     const group = new THREE.Group();
     const pickables: THREE.Object3D[] = [];
-    const insts = instrumentList();
+    const G = ctx.data.grid;
+    const spanLon = G.lon1 - G.lon0;
+    const spanLat = G.lat1 - G.lat0;
+    const px = (lon: number): number => geo.x((lon - G.lon0) / spanLon);
+    const pz = (lat: number): number => geo.z((lat - G.lat0) / spanLat);
+    const insts = ctx.platforms;
 
     const built = insts.map((inst) => {
       const sub = new THREE.Group();
-      const isArgo = inst.type === "argo";
+      const isArgo = inst.type === "argo_float";
       const color = isArgo ? 0x6fe3f0 : 0xf2b45c;
+      // The track runs along the surface, because that is where the fixes are.
       const pts: number[] = [];
-      for (const [lon, lat, d] of inst.points) {
-        pts.push(geo.x((lon - GRID.lon0) / 5), -geo.yn(d), geo.z((lat - GRID.lat0) / 5));
+      for (const f of inst.fixes) {
+        pts.push(px(f.lon), 0, pz(f.lat));
       }
       const lg = new THREE.BufferGeometry();
       lg.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
@@ -855,7 +948,10 @@ void main(){
       sub.add(line);
 
       const dg = new THREE.BufferGeometry();
-      dg.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(3 * 400), 3));
+      dg.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(new Float32Array(3 * Math.max(1, inst.fixes.length)), 3),
+      );
       dg.setDrawRange(0, 0);
       const dots = new THREE.Points(
         dg,
@@ -868,6 +964,21 @@ void main(){
         }),
       );
       sub.add(dots);
+
+      // One vertical stem per cast, run to the depth that cast actually reached.
+      const stemGeom = new THREE.BufferGeometry();
+      stemGeom.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(
+          new Float32Array(6 * Math.max(1, inst.fixes.length)),
+          3,
+        ),
+      );
+      const stems = new THREE.LineSegments(
+        stemGeom,
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }),
+      );
+      sub.add(stems);
 
       const marker = new THREE.Mesh(
         isArgo ? new THREE.SphereGeometry(0.11, 20, 14) : new THREE.ConeGeometry(0.12, 0.3, 18),
@@ -901,7 +1012,7 @@ void main(){
       sub.add(ring);
       sub.add(drop);
       pickables.push(marker, ring);
-      return { inst, sub, line, dots, marker, ring, drop };
+      return { inst, sub, line, dots, stems, marker, ring, drop };
     });
     for (const b of built) group.add(b.sub);
 
@@ -912,9 +1023,17 @@ void main(){
         const day = ctx.global.timeIndex;
         const H = ctx.global.height;
         for (const b of built) {
-          const p = instrumentAt(b.inst.id, day);
-          const x = geo.x((p.lon - GRID.lon0) / 5);
-          const z = geo.z((p.lat - GRID.lat0) / 5);
+          // The most recent surfacing at or before the cursor. A float that has
+          // not yet surfaced in this window has nowhere honest to be drawn, so
+          // it is not drawn.
+          let current = null as (typeof b.inst.fixes)[number] | null;
+          for (const f of b.inst.fixes) {
+            if (f.step <= day) current = f;
+          }
+          b.sub.visible = current !== null;
+          if (!current) continue;
+          const x = px(current.lon);
+          const z = pz(current.lat);
           // The group is scaled by the column height; the marker undoes that so
           // it stays a sphere rather than a stretched egg at 200× exaggeration.
           b.marker.position.set(x, 0.02 / H, z);
@@ -925,7 +1044,7 @@ void main(){
           dp[1] = 0;
           dp[2] = z;
           dp[3] = x;
-          dp[4] = -ctx.geo.yn(b.inst.maxDepth);
+          dp[4] = -ctx.geo.yn(Math.min(current.maxDepth ?? G.maxDepth, G.maxDepth));
           dp[5] = z;
           b.drop.geometry.attributes.position!.needsUpdate = true;
           b.drop.computeLineDistances();
@@ -933,18 +1052,34 @@ void main(){
           b.dots.material.opacity = 0.9 * desc.opacity;
           b.ring.material.opacity = 0.55 * desc.opacity;
 
-          const samples = profileSamples(b.inst.id, day);
+          // Every surfacing up to the cursor, and how deep each of those casts
+          // went. Both are measured; nothing between them is drawn.
           const arr = b.dots.geometry.attributes.position!.array as Float32Array;
-          const n = Math.min(samples.length, 400);
-          for (let i = 0; i < n; i++) {
-            const [lo, la, d] = samples[i]!;
-            arr[i * 3] = geo.x((lo - GRID.lon0) / 5);
-            arr[i * 3 + 1] = -geo.yn(d);
-            arr[i * 3 + 2] = geo.z((la - GRID.lat0) / 5);
+          const stemPos = b.stems.geometry.attributes.position!.array as Float32Array;
+          let n = 0;
+          for (const f of b.inst.fixes) {
+            if (f.step > day) break;
+            const fx = px(f.lon);
+            const fz = pz(f.lat);
+            arr[n * 3] = fx;
+            arr[n * 3 + 1] = 0;
+            arr[n * 3 + 2] = fz;
+            stemPos[n * 6] = fx;
+            stemPos[n * 6 + 1] = 0;
+            stemPos[n * 6 + 2] = fz;
+            stemPos[n * 6 + 3] = fx;
+            stemPos[n * 6 + 4] = -geo.yn(Math.min(f.maxDepth ?? G.maxDepth, G.maxDepth));
+            stemPos[n * 6 + 5] = fz;
+            n++;
           }
           b.dots.geometry.setDrawRange(0, n);
           b.dots.geometry.attributes.position!.needsUpdate = true;
           b.dots.geometry.computeBoundingSphere();
+          b.stems.geometry.setDrawRange(0, n * 2);
+          b.stems.geometry.attributes.position!.needsUpdate = true;
+          b.stems.material.opacity = 0.3 * desc.opacity;
+          // The track only extends as far as the float has actually been.
+          b.line.geometry.setDrawRange(0, Math.max(2, n));
         }
       },
       dispose() {
@@ -954,6 +1089,8 @@ void main(){
           b.line.material.dispose();
           b.dots.geometry.dispose();
           b.dots.material.dispose();
+          b.stems.geometry.dispose();
+          b.stems.material.dispose();
           b.marker.geometry.dispose();
           b.marker.material.dispose();
           b.ring.geometry.dispose();
