@@ -949,8 +949,8 @@ export default function App() {
                 {view === "globe" ? (
                   <p className="viewport__credit">
                     Basemap: NASA Blue Marble, {scenario?.basemap === "december" ? "December" : "October"} 2004.
-                    Imagery only — no measurement is drawn on the sphere except the outlined
-                    extent and the floats inside it.
+                    Imagery only — no measurement is drawn on the sphere except the floats
+                    reporting inside the analysis extent.
                   </p>
                 ) : null}
 
