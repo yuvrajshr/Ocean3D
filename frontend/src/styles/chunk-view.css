@@ -624,8 +624,8 @@
 .chunk-region__name {
   font-family: "Cormorant Garamond", "Georgia", serif;
   font-style: italic;
-  font-weight: 400;
-  font-size: 22px;
+  font-weight: bold;
+  font-size: 28px;
   letter-spacing: 0.04em;
   color: var(--cv-ink-bright);
 }
@@ -633,7 +633,7 @@
 
 .chunk-region__coords {
   font-family: var(--cv-mono);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.07em;
   color: var(--cv-ink-faint);
 }
