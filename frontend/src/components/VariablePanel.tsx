@@ -656,13 +656,10 @@ export function VariablePanel({
               id="btn-open-catalogue-header"
               onClick={() => setIsCatalogueOpen(true)}
               className="layers-add-btn"
-              title="Browse ocean data catalogue"
+              title="Browse Data Catalogue to add ocean layers"
             >
-              <div className="layers-add-btn-main">
-                <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#38bdf8", strokeWidth: 2.5 }} />
-                <span>Add layer...</span>
-              </div>
-              <span className="layers-add-shortcut">CATALOGUE</span>
+              <Plus className="layers-add-btn-icon" style={{ width: 13, height: 13, strokeWidth: 2.4 }} />
+              <span>Add Layer</span>
             </button>
 
             {/* Top-right action icons */}

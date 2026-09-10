@@ -16,7 +16,7 @@
  * height than the ruler does.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import type { Comparison, PlatformSummary } from "../api/client";
 import { depthToNorm, LABELLED_TICKS, RULER_TICKS } from "../viz/depth";
@@ -46,6 +46,16 @@ function formatTime(iso: string): string {
 }
 
 export function ProfilePanel({ platform, comparison, loading, error, onClose }: ProfilePanelProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const chart = useMemo(() => {
     if (!comparison) return null;
     const { observed, model, residual } = comparison;
@@ -112,7 +122,11 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose }: 
   }, [comparison]);
 
   return (
-    <aside className="profile-panel" aria-label={`Profile for float ${platform.platform_id}`}>
+    <aside
+      className="profile-panel"
+      aria-label={`Profile for float ${platform.platform_id}`}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <header className="profile-panel__header">
         <div className="profile-panel__identity">
           <span className="profile-panel__id">{platform.platform_id}</span>
@@ -122,7 +136,15 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose }: 
           </span>
           <span className="profile-panel__meta">{formatTime(platform.time)}</span>
         </div>
-        <button type="button" className="profile-panel__close" onClick={onClose}>
+        <button
+          type="button"
+          className="profile-panel__close"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           Close
         </button>
       </header>

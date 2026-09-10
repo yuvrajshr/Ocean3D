@@ -62,6 +62,9 @@ export function PointsDrawer({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // If a profile panel is open, let the profile panel close first
+        const profilePanel = document.querySelector(".profile-panel, .point-panel");
+        if (profilePanel) return;
         onClose();
       }
     };
@@ -77,6 +80,10 @@ export function PointsDrawer({
       // Don't close if clicking the navbar button
       const navBtn = document.getElementById("btn-nav-points");
       if (navBtn && navBtn.contains(target)) return;
+
+      // Don't close if clicking inside the profile panel or point panel
+      const profilePanel = document.querySelector(".profile-panel, .point-panel");
+      if (profilePanel && profilePanel.contains(target)) return;
 
       if (drawerRef.current && !drawerRef.current.contains(target)) {
         onClose();

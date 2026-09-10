@@ -579,8 +579,45 @@ export class OceanScene {
     this.startEntry();
   }
 
+  /** Zoom the camera smoothly inward with view-specific limits. */
+  zoomIn(factor = 0.75): void {
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
+    const next = this.distanceTarget * factor;
+    this.distanceTarget = this.view === "globe"
+      ? Math.max(2.0, Math.min(9, next))
+      : Math.max(1.2, Math.min(11, next));
+  }
+
+  /** Zoom the camera smoothly outward with view-specific limits. */
+  zoomOut(factor = 1.33): void {
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
+    const next = this.distanceTarget * factor;
+    this.distanceTarget = this.view === "globe"
+      ? Math.max(2.0, Math.min(9, next))
+      : Math.max(1.2, Math.min(11, next));
+  }
+
+  /** Reset globe view camera and orientation. */
+  resetGlobeCamera(): void {
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
+    this.target.set(0, 0, 0);
+    this.distance = this.distanceTarget = 4.05;
+    this.elevation = 0.22;
+    this.coasting = false;
+    this.azimuthVelocity = 0;
+    this.elevationVelocity = 0;
+    this.flyToActive = false;
+    const midLon = (this.extent.lonRange[0] + this.extent.lonRange[1]) / 2;
+    this.globeRotationY = THREE.MathUtils.degToRad(midLon) - Math.PI / 2 + this.azimuth;
+    this.globeGroup.rotation.set(0, this.globeRotationY, 0);
+    this.canvas.style.cursor = "grab";
+  }
+
   /** Must land exactly where the entry gesture ends, or a globe round trip jumps. */
-  private resetColumnCamera(): void {
+  resetColumnCamera(): void {
     this.azimuth = -0.62;
     this.elevation = 0.1;
     // Assigned together so the eased target can never disagree with the
@@ -592,6 +629,15 @@ export class OceanScene {
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
     this.flyToActive = false;
+  }
+
+  /** Reset camera according to current active 3D view. */
+  resetCamera(): void {
+    if (this.view === "globe") {
+      this.resetGlobeCamera();
+    } else {
+      this.resetColumnCamera();
+    }
   }
 
   // -------------------------------------------------------------- atmosphere

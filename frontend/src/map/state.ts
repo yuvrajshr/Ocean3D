@@ -94,6 +94,8 @@ export type MapAction =
   | { type: "time/step"; steps: number }
   | { type: "time/play"; playing: boolean }
   | { type: "viewport/set"; viewport: Viewport }
+  | { type: "viewport/zoom"; factor: number }
+  | { type: "viewport/reset" }
   | { type: "pin/set"; point: GeoPoint | null }
   | { type: "area/begin"; corner: GeoPoint }
   | { type: "area/update"; corner: GeoPoint }
@@ -347,6 +349,17 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
 
     case "viewport/set":
       return { ...state, viewport: action.viewport };
+
+    case "viewport/zoom": {
+      const zoom = Math.max(1, Math.min(5000, state.viewport.zoom * action.factor));
+      return { ...state, viewport: { ...state.viewport, zoom } };
+    }
+
+    case "viewport/reset":
+      return {
+        ...state,
+        viewport: { lonCentre: 0, latCentre: 0, zoom: 3 },
+      };
 
     case "pin/set":
       return { ...state, pin: action.point };

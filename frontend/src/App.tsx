@@ -20,6 +20,7 @@ import { PointsDrawer, type PointAnnotation } from "./components/PointsDrawer";
 import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
 import { CommandPill } from "./components/CommandPill";
 import { snapTile, type Bbox } from "./viz/chunk/loader";
+import { ViewControls } from "./components/ViewControls";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { AssistantDock } from "./assistant/AssistantDock";
 import { BuildStatus } from "./build/BuildStatus";
@@ -878,6 +879,32 @@ export default function App() {
     };
   }, [view]);
 
+  const handleZoomIn = useCallback(() => {
+    if (view === "map") {
+      dispatchMap({ type: "viewport/zoom", factor: 1.3 });
+    } else {
+      sceneRef.current?.zoomIn();
+    }
+  }, [view]);
+
+  const handleZoomOut = useCallback(() => {
+    if (view === "map") {
+      dispatchMap({ type: "viewport/zoom", factor: 1 / 1.3 });
+    } else {
+      sceneRef.current?.zoomOut();
+    }
+  }, [view]);
+
+  const handleResetView = useCallback(() => {
+    if (view === "map") {
+      dispatchMap({ type: "viewport/reset" });
+    } else if (view === "globe") {
+      sceneRef.current?.resetGlobeCamera();
+    } else {
+      sceneRef.current?.resetColumnCamera();
+    }
+  }, [view]);
+
   return (
     <div className={`console${view === "chunk" ? " console--concealed" : ""}`}>
       <CommandPill
@@ -1054,6 +1081,14 @@ export default function App() {
             onOpenGraphForPoint={handleOpenGraphForPoint}
           />
 
+          {view === "globe" ? (
+            <ViewControls
+              view={view}
+              onZoomIn={handleZoomIn}
+              onZoomOut={handleZoomOut}
+              onReset={handleResetView}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -1064,7 +1099,7 @@ export default function App() {
           onStep={(steps) => dispatchMap({ type: "time/step", steps })}
           onTogglePlay={() => dispatchMap({ type: "time/play", playing: !map.playing })}
         />
-      ) : activeVariable ? (
+      ) : view === "column" && activeVariable ? (
         <Timeline
           timesteps={scenario?.timesteps ?? []}
           index={timeIndex}

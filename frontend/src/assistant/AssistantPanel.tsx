@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, X } from "lucide-react";
+import { ArrowUp, Loader2, Sparkles, X } from "lucide-react";
 
 import type { AppSnapshot, AssistantAction, Citation } from "./actions";
 import { useAssistant, type ScreenStatePayload } from "./useAssistant";
@@ -92,26 +92,35 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
   });
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
   }, [open]);
 
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [messages, statusText]);
-
-  if (!open) return null;
+    if (open) {
+      logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [open, messages, statusText, streaming]);
 
   const submit = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || streaming) return;
     setDraft("");
-    void send(text);
+    void send(trimmed);
   };
 
   return (
     <aside
       id="assistant-panel"
-      className="assistant-panel"
+      className={`assistant-panel ${open ? "assistant-panel--open" : "assistant-panel--closed"}`}
       role="complementary"
       aria-label="Ocean assistant"
+      aria-hidden={!open}
+      tabIndex={open ? 0 : -1}
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
       }}
@@ -201,11 +210,21 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
               </div>
             ))}
 
-            {statusText ? (
-              <p className="assistant-panel__status" role="status">
-                {statusText}
-              </p>
-            ) : null}
+            {/* Names what is actually happening (§5.3): the backend's own status line
+                when it has sent one, otherwise just that the request is out. */}
+            {streaming && (
+              <div className="assistant-thinking" role="status" aria-live="polite">
+                <div className="assistant-thinking__header">
+                  <span className="assistant-thinking__pulse-dot" />
+                  <span className="assistant-thinking__status">
+                    {statusText || "Working…"}
+                  </span>
+                </div>
+                <div className="assistant-thinking__wave-bar">
+                  <span className="assistant-thinking__wave-track" />
+                </div>
+              </div>
+            )}
           </div>
 
           <form
@@ -221,6 +240,7 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
               value={draft}
               rows={1}
               placeholder="Ask about the water, or say what to show…"
+              disabled={streaming}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 // Enter sends; Shift+Enter is a newline. A forecaster types one
@@ -234,10 +254,16 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
             />
             <button
               type="submit"
-              className="assistant-panel__send"
+              className={`assistant-panel__send ${streaming ? "assistant-panel__send--streaming" : ""}`}
               disabled={streaming || draft.trim().length === 0}
+              title={streaming ? "Working…" : "Send message"}
+              aria-label={streaming ? "Working" : "Send message"}
             >
-              {streaming ? "Working…" : "Send"}
+              {streaming ? (
+                <Loader2 className="assistant-panel__send-spinner" size={16} strokeWidth={2.4} />
+              ) : (
+                <ArrowUp className="assistant-panel__send-icon" size={16} strokeWidth={2.4} />
+              )}
             </button>
           </form>
         </>
