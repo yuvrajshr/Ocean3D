@@ -391,11 +391,7 @@ export function LayerStackPanel({
 
 
 
-                  {layer.type === "sea-surface" ? (
-                    <div className="chunk-note">
-                      Translucent plane at z = 0 m marking the air–sea interface.
-                    </div>
-                  ) : null}
+
                 </div>
               ) : null}
             </div>

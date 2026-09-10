@@ -73,7 +73,6 @@ export const DEFAULT_SPEC: SceneSpec = {
   colorRange: { palette: "thermal", scale: "linear", min: 4, max: 30 },
   time: { steps: 30, index: 12, start: "2026-03-01" },
   layers: [
-    { id: "surface", type: "sea-surface", label: "Sea surface", visible: true, opacity: 0.16, props: {} },
     {
       id: "scalar",
       type: "scalar-field",
