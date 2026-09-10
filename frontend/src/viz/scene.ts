@@ -318,6 +318,14 @@ export class OceanScene {
    * "no measurement here" callout rather than pretending there's detail to find. */
   onEmptyRegionClick: (() => void) | null = null;
 
+  /**
+   * A place on Earth, from a click anywhere on the sphere.
+   *
+   * The globe answers "where"; the chunk view answers "what is in there". With
+   * this set, a click stops being a camera move and becomes navigation.
+   */
+  onGlobePick: ((lat: number, lon: number) => void) | null = null;
+
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -373,6 +381,22 @@ export class OceanScene {
   }
 
   // ---------------------------------------------------------------- lifecycle
+
+  /**
+   * Stop or resume the render loop.
+   *
+   * The chunk view is a second full-screen WebGL surface laid over this one.
+   * Two contexts drawing at once costs real frames on a mid-range laptop, and
+   * the console is not visible underneath, so this scene stands down while the
+   * chunk view is up. It is a pause, not a teardown: the camera, the volume
+   * texture and the markers all survive, so returning is instant and the view
+   * toggle never has to re-derive which view the scene is on — which is the
+   * failure mode recorded in next_session.md §6.
+   */
+  setPaused(paused: boolean): void {
+    if (this.disposed) return;
+    this.renderer.setAnimationLoop(paused ? null : () => this.tick());
+  }
 
   dispose(): void {
     this.disposed = true;
@@ -1036,16 +1060,17 @@ export class OceanScene {
     // release point as a click on whatever it happened to land on.
     if (this.wasDrag) return;
 
-    // On the globe, clicking the analysis extent dives into it — unchanged,
-    // and still the spatial route in (the header toggle is the discoverable,
-    // keyboard-reachable one). Clicking anywhere else on the sphere now flies
-    // the camera toward that point instead of doing nothing.
+    // On the globe, a click is a place. Anywhere on the sphere opens the chunk
+    // containing that point — inside the analysis extent or well outside it,
+    // since the chunk view resolves its own tile and says so when it has to
+    // step to a neighbouring one. Without a handler the camera flies there
+    // instead, which is what this did before the chunk view existed.
     if (this.view === "globe") {
-      if (this.regionHovered) {
-        this.enterColumn();
-        this.onViewChange?.("column");
-      } else if (this.hoverLatLon) {
-        this.flyToOutsidePoint(this.hoverLatLon.lat, this.hoverLatLon.lon);
+      if (this.hoverLatLon) {
+        if (this.onGlobePick) this.onGlobePick(this.hoverLatLon.lat, this.hoverLatLon.lon);
+        else if (!this.regionHovered) {
+          this.flyToOutsidePoint(this.hoverLatLon.lat, this.hoverLatLon.lon);
+        }
       }
       return;
     }

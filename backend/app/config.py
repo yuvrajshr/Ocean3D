@@ -320,6 +320,42 @@ MAX_SLICE_CELLS = 400_000
 # 8034 daily steps and VIIRS 4833; sending every stamp is ~200 KB of JSON.
 MAX_TIME_ENTRIES = 2_000
 
+# The same budget for a volume, counted across every level rather than per
+# level. A 5-degree chunk of HYCOM is 63 x 63 x 36 = 143k cells (571 KB as
+# Float32) and needs no striding at all; the cap only bites if someone asks for
+# a chunk far larger than the view was designed around.
+MAX_VOLUME_CELLS = 400_000
+
+# The chunk view's tile size, in degrees. A globe click floors to this grid, so
+# the same click always resolves to the same tile and the backend cache is
+# reused across visits. This is a request-shaping convention, not a storage
+# tiling layer — see context.md §12, which rules the latter out.
+CHUNK_TILE_DEGREES = 5.0
+# Chunks stop where Argo does. Below 2000 m nothing in this project has measured
+# anything, and drawing HYCOM's deeper levels would claim otherwise.
+CHUNK_MAX_DEPTH = 2000.0
+
+# Which product serves each of the chunk view's variables.
+#
+# Named explicitly rather than resolved through `map_dataset_for`, which picks by
+# preference and would silently hand the chunk view a surface product or a
+# different grid the day another upstream is enabled. The chunk view needs one
+# grid across all four variables, so this table is the place that decision is
+# made and the place to change it.
+#
+# INCOIS's own `incois_argo_10d_VAM` is deliberately not here: at 1 degree a
+# 5-degree chunk is 6x6 cells, which is thirty-six columns of water rather than
+# a block of it. The map view still draws INCOIS, and states that it does.
+CHUNK_DATASETS: dict[str, str] = {
+    "temperature": "hycom_temperature",
+    "salinity": "hycom_salinity",
+    # Advected client-side from u and v; the scalar path serves hypot(u, v).
+    "speed": "hycom_currents",
+    # The one variable with no 3D source anywhere. VIIRS is surface-only, so the
+    # chunk view disables its depth-dependent modes and says why.
+    "chlorophyll": "incois_chlorophyll",
+}
+
 
 @dataclass(frozen=True)
 class MapDataset:
@@ -435,12 +471,22 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
     MapDataset(
         id="viirs_chlorophyll",
         variable_key="chlorophyll",
-        preference=1,
+        # Repointed and demoted 2026-09-09. The science-quality dataset this row
+        # used to name, `noaacwNPPVIIRSSQchlaDaily`, was retired by CoastWatch and
+        # now answers 404 "Currently unknown datasetID". Nothing noticed because
+        # the response was still on disk — the test that covers this path was
+        # green from cache while a clean machine would have shown an empty map.
+        #
+        # The replacement is near-real-time and carries a ROLLING one-year window,
+        # so `time_range` below goes stale on its own and nothing may hardcode a
+        # date inside it. It cannot serve the 2013 demo at all, which is why
+        # INCOIS Oceansat-2 is preferred for chlorophyll.
+        preference=2,
         base=MAP_ERDDAP_COASTWATCH,
-        dataset_id="noaacwNPPVIIRSSQchlaDaily",
+        dataset_id="noaacwNPPVIIRSchlaDaily",
         variable="chlor_a",
         label="Chlorophyll",
-        provider="S-NPP VIIRS, science quality",
+        provider="S-NPP VIIRS, near real-time",
         attribution="NOAA CoastWatch, S-NPP VIIRS Level 3",
         units="mg/m³",
         kind="surface",
@@ -452,9 +498,10 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
         depth_dim=None,
         lat_descending=True,
         lat_range=(-89.75625, 89.75625),
-        lon_range=(-179.98, 179.98),
-        native_shape=(4788, 9600),
-        time_range=("2012-01-02", "2026-08-26"),
+        lon_range=(-180.01875, 180.01875),
+        native_shape=(4788, 9602),
+        # Rolling. Read off the server 2026-09-09; it moves every day.
+        time_range=("2025-08-07", "2026-08-12"),
         cadence="daily",
         cadence_days=1.0,
         default_stride=24,
@@ -588,6 +635,37 @@ _INCOIS_VA = dict(
 )
 
 INCOIS_MAP_DATASETS: tuple[MapDataset, ...] = (
+    MapDataset(
+        id="incois_chlorophyll",
+        variable_key="chlorophyll",
+        # Preferred over CoastWatch: this is INCOIS's own ocean-colour product,
+        # it is four times finer (0.04 deg against VIIRS's 4 km), and it is the
+        # only chlorophyll source that still covers the demo window at all.
+        preference=1,
+        base=ERDDAP_BASE,
+        dataset_id=CHLOROPHYLL_DATASET,
+        variable="CHL",
+        label="Chlorophyll",
+        provider="INCOIS Oceansat-2 OCM",
+        attribution="INCOIS, Ministry of Earth Sciences",
+        # ERDDAP declares mg/m3 here, so this one is not our inference.
+        units="mg/m³",
+        units_declared_by_us=False,
+        kind="surface",
+        colormap="algae",
+        caption="Plant life near the surface. Satellites cannot see through cloud, so there are gaps.",
+        protocol="erddap",
+        axis_order=("time", "latitude", "longitude"),
+        depth_dim=None,
+        lat_range=(0.107, 27.893),
+        lon_range=(46.683, 99.317),
+        native_shape=(717, 1317),
+        time_range=("2011-02-02", "2020-05-01"),
+        cadence="daily",
+        cadence_days=1.0,
+        regional=True,
+        default_stride=1,
+    ),
     MapDataset(
         id="incois_d26",
         variable_key="d26",

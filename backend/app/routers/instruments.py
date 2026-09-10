@@ -65,8 +65,18 @@ def get_profile(
     cycle: int | None = None,
     time_start: str | None = None,
     time_end: str | None = None,
+    lat_min: float | None = None,
+    lat_max: float | None = None,
+    lon_min: float | None = None,
+    lon_max: float | None = None,
 ) -> InstrumentProfile:
-    start, end, lat, lon = _scenario_window(time_start, time_end, None, None, None, None)
+    # Bounds are overridable, like the dates beside them. They were pinned to the
+    # Phailin box while the dates were not, so a float the caller had just been
+    # handed by /instruments for some other area could not have its cast fetched.
+    # The chunk view asks about floats anywhere the globe was clicked.
+    start, end, lat, lon = _scenario_window(
+        time_start, time_end, lat_min, lat_max, lon_min, lon_max
+    )
     profile = erddap_argo.fetch_profile(
         platform_id=platform_id, time_start=start, time_end=end,
         lat_range=lat, lon_range=lon, cycle=cycle,

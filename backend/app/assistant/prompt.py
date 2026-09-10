@@ -130,12 +130,23 @@ def build_system_prompt(
             )
             or "none"
         )
+        bbox = getattr(state, "chunk_bbox", None)
+        # The chunk view shows one block of ocean rather than a layer stack, so
+        # say which block. Without this the assistant describes the map's layers
+        # to someone who is looking at a 5-degree tile of the Bay of Bengal.
+        where = (
+            f"\nThe chunk view is open over {bbox[1]}-{bbox[3]}N, {bbox[0]}-{bbox[2]}E, "
+            "surface to 2000 m, from HYCOM GLBv0.08. Questions about "
+            '"here" or "this chunk" mean that block.'
+            if bbox and len(bbox) == 4
+            else ""
+        )
         parts.append(
             "## What is on screen right now\n"
             f"View: {getattr(state, 'view', '?')}. "
             f"Date: {getattr(state, 'time', '?')}. "
             f"Depth: {getattr(state, 'depth_m', 0)} m.\n"
-            f"Layers, topmost first: {shown}.\n"
+            f"Layers, topmost first: {shown}.{where}\n"
             "This is current. Do not call a tool to ask what is on screen."
         )
 

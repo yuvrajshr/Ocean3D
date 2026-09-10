@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   api,
@@ -19,6 +19,7 @@ import { VariablePanel } from "./components/VariablePanel";
 import { PointsDrawer, type PointAnnotation } from "./components/PointsDrawer";
 import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
 import { CommandPill } from "./components/CommandPill";
+import { snapTile, type Bbox } from "./viz/chunk/loader";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { AssistantDock } from "./assistant/AssistantDock";
 import { BuildStatus } from "./build/BuildStatus";
@@ -28,6 +29,7 @@ import {
   type AssistantAction,
 } from "./assistant/actions";
 import { MapView } from "./map/MapView";
+import { ChunkView } from "./components/chunk/ChunkView";
 import { PointReadout } from "./map/PointReadout";
 import { MapTimeline } from "./map/MapTimeline";
 import {
@@ -47,10 +49,10 @@ import {
 } from "./viz/scene";
 
 
-/** The map is a third view but not a SceneView: it owns a separate canvas and
- *  never touches viz/scene.ts. Widening here is what keeps the 3D camera rig
- *  and bloom composer out of this. */
-type AppView = SceneView | "map";
+/** The map and the chunk view are views but not SceneViews: each owns a
+ *  separate canvas and never touches viz/scene.ts. Widening here is what keeps
+ *  the 3D camera rig and bloom composer out of both. */
+type AppView = SceneView | "map" | "chunk";
 
 /** Floats within half a model step of the current run are "concurrent" with it. */
 const MARKER_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
@@ -58,6 +60,8 @@ const PLAY_INTERVAL_MS = 1100;
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const assistantLayerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<OceanScene | null>(null);
 
   const [webglReady] = useState(isWebGL2Available);
@@ -72,6 +76,12 @@ export default function App() {
   const [mapLoading, setMapLoading] = useState<Record<string, boolean>>({});
   const [columnExtent, setColumnExtent] =
     useState<{ latRange: [number, number]; lonRange: [number, number] } | null>(null);
+  /** The tile the chunk view is showing, and a note if it is not the one clicked. */
+  const [chunk, setChunk] = useState<{ bbox: Bbox; movedFrom: string | null }>({
+    bbox: snapTile(87.5, 12.5),
+    movedFrom: null,
+  });
+  const openChunkRef = useRef<(lat: number, lon: number) => void>(() => undefined);
   const [point, setPoint] = useState<MapPointBlock | null>(null);
   const [pointLoading, setPointLoading] = useState(false);
   const [pointError, setPointError] = useState<string | null>(null);
@@ -131,7 +141,9 @@ export default function App() {
    */
   const handleView = useCallback((next: AppView) => {
     setView(next);
-    if (next === "map") return; // the map owns its own canvas
+    // The map and the chunk view own their own canvases; the ocean scene is
+    // told nothing about either.
+    if (next === "map" || next === "chunk") return;
     if (next === "globe") {
       sceneRef.current?.enterGlobe();
     } else {
@@ -146,6 +158,12 @@ export default function App() {
       else scene?.startEntry();
     }
   }, []);
+
+  // The chunk view draws its own WebGL surface over this one, so the console's
+  // scene stops rendering rather than competing with it for frames.
+  useEffect(() => {
+    sceneRef.current?.setPaused(view === "chunk");
+  }, [view]);
 
   // ----------------------------------------------------------- assistant
   //
@@ -177,8 +195,12 @@ export default function App() {
       time: map.time ?? "",
       depth_index: depthIndex,
       depth_m: DEFAULT_DEPTH_LEVELS[depthIndex]?.depthMeters ?? 0,
+      // Which chunk is open, so the assistant describes what is actually on
+      // screen. Without this it answers about the map's layers while the reader
+      // is looking at a block of the Bay of Bengal.
+      chunk_bbox: view === "chunk" ? [...chunk.bbox] : null,
     }),
-    [view, layerStack, map.time, depthIndex],
+    [view, layerStack, map.time, depthIndex, chunk.bbox],
   );
 
   /** Apply a batch of actions, returning the state as it was immediately before. */
@@ -205,6 +227,11 @@ export default function App() {
           }
           case "set_view":
             handleView(action.view as AppView);
+            break;
+          case "open_chunk":
+            // Through the same resolver a click uses, so a chunk the assistant
+            // opens is one the reader could have opened themselves.
+            openChunkRef.current(action.lat, action.lon);
             break;
           case "set_time":
             dispatchMap({ type: "time/set", time: action.time });
@@ -284,6 +311,9 @@ export default function App() {
     scene.onEntryComplete = () => setEntryDone(true);
     // The scene can change view on its own — clicking the region on the globe dives in.
     scene.onViewChange = setView;
+    // A click on the globe opens the chunk under it. Held in a ref because the
+    // scene is built once and this callback is not.
+    scene.onGlobePick = (lat, lon) => openChunkRef.current(lat, lon);
 
     // Exposed so the screenshot harness can read a real frame rate. CLAUDE.md
     // treats a janky 3D scene as a bug, which means it has to be measured
@@ -329,7 +359,7 @@ export default function App() {
         // The relief is context, not the subject: if it fails, the analysis
         // still renders and the app stays usable.
         try {
-          const relief = await api.terrainMeta(controller.signal);
+          const relief = await api.terrainMeta(undefined, controller.signal);
           const elevation = await api.terrainData(relief, controller.signal);
           if (!controller.signal.aborted) {
             sceneRef.current?.setTerrain({
@@ -495,13 +525,40 @@ export default function App() {
     }
   }, []);
 
-  const openColumnFromMap = useCallback(
-    (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
-      setColumnExtent(extent);
-      sceneRef.current?.setExtent(extent);
-      handleView("column");
+  /**
+   * Open the chunk containing a point.
+   *
+   * One resolver for both entrances — a click on the globe and a box dragged on
+   * the map — so the same place always opens the same tile. The chunk view does
+   * the coverage walk itself and reports where it landed; this only decides
+   * which tile to ask about.
+   */
+  const openChunkAt = useCallback(
+    (lat: number, lon: number) => {
+      const bbox = snapTile(lon, lat);
+      setChunk((prev) =>
+        prev.bbox[0] === bbox[0] && prev.bbox[1] === bbox[1]
+          ? prev
+          : { bbox, movedFrom: null },
+      );
+      handleView("chunk");
     },
     [handleView],
+  );
+
+  useEffect(() => {
+    openChunkRef.current = openChunkAt;
+  }, [openChunkAt]);
+
+  const openChunkFromMap = useCallback(
+    (extent: { latRange: [number, number]; lonRange: [number, number] }) => {
+      setColumnExtent(extent);
+      openChunkAt(
+        (extent.latRange[0] + extent.latRange[1]) / 2,
+        (extent.lonRange[0] + extent.lonRange[1]) / 2,
+      );
+    },
+    [openChunkAt],
   );
 
   useEffect(() => {
@@ -796,8 +853,33 @@ export default function App() {
     return (v?.colormap as ColormapName) || (fieldMeta?.colormap as ColormapName) || "thermal";
   }, [variables, variableKey, fieldMeta]);
 
+  // The assistant layer is fixed to the window so it survives the chunk view,
+  // which conceals `.console`. But in the map and globe everything in it — the
+  // Ask dock, its panel, the build stamp — is placed as if it were inside the
+  // viewport, and with `inset: 0` the dock sat 40px into the command bar. So
+  // the layer takes the viewport's box. Measured rather than written down,
+  // because the command bar and the timeline are both content-sized rows.
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const layer = assistantLayerRef.current;
+    if (!viewport || !layer) return;
+    const sync = () => {
+      const box = viewport.getBoundingClientRect();
+      layer.style.setProperty("--viewport-top", `${Math.round(box.top)}px`);
+      layer.style.setProperty("--viewport-bottom", `${Math.round(window.innerHeight - box.bottom)}px`);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(viewport);
+    window.addEventListener("resize", sync);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, [view]);
+
   return (
-    <div className="console">
+    <div className={`console${view === "chunk" ? " console--concealed" : ""}`}>
       <CommandPill
         scenario={scenario}
         source={source}
@@ -814,7 +896,7 @@ export default function App() {
       <div
         className={`console__main${view === "globe" ? " console__main--globe" : ""}`}
       >
-        <div className="viewport">
+        <div className="viewport" ref={viewportRef}>
           {/* The layer panel is shared: it drives the 3D column's single field and
               the map's whole stack. Not shown on the globe, which has no layers. */}
           {view === "column" || view === "map" ? (
@@ -851,7 +933,7 @@ export default function App() {
                   dispatch={dispatchMap}
                   onMetas={setMapMetas}
                   onLoading={setMapLoading}
-                  onOpenColumn={openColumnFromMap}
+                  onOpenColumn={openChunkFromMap}
                 />
               ) : null}
               {/* The status line and hint describe the water column; in map mode
@@ -972,20 +1054,6 @@ export default function App() {
             onOpenGraphForPoint={handleOpenGraphForPoint}
           />
 
-          <BuildStatus />
-
-          <AssistantDock
-            open={assistantOpen}
-            onToggle={() => setAssistantOpen((open) => !open)}
-          />
-
-          <AssistantPanel
-            open={assistantOpen}
-            onClose={() => setAssistantOpen(false)}
-            onActions={applyAssistantActions}
-            onUndo={undoAssistant}
-            getState={assistantState}
-          />
         </div>
       </div>
 
@@ -1005,6 +1073,49 @@ export default function App() {
           onSeek={setTimeIndex}
           onTogglePlay={() => setPlaying((p) => !p)}
         />
+      ) : null}
+
+      {/* The chunk view is full-screen and self-contained: it covers the
+          console rather than docking into it, because the question it answers
+          is a different one and its own chrome is the whole instrument. */}
+      {/* The assistant sits OUTSIDE the console on purpose.
+          It used to live inside `.viewport`, which meant `.console--concealed`
+          inherited `visibility: hidden` onto it and the Ask button simply was
+          not there in the chunk view — the feature present in the bundle and
+          absent from the screen, which is exactly the failure AssistantDock's
+          own header was written about. Out here it is reachable in all three
+          views, which is what "ask anywhere" has to mean. */}
+      <div
+        ref={assistantLayerRef}
+        className={`assistant-layer${view === "chunk" ? " assistant-layer--chunk" : ""}`}
+      >
+        {/* Here rather than in the viewport for the same reason as the Ask
+            dock: a stale-build warning that vanishes in the chunk view would
+            be absent from exactly one screen, with no sign it was missing. */}
+        <BuildStatus />
+
+        <AssistantDock
+          open={assistantOpen}
+          onToggle={() => setAssistantOpen((open) => !open)}
+        />
+
+        <AssistantPanel
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          onActions={applyAssistantActions}
+          onUndo={undoAssistant}
+          getState={assistantState}
+        />
+      </div>
+
+      {view === "chunk" ? (
+        <div className="chunk-overlay">
+          <ChunkView
+            onBack={() => handleView("globe")}
+            bbox={chunk.bbox}
+            movedFrom={chunk.movedFrom}
+          />
+        </div>
       ) : null}
     </div>
   );

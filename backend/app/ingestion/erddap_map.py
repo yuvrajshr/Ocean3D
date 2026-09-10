@@ -21,7 +21,7 @@ import numpy as np
 import xarray as xr
 
 from .. import erddap_client as client
-from ..config import MAX_SLICE_CELLS, MapDataset
+from ..config import MAX_SLICE_CELLS, MAX_VOLUME_CELLS, MapDataset
 from ..models.schemas import SourceStatus
 
 
@@ -53,6 +53,45 @@ class VectorResult:
         self.lons = lons
         self.time = time
         self.depth = depth
+        self.units = units
+        self.stride = stride
+        self.source = source
+
+
+class VolumeResult:
+    """A whole chunk of water. `values` is (n_depth, n_lat, n_lon), NaN = no data.
+
+    The same shape `erddap_grid.VolumeResult` carries for INCOIS, so the two
+    upstreams reach the frontend identically. Kept as its own class rather than
+    imported from there because the axis bookkeeping differs: this one records
+    the stride it used, which INCOIS's 1-degree grid never needs.
+    """
+
+    __slots__ = ("values", "depths", "lats", "lons", "time", "units", "stride", "source")
+
+    def __init__(self, values, depths, lats, lons, time, units, stride, source) -> None:
+        self.values = values
+        self.depths = depths
+        self.lats = lats
+        self.lons = lons
+        self.time = time
+        self.units = units
+        self.stride = stride
+        self.source = source
+
+
+class VectorVolumeResult:
+    """u and v over a whole chunk, on one grid. Direction is the payload."""
+
+    __slots__ = ("u", "v", "depths", "lats", "lons", "time", "units", "stride", "source")
+
+    def __init__(self, u, v, depths, lats, lons, time, units, stride, source) -> None:
+        self.u = u
+        self.v = v
+        self.depths = depths
+        self.lats = lats
+        self.lons = lons
+        self.time = time
         self.units = units
         self.stride = stride
         self.source = source
@@ -160,10 +199,16 @@ def _query(
     return "".join(parts)
 
 
-def _ascending(values: np.ndarray, lats: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Flip a descending latitude axis so every consumer sees one convention."""
+def _ascending(
+    values: np.ndarray, lats: np.ndarray, axis: int = 0
+) -> tuple[np.ndarray, np.ndarray]:
+    """Flip a descending latitude axis so every consumer sees one convention.
+
+    `axis` is where latitude sits in `values`: 0 for a (lat, lon) slice, 1 for a
+    (depth, lat, lon) volume.
+    """
     if lats.size > 1 and lats[0] > lats[-1]:
-        return np.flip(values, axis=0), np.flip(lats)
+        return np.flip(values, axis=axis), np.flip(lats)
     return values, lats
 
 
@@ -261,6 +306,150 @@ def fetch_vector_components(
         u=np.ascontiguousarray(u, dtype=np.float32),
         v=np.ascontiguousarray(v, dtype=np.float32),
         lats=lats_asc, lons=lons, time=_stamp(time), depth=depth,
+        units=ds.units, stride=used, source=source,
+    )
+
+
+def _trim(values: np.ndarray, depths: np.ndarray, depth_range) -> tuple[np.ndarray, np.ndarray]:
+    """Cut a volume to a depth range after fetching, not during.
+
+    Asking griddap for a depth *range* looks like the obvious thing and is a
+    trap on APDRC. Requesting exactly the 36 HYCOM levels between 0 and 2000 m
+    makes their server answer a bare Tomcat HTTP 500 on some time steps —
+    2013-10-05, -06 and -09 among them — while 35 levels, 40 levels, or the
+    same step's surface all return fine. It reproduces on every retry, so it is
+    a boundary bug in their aggregation rather than a transient fault.
+
+    Fetching the whole axis and slicing here costs four extra levels (~11% more
+    bytes) and cannot hit it. See context.md §10.
+    """
+    if depth_range is None:
+        return values, depths
+    keep = (depths >= depth_range[0]) & (depths <= depth_range[1])
+    if not keep.any():
+        return values, depths
+    return values[keep], depths[keep]
+
+
+def _read_volume(payload: bytes, ds: MapDataset, name: str):
+    """Read a (depth, lat, lon) block, naming the axes rather than squeezing.
+
+    `squeeze()` is what the slice path uses, and it is wrong here: a chunk one
+    cell wide in any direction would silently lose that axis and the reshape
+    below would then succeed on the wrong shape. Asking xarray to transpose to
+    named dimensions makes a mis-ordered upstream fail loudly instead.
+    """
+    if ds.depth_dim is None:
+        raise ValueError(f"{ds.id} has no depth axis")
+    with _open(payload) as dset:
+        depths = np.asarray(dset[ds.depth_dim].values, dtype=np.float32)
+        lats = np.asarray(dset[ds.lat_dim].values, dtype=np.float32)
+        lons = np.asarray(dset[ds.lon_dim].values, dtype=np.float32)
+        ordered = dset[name].transpose(ds.depth_dim, ds.lat_dim, ds.lon_dim, ...)
+        values = np.asarray(ordered.values, dtype=np.float32).reshape(
+            depths.size, lats.size, lons.size
+        )
+    values = np.where(np.isfinite(values), values, np.nan).astype(np.float32)
+    return values, depths, lats, lons
+
+
+def volume_stride(ds: MapDataset, lat_range, lon_range, n_levels: int) -> int:
+    """Stride for a volume, with the cell budget shared across its levels.
+
+    `derive_stride` counts one plane. A volume is that plane times its depth
+    axis, so spending the whole 2D budget per level would be 36 times the
+    intended payload.
+    """
+    per_level = max(1, MAX_VOLUME_CELLS // max(1, n_levels))
+    return derive_stride(ds, lat_range, lon_range, budget=per_level)
+
+
+def fetch_volume(
+    *,
+    ds: MapDataset,
+    time: str,
+    lat_range,
+    lon_range,
+    depth_range=None,
+    stride: int | None = None,
+) -> VolumeResult:
+    """A whole chunk of one scalar field, in one request.
+
+    One request rather than one per level: the chunk view's slices, sections,
+    isosurface and histogram are all reads of the same block, and fetching them
+    separately would be both slower and capable of disagreeing with itself.
+    """
+    levels, _ = depth_levels(ds)
+    if not levels:
+        raise ValueError(f"{ds.id} is a surface field and has no volume")
+    if depth_range is not None:
+        levels = [d for d in levels if depth_range[0] <= d <= depth_range[1]]
+    used = stride or volume_stride(ds, lat_range, lon_range, len(levels) or 1)
+    query = _query(
+        ds, ds.variable, time=time, all_depths=True,
+        lat_range=lat_range, lon_range=lon_range, stride=used,
+    )
+    url = client.griddap_url(ds.dataset_id, query, fmt="nc", base=ds.base)
+    payload, source = client.fetch(url)
+    values, depths, lats, lons = _read_volume(payload, ds, ds.variable)
+    values, depths = _trim(values, depths, depth_range)
+    values, lats = _ascending(values, lats, axis=1)
+    return VolumeResult(
+        values=np.ascontiguousarray(values, dtype=np.float32),
+        depths=depths, lats=lats, lons=lons, time=_stamp(time),
+        units=ds.units, stride=used, source=source,
+    )
+
+
+def fetch_vector_volume(
+    *,
+    ds: MapDataset,
+    time: str,
+    lat_range,
+    lon_range,
+    depth_range=None,
+    stride: int | None = None,
+) -> VectorVolumeResult:
+    """u and v over a chunk, kept separate.
+
+    The chunk view advects particles through this, which needs direction. The
+    magnitude path in `erddap_grid.fetch_vector_magnitude` discards it, and it
+    cannot be recovered afterwards.
+    """
+    if not ds.vector_components:
+        raise ValueError(f"{ds.id} has no vector components")
+    u_name, v_name = ds.vector_components
+    levels, _ = depth_levels(ds)
+    if not levels:
+        raise ValueError(f"{ds.id} is a surface field and has no volume")
+    if depth_range is not None:
+        levels = [d for d in levels if depth_range[0] <= d <= depth_range[1]]
+    # The budget is per component, deliberately: halving it would stride the
+    # currents twice as hard as the scalar field beside them, and the chunk view
+    # derives `speed` from these — two grids would mean two chunk resolutions.
+    used = stride or volume_stride(ds, lat_range, lon_range, len(levels) or 1)
+    common = dict(
+        time=time, all_depths=True, lat_range=lat_range, lon_range=lon_range, stride=used,
+    )
+    q_u = _query(ds, u_name, **common)
+    q_v = _query(ds, v_name, **common)
+    url = client.griddap_url(ds.dataset_id, f"{q_u},{q_v}", fmt="nc", base=ds.base)
+    payload, source = client.fetch(url)
+    u, depths, lats, lons = _read_volume(payload, ds, u_name)
+    v, _, _, _ = _read_volume(payload, ds, v_name)
+    u, trimmed = _trim(u, depths, depth_range)
+    v, depths = _trim(v, depths, depth_range)
+    del trimmed
+    # A single missing component must not masquerade as a valid vector.
+    both = np.isfinite(u) & np.isfinite(v)
+    u = np.where(both, u, np.nan).astype(np.float32)
+    v = np.where(both, v, np.nan).astype(np.float32)
+    u, lats_asc = _ascending(u, lats, axis=1)
+    v, _ = _ascending(v, lats, axis=1)
+    return VectorVolumeResult(
+        u=np.ascontiguousarray(u, dtype=np.float32),
+        v=np.ascontiguousarray(v, dtype=np.float32),
+        depths=depths, lats=lats_asc, lons=lons, time=_stamp(time),
         units=ds.units, stride=used, source=source,
     )
 

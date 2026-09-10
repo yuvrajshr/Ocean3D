@@ -170,6 +170,17 @@ icon or label, never carrying meaning by color alone.
   telemetry, not a decorative label face. Sentence case throughout; no tracked-out
   all-caps eyebrows.
 
+> **Amended 2026-09-10 — the UI face is Inter; the readout face is unchanged.** Theme C
+> (§5.1.3) set `--rt-font-ui` to Inter without saying so and without bundling it, so the
+> console fell back to Segoe UI on any machine that did not already have Inter installed —
+> the defect §5.1.4 records. Rather than have canon and the shipped app disagree, the face is
+> now Inter and `@fontsource/inter` is a real dependency imported in `main.tsx`. **The rule
+> this section actually exists to protect is untouched:** one UI family, one mono family, and
+> **IBM Plex Mono for every literal readout, everywhere, including the chunk view.** The face
+> for headings and labels moved; the two-role split did not. Archivo and JetBrains Mono,
+> introduced for the chunk view's own typography, were removed with the palette they came
+> with (§5.1.5).
+
 **Layout** — instrument console, not card grid. The 3D water column is full-bleed and *is*
 the hero — there's no headline banner above it. Controls dock to the edges as functional
 instruments, each one doing double duty as both control and readout:
@@ -408,6 +419,9 @@ only.
     mirror of the map's pan/zoom readout on the left: `build 4e9202d`. It splits into
     `ui …` and `api …` only when the two differ, because then the split *is* the diagnosis.
     A commit id is a literal readout, so it takes mono for the same reason a platform id does.
+    *(Amended 2026-09-10.)* Both elements live in `.assistant-layer`, not the viewport, so the
+    chunk view — which conceals `.console` — cannot hide them; there the stamp sits above
+    `.chunk-time` and the alert takes the clear band at the top centre.
 
     **The alert** appears only when what is running is older than the code on disk. It is a
     status line in the right-hand system corner — hairline border, a 3px `advisory` stripe,
@@ -530,7 +544,10 @@ The four changed hues are Tailwind's `sky-400`, `emerald-500`, `amber-500` and `
 §5.2 checks this palette against generic defaults; that check has not been re-run against
 these values, and should be before the pitch.
 
-**The UI font is declared as Inter and is not bundled.** `--rt-font-ui` names
+**~~The UI font is declared as Inter and is not bundled.~~ Resolved 2026-09-10:**
+`@fontsource/inter` is now a dependency and `main.tsx` imports it, so the finding below no
+longer holds. Kept as written because the failure — correct on the author's machine, wrong on
+the demo machine — is the useful part. `--rt-font-ui` names
 `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`, but there is no
 `@fontsource/inter` dependency and no import — `main.tsx` still imports IBM Plex Sans and
 Plex Mono only. Inter therefore resolves only on a machine that already has it installed; on
@@ -549,7 +566,9 @@ documentation.
 `CLAUDE.md`'s quality floor repeats it. `assistant.css` was rewritten with rings in the Theme
 C accent at merge time; the other six need the same pass.
 
-**`CommandPill` overflows a 414px viewport by 308px.** Measured at merge time: every
+**`CommandPill` overflows a 414px viewport by 308px** *(211px as of 2026-09-10: the
+Ops/Explore toggle is gone and the rail changed, measured at 625px on the merged build — still
+overflowing).* Measured at merge time: every
 element past the right edge is `command-pill__*` — the mode toggle, the points button and the
 view segmented control, which sit at a fixed width with no responsive treatment. §5.4 asks for
 "a single-column layout on mobile/tablet for the Explore/outreach audience" and
@@ -565,6 +584,69 @@ Since the assistant's button lived in that file, §5.1 Principle 13's entry poin
 Principle 11 reserves, clear of the depth ruler's centred 240px track. The panel itself is
 unchanged — 420px, same z-plane, same citation line. `ToolDock.tsx` still exists and renders
 nowhere.
+
+### 5.1.5 The chunk view's own palette, and its reversal (adopted 2026-09-09, **reversed 2026-09-10**)
+
+**What it is.** A full-screen instrument for one 5°×5° block of ocean, 0–2000 m, reached from
+the globe and left by the breadcrumb's back control. It covers the console rather than
+docking into it, because the question it answers is a different one — not "what does the
+model say at this depth today", which the console answers, but "what is the structure of this
+block of water, and does the instrument inside it agree".
+
+**What was adopted on 2026-09-09, and is kept here because the reasoning was sound.** The
+view shipped with its own palette and typefaces: cold glass over deep water — void `#04070A`,
+panel glass a 180° gradient from `rgba(16,29,41,0.8)` to `rgba(7,13,20,0.76)` with a lit top
+edge, a nine-step ink ramp from `#D8E6EE` to `#3D5568`, one accent cyan `#6FE3F0` meaning
+"this control is on", one amber `#F2B45C` meaning "model, as opposed to observation"; Archivo
+for UI and JetBrains Mono for readouts. The argument was that every value was scoped as a
+`--cv-*` custom property on the single `.chunk-view` root, so the two systems *could not*
+mix, which made it a fenced exception rather than drift — and that a self-contained screen
+cannot reproduce the failure §5.1.2 and §5.1.4 record, where two palettes met inside one view
+and neither won.
+
+**Why it was reversed on 2026-09-10.** That argument defends the exception against *leaking*.
+It does not answer the cost the reader pays: §11's oldest open question is that a reader
+cannot learn what a colour means when one role has several values, and §5.1.4 counts three
+colour systems already. A fourth that is *safely fenced* is still a fourth. The team's call
+was one system, so the chunk view now resolves through Theme C's `--rt-*` tokens like every
+other surface: copper `#E59858` where cyan was, `advisory` `#F59E0B` where the model amber
+was, warm basalt surfaces, the warm parchment ink ramp, and Theme C's strict 0px geometry in
+place of the 2px/3px radii. The `--cv-*` names survive as a *local alias layer* — one block at
+the top of `chunk-view.css` mapping each to an `--rt-*` token — so the file still reads in its
+own vocabulary while carrying no independent values.
+
+**The glass went with it.** Theme C is flat: solid surfaces, hairline borders, square corners.
+The `--cv-glass-top` / `--cv-glass-bottom` pair is deliberately left in place with *identical*
+values, so every `linear-gradient(180deg, top, bottom)` already written resolves to a flat
+Theme C surface without editing its call site.
+
+**Typography follows.** Archivo and JetBrains Mono are gone, and both `@fontsource`
+dependencies with them. `--cv-font` and `--cv-mono` now resolve to `--rt-font-ui` and
+`--rt-font-mono`, which is IBM Plex Mono for every literal readout — the role §5.1 assigns,
+unchanged; only the face the chunk view used for it has moved back.
+
+**What the reversal deliberately did NOT touch, and this is the important part.** The chunk
+view's **water is not chrome**. Its depth ramp, its light source and its sea-surface plane keep
+the six named ocean tokens — `thermocline` → `abyss` for the depth gradient, `current` for the
+light in the water and the sea surface. Painting an ocean in the console's accent would make
+the sea the colour of a button, and §5.1 has always separated the viewport from the
+instruments around it (Principle 6, and the split §5.1.4 records). Theme C governs the chrome;
+the ocean tokens govern the water; cmocean still governs the data and was not touched at all —
+the ramps in `viz/chunk/model.ts` are byte-identical.
+
+**One consequence worth stating.** Copper now means "this control is on" *and* "observation",
+while `advisory` amber means "model" — and §10 (2026-09-08) already records those two as too
+close to tell apart, which is why the assistant's ungrounded marker kept `advisory` rather than
+taking the accent. The team chose the pairing knowingly. It is made safe the way §5.4 requires
+rather than by hue: **the model trace is dashed, its legend swatch is striped to match, and both
+series are labelled.** If a reader ever reports confusing the two curves, the fix is to move the
+model to a non-adjacent hue, not to add more amber.
+
+**What it does not change.** The chunk view still obeys everything §5.1 asks of an
+instrument: hairline dividers, square housings, literal rulers with real units, one
+orchestrated motion (the load-in descent, skipped under `prefers-reduced-motion` along with
+the panel entrances), instant feedback everywhere else, and no numbered markers outside the
+timeline's real scrubber.
 
 ### 5.2 Self-critique against generic defaults
 
@@ -607,7 +689,7 @@ Checked against common AI-generated tells before locking this in:
   `advisory` amber and an icon/label, never color alone).
 - Responsive down to a single-column layout on mobile/tablet. There is no denser variant to
   except: one interface serves both audiences (Principle 4), so the narrow layout is simply
-  the layout. **Not currently true — `CommandPill` overflows 414px by 308px (§5.1.4).**
+  the layout. **Not currently true — `CommandPill` overflows 414px by 211px (§5.1.4).**
 
 ### 5.5 Standing external references — design and data
 
@@ -732,6 +814,27 @@ makes the "add a new sensor with minimal code change" requirement achievable.
 | `GET /instruments/{platform_id}/profile` | Full depth-vs-variable profile for one platform. |
 | `GET /wms` / `GET /wcs` | OGC-compliant endpoints for external interoperability. |
 | `GET /colorbars` | Available palettes + default min/max per variable. |
+
+### As built, added 2026-09-10
+
+The chunk view's routes. A third gridded router beside `field.py` (whole INCOIS volumes for
+the water column) and `map.py` (one depth level of a global product): this one serves a whole
+*sub-volume* of a global product, which neither of the other two can do without changing a
+contract an existing view depends on. All three share the colour-scale rule in `scaling.py`.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/chunk/meta?variable=&time=&lon_min=&lat_min=` | Grid, real depth levels, value range, provenance and attribution for one 5° tile. Bounds are snapped server-side; a tile with nothing finite in it answers **404**, which is how the globe finds the nearest chunk that does exist. |
+| `GET /api/chunk/data?…` | Raw `<f4`, C order `(depth, lat, lon)`. NaN is land, seabed or no data — and is the view's only water mask. A surface variable reports a depth axis of 1 rather than none, so the client has one code path. |
+| `GET /api/chunk/vector?…` | Two `<f4` volumes, u then v, on the same grid. Separate from `/chunk/data`, which carries speed: a magnitude cannot be advected. |
+
+`GET /api/terrain/meta` and `/api/terrain/data` now take optional `lat_min`/`lat_max`/
+`lon_min`/`lon_max`/`stride` — all four bounds or none. Omitting them gives the Bay of Bengal
+box the globe has always used, so the existing call is unchanged.
+
+`GET /api/instruments/{platform_id}/profile` now accepts the same bounds as `/api/instruments`.
+They were pinned to the Phailin box while the dates beside them were not, so a float the
+caller had just been handed for another area could not have its cast fetched.
 
 ---
 
@@ -1396,6 +1499,25 @@ each — component, decision, one-line reason, date.)*
   coastline and border strokes now draw unconditionally. They encode nothing, so they cannot
   claim coverage the data lacks — the same argument §5.1 Principle 7 makes for the graticule._
 
+- _2026-09-09 — **Chunk view added as a fourth view, with its own palette, typeface and
+  renderer.** A full-screen instrument for one 5°×5° block (85–90°E, 10–15°N, 0–2000 m):
+  scalar field as slices / stacked volume / isosurface, advected current traces, shaded
+  bathymetry, instrument tracks, and an editable live scene spec. Three decisions worth
+  keeping: (1) the palette and type are scoped to `.chunk-view` and recorded in §5.1.5 — a
+  fenced exception, not drift; (2) everything on screen derives from one scene spec, so
+  adding a sensor is a descriptor plus a module in `viz/chunk/registry.ts` and the view does
+  not change; (3) the console is concealed with `visibility: hidden` and its ocean scene is
+  paused via `OceanScene.setPaused` rather than unmounted — tearing it down would reset the
+  camera, re-fetch the basemap, and reintroduce exactly the view-toggle trap in
+  `next_session.md` §6. Verified end to end: Map → Chunk → Globe → Chunk → Column → Map with
+  the scene's own view following correctly and no console errors._
+- _2026-09-09 — **The chunk view's bathymetry surface writes through its colour attribute.**
+  `THREE.Float32BufferAttribute` copies the array it is constructed from, so recolouring the
+  array the geometry was built from reaches nothing. The seabed stayed at its initial black
+  and the bathymetry colormap picker did nothing — a dead control that looked like a styling
+  choice, and a black seafloor that §6 lesson 2 specifically warns reads as a silhouette. The
+  layer now writes into `geometry.attributes.color.array`. Worth remembering generally: only
+  the skirt and the isosurface in that file ever did it correctly._
 - _2026-09-10 — **The Ops/Explore toggle "coming back" was a stale runtime, not a regression.**
   A teammate on `main`, pulled recently, still saw the control removed in `9c16e34`. Verified
   before touching anything: the source on `origin/main` has had no toggle since `f27d3c2`,
@@ -1425,6 +1547,168 @@ each — component, decision, one-line reason, date.)*
 - _2026-09-10 — `origin/designTest` deleted, on the team's instruction. It had zero commits not
   already in `main` (its only unique work, Theme C, was merged on 2026-09-08) and was 19
   commits behind, so it was the one remaining place the old toggle still existed._
+
+---
+
+### 2026-09-10 — The chunk view reads real data, and navigation collapses to two views
+
+**The chunk view's field comes from HYCOM GLBv0.08, not INCOIS.** A 5° tile of INCOIS's
+`incois_argo_10d_VAM` is 6×6×24 cells — thirty-six columns of water, not a block of it. HYCOM
+at 0.08° gives 63×64×36 over the same tile, which is what the view was designed around and
+what makes a cut plane mean anything. INCOIS remains the map's and the water column's source
+and is still named on screen there; the chunk view names HYCOM on screen for the same reason.
+This follows the rule §10 (2026-09-05) already set: a layer is a *variable*, and each view
+resolves it to whichever source serves that view best. The table lives in one place,
+`CHUNK_DATASETS` in `backend/app/config.py`.
+
+**Chunks are fixed 5° tiles, snapped on both sides.** A click is a point; a chunk is a tile.
+`snapTile` in `viz/chunk/loader.ts` and `_tile` in `routers/chunk.py` floor to the same grid,
+so two clients cannot ask two different questions about one click or cache two answers to it.
+This is a request-shaping convention and **not** the storage tiling layer §12 rules out —
+nothing is reorganised on disk, and there is still no `tiling/` directory. A tile with no
+ocean data answers 404, and that 404 *is* the coverage test: the globe walks outward through
+two rings of neighbours until one resolves, then says which tile it landed on.
+
+**The field's own NaN is the water mask; ETOPO only draws the seabed.** Two sources disagree
+about where the ocean stops, and letting the relief clip the field would carve one dataset's
+coastline out of another's. The shader discards on the field's own missing cells, exactly as
+§10 (2026-09-01) settled for the water column. The relief is used for the bathymetry surface
+and the hover readout and for nothing else — and where the seabed lies below the chunk's
+2000 m, which is most of the Bay of Bengal, that surface is simply not meshed and the panel
+says so.
+
+**The water column left the navigation.** The rail is Map, Globe, Chunk. The chunk view
+answers the same question the column did — the structure of a body of water — at a real model
+resolution and with a scene spec behind it, and it is reached by clicking the globe rather
+than by a fourth toggle. The column's code is untouched and unreachable; deleting
+`viz/volume.ts`, `lattice.ts`, `terrain.ts`, `ocean.ts` and the column half of `scene.ts` is a
+separate commit, so a regression in the globe has an obvious owner.
+
+**Argo tracks are surfacings, not dives.** A float fixes its position when it comes up, about
+every ten days, and what it does in between is not measured. The track is now the polyline
+through real fixes with a vertical stem at each showing the depth that cast actually reached.
+The synthetic model drew a continuous sawtooth; that shape was invented, and drawing it
+beside real measurements is what CONTRIBUTING §8 forbids. Gliders keep their seam in the type
+and render an empty state, because §2 still owes a glider ingestion path and there is none.
+
+**The profile card samples the chunk, not `/api/compare`.** That endpoint samples INCOIS's 1°
+analysis, which is right for the map and the column but would put a different model in the
+chart than in the box around it. Pairing the cast against the loaded chunk costs no request
+and cannot disagree with what is on screen. `/api/compare` is unchanged.
+
+**Chlorophyll is surface-only, and its source moved to INCOIS.** No upstream anywhere serves
+3D chlorophyll. CoastWatch had been serving it in 2D until `noaacwNPPVIIRSSQchlaDaily` was
+retired upstream and began answering 404 "Currently unknown datasetID" — which nothing
+noticed, because the response was still in the disk cache and `test_map.py` was green from it
+while a clean machine would have drawn an empty map. That row now points at the live
+near-real-time dataset, whose window is a rolling year, and the test derives its date from the
+dataset's own coverage so it cannot go stale the same way again. Chlorophyll itself now
+resolves to INCOIS's own `incois_oceansat2_datasets` — 0.04°, 2011–2020, the only source that
+still covers the demo window at all. In the chunk view it disables the display modes that need
+a depth axis and states why.
+
+**Never ask APDRC for a depth range.** Requesting exactly the 36 HYCOM levels between 0 and
+2000 m makes their server return a bare Tomcat HTTP 500 on some time steps — 2013-10-05, -06
+and -09 among them — while 35 levels, all 40 levels, or the same step's surface all return
+fine. It reproduces on every retry, so it is a boundary bug in their aggregation rather than a
+transient fault, and it is invisible from the error, which says only "Internal Server Error".
+`fetch_volume` now asks for the whole depth axis with `[]` and trims in numpy. That costs four
+extra levels, about 11% more bytes, and cannot hit it.
+
+**A flow trace is a span of ocean time, not a span of frames.** The ported particle layer kept
+one frame of drift per trail segment, so the whole trace was a function of frame rate — and at
+any real frame rate it came out under a pixel long, which is why 900 particles were being
+advected invisibly. Each trace is now built by integrating backwards from the head through a
+fixed number of ocean-hours, so it means something statable: ten hours of drift, replayed at
+six ocean-hours a second. Traces are also lifted a hair above the cut plane and given an
+explicit render order — two exactly coplanar transparent surfaces with `depthWrite: false`
+composite in whatever order the sort happens to pick, and the scalar slice was winning.
+
+**A shared fetch promise must not carry one caller's abort signal.** `ChunkStore.load` briefly
+passed the caller's `AbortSignal` into the task it cached. React's StrictMode unmounts and
+remounts every effect, so the first mount aborted the request *and* left the dead promise in
+`inflight` for the remount to join — the chunk never loaded and nothing retried. The store's
+fetches now always run to completion and callers check their own signal after awaiting; the
+result is cached either way, and the step a caller just abandoned is usually the one it asks
+for next.
+
+**The engine must outlive its callbacks.** `ChunkView`'s engine effect depended on
+`openProfile`, which changes identity whenever the platform list does — so the WebGL context
+was torn down and rebuilt the moment the instrument fetch returned, aborting the chunk request
+in flight. The pick callback is now held in a ref and the engine is created once. This is the
+same shape as the view-toggle trap in `next_session.md` §6.
+
+**The assistant is reachable in every view, including the chunk.** `AssistantDock` lived inside
+`.viewport`, so `.console--concealed`'s `visibility: hidden` inherited onto it and the Ask
+button was simply not on screen in the chunk view — the feature present in the bundle and
+absent from the interface, which is the exact failure that component's own header was written
+about. It now sits in an `.assistant-layer` that re-asserts `visibility: visible` the way
+`.chunk-overlay` does, above the overlay's stacking order, and moves to the left rail in the
+chunk view because the right one is taken. The assistant also gains `open_chunk`, fenced the
+same way `zoom_to_region` is: it resolves a named region from the fixed table and the tile is
+chosen client-side by the same snap a click uses, so it cannot open a chunk a reader could not.
+
+---
+
+### 2026-09-10 — The chunk view folds into Theme C, and Inter is finally bundled
+
+- _**REVERSES "the chunk view carries its own palette and typeface" (§5.1.5, adopted the day
+  before).** The original fencing argument was sound about leakage and silent about cost: a
+  scoped fourth colour system is still a fourth one a reader has to learn, and §11's oldest
+  design question is precisely that a role cannot mean anything when it has several values.
+  The team chose one system. `--cv-*` survives as a **local alias layer** — one block mapping
+  each name to an `--rt-*` token — so `chunk-view.css` keeps its own vocabulary while holding
+  no independent values. Glass became flat, 2px/3px radii became `var(--rt-radius)`, and the
+  `--cv-glass-top`/`-bottom` pair was left in place with identical values so every
+  `linear-gradient(180deg, top, bottom)` already written resolves to a flat surface without
+  editing its call site. Full reasoning, and what survives, in §5.1.5._
+- _**The water was deliberately exempted, and this is the load-bearing part.** The chunk
+  view's depth ramp, light source and sea-surface plane keep the six named ocean tokens
+  (`thermocline` → `abyss`, and `current` for light in water and the sea surface). Copper is
+  the console's accent; an ocean painted in it stops reading as an ocean. This is the split
+  §5.1 Principle 6 has always drawn and §5.1.4 records — Theme C governs instruments, the
+  ocean tokens govern the viewport, cmocean governs the data. **The cmocean ramps in
+  `viz/chunk/model.ts` were not touched at all.**_
+- _**Copper and `advisory` now sit next to each other on the profile chart, knowingly.** The
+  team chose copper for "on/observation" and `advisory` amber for "model". §10 (2026-09-08)
+  records those two as near neighbours — it is why the assistant's ungrounded marker kept
+  `advisory` rather than the accent. Verified on screen: they are very hard to tell apart. So
+  the distinction does not rest on hue: **the model trace is dashed, its legend swatch is
+  striped to match, and both series are labelled**, which is §5.4's "never colour alone"
+  applied to a chart. If anyone reports confusing the curves, move the model to a
+  non-adjacent hue rather than adding more amber._
+- _**Platform identity is not model-vs-observation.** `registry.ts` coloured Argo cyan and
+  everything else the model amber. Both are **measured** platforms, so reusing the model hue
+  would have said a glider was a prediction. Argo is copper, a second platform type is
+  `current` blue, and `LayerStackPanel`'s dot matches the 3D track — they are two renderings
+  of one fact and drifted apart would be a quiet lie._
+- _**Inter is bundled, and `--rt-font-ui` stops lying.** Theme C named Inter first and no
+  `@fontsource/inter` dependency existed, so on any machine without it installed the whole
+  console silently fell back to Segoe UI — recorded as a defect in §5.1.4 and open since the
+  Theme C merge. `@fontsource/inter` is now a dependency and imported in `main.tsx`.
+  `@fontsource/archivo` and `@fontsource/jetbrains-mono`, added for the chunk view's own
+  typography, were removed in the same change. **§5.1's locked UI face is amended
+  accordingly** — see the note there; Plex Mono for literal readouts is unchanged, and that is
+  the role §5.1 actually cares about._
+
+- _2026-09-10 — **The chunk view and the build stamp landed on `main` together, and the handoff
+  had described a merge that could no longer happen.** `chunk-view`'s `next_session.md` said
+  "`main` carries the chunk view … it fast-forwarded" before either was true, and the build
+  stamp moved `main` the same day, which made the fast-forward impossible. So `main` was merged
+  into `integrate/chunk-view` first — `context.md` and `next_session.md` were append-both
+  conflicts, two sections both numbered §1g became §1g and §1h — and the result landed on
+  `main` as a merge commit. **A handoff that states a merge before it happens is a claim about
+  the future; write it after, or the next session inherits a fiction.**_
+- _2026-09-10 — **The build stamp moved into `.assistant-layer`, and that exposed a layout bug
+  already on `chunk-view`.** Merged as-is, `<BuildStatus />` sat inside `.viewport`, which the
+  chunk view conceals — the §6 lesson-13 failure again, arriving by merge. In the always-visible
+  layer beside the Ask dock it survives every view. That layer is `position: fixed; inset: 0`,
+  and measuring it showed the dock sitting 40px inside the command bar in the map and globe,
+  because its `top: 16px` was written against the viewport it had lived in. Fixed at the root:
+  `App.tsx` measures `.viewport` into `--viewport-top` / `--viewport-bottom` and the layer takes
+  that box outside the chunk view. Measured, not hardcoded, because the command bar and the
+  timeline are content-sized rows. Verified 12/12 in all three views, including the alert
+  forced stale in the chunk view, with zero console errors._
 
 ---
 

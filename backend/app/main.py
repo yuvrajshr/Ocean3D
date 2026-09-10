@@ -15,7 +15,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CACHE_DIR
-from .routers import assistant, catalog, field, instruments, map as map_router, terrain
+from .routers import (
+    assistant,
+    catalog,
+    chunk,
+    field,
+    instruments,
+    map as map_router,
+    terrain,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +58,10 @@ app.add_middleware(
         "X-Map-Stride",
         "X-Map-Planes",
         "X-Map-Provenance",
+        "X-Chunk-Shape",
+        "X-Chunk-Stride",
+        "X-Chunk-Planes",
+        "X-Chunk-Provenance",
     ],
 )
 
@@ -58,6 +70,7 @@ app.include_router(field.router, prefix="/api", tags=["field"])
 app.include_router(instruments.router, prefix="/api", tags=["instruments"])
 app.include_router(terrain.router, prefix="/api", tags=["terrain"])
 app.include_router(map_router.router, prefix="/api", tags=["map"])
+app.include_router(chunk.router, prefix="/api", tags=["chunk"])
 app.include_router(assistant.router, prefix="/api", tags=["assistant"])
 
 

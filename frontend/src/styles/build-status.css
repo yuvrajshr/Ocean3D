@@ -100,10 +100,29 @@
   outline-offset: -2px;
 }
 
+/* ── In the chunk view ─────────────────────────────────────────────────────
+   Both elements live in `.assistant-layer`, which spans the whole window in
+   that view (the console is concealed there). Unlike the console, the chunk
+   view's chrome is fixed rather than content-sized: `.chunk-time` is 20px off
+   the bottom and ~55px tall, and the header chips and camera tabs leave a clear
+   band across the top centre. */
+.assistant-layer--chunk .build-stamp {
+  right: 20px;
+  bottom: 84px;
+}
+.assistant-layer--chunk .build-alert {
+  top: 18px;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 @media (max-width: 900px) {
-  .build-alert {
+  .build-alert,
+  .assistant-layer--chunk .build-alert {
     left: var(--rt-space-4, 16px);
     right: var(--rt-space-4, 16px);
     width: auto;
+    transform: none;
   }
 }

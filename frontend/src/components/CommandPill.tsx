@@ -5,7 +5,8 @@
  * - Circular logo mark
  * - Contextual title (truncating)
  * - Provenance/status dot with tooltip
- * - View mode segmented control (Map / Globe / Water column) always showing icon + name
+ * - View mode segmented control (Map / Globe / Water column / Chunk) always showing
+ *   icon + name
  *
  * The Ops/Explore tabs were removed on 2026-09-08: they promised to hide advanced
  * controls that were never built, and two of their four behaviours were already
@@ -15,14 +16,15 @@
 import {
   Map as MapIcon,
   Globe as GlobeIcon,
-  Waves as WavesIcon,
+  Box as BoxIcon,
   MapPin,
 } from "lucide-react";
 import type { Scenario, SourceStatus } from "../api/client";
 import type { SceneView } from "../viz/scene";
 import "../styles/command-pill.css";
 
-export type AppView = SceneView | "map";
+/** The chunk view is a fourth view with its own canvas, like the map. */
+export type AppView = SceneView | "map" | "chunk";
 
 export interface CommandPillProps {
   scenario: Scenario | null;
@@ -60,11 +62,15 @@ export function CommandPill({
 
   const fullStatusText = mapLoadingLabel ?? provenanceLabel;
 
-  // View mode options
+  // Two views and a destination. The water column left the rail on 2026-09-10:
+  // the chunk view answers the same question about a block of water at a real
+  // model resolution, and is reached by clicking the globe rather than by a
+  // fourth toggle. Its button stays so the view is keyboard-reachable and so
+  // there is a way back into the chunk you were last looking at.
   const viewModes: { id: AppView; label: string; icon: typeof MapIcon }[] = [
     { id: "map", label: "Map", icon: MapIcon },
     { id: "globe", label: "Globe", icon: GlobeIcon },
-    { id: "column", label: "Water column", icon: WavesIcon },
+    { id: "chunk", label: "Chunk", icon: BoxIcon },
   ];
 
   return (
@@ -117,7 +123,7 @@ export function CommandPill({
           >
             {viewModes.map(({ id, label, icon: Icon }) => {
               const isActive = view === id;
-              const isDisabled = !entryDone && (id === "globe" || id === "column");
+              const isDisabled = !entryDone && id === "globe";
 
               return (
                 <button

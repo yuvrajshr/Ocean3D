@@ -76,7 +76,12 @@ def test_descending_latitude_is_normalised_to_ascending():
     Getting it wrong renders the whole ocean upside down, which looks plausible.
     """
     assert CHLA.lat_descending is True
-    result = em.fetch_slice(ds=CHLA, time="2020-06-01")
+    # The date comes from the dataset's own coverage, never hardcoded: CoastWatch
+    # serves this product on a rolling one-year window, so a literal date here
+    # would go stale and then pass from disk cache while the live server 404s.
+    # That is exactly how the retired science-quality dataset stayed green for
+    # weeks (context.md §10, 2026-09-09).
+    result = em.fetch_slice(ds=CHLA, time=CHLA.time_range[1])
     assert result.lats[0] < result.lats[-1], "latitude must come back ascending"
     assert result.lats[0] < -80.0 and result.lats[-1] > 80.0
 

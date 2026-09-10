@@ -15,28 +15,37 @@ observations together, on one depth axis, in one screen.
 The demo opens on **Cyclone Phailin, October 2013** — the storm INCOIS and IMD forecast
 successfully, prompting the evacuation of over a million people from the Odisha coast.
 
-- A **raymarched 3D water column** of the INCOIS gridded analysis: 24 depth levels from 5 m to
-  2000 m, temperature and salinity.
 - **Argo floats** that reported alongside each model run, drawn as markers with a stem showing
   how deep each one profiled.
-- Clicking a float opens the **profile panel**: its measured curve, the INCOIS analysis at the
-  same place and time, and the difference between them on its own scale. This is the thing no
-  desktop tool does in a browser, and it is the point of the project.
+- Clicking a float **on the globe** opens the **profile panel**: its measured curve, the INCOIS
+  analysis at the same place and time, and the difference between them on its own scale. This
+  is the thing no desktop tool does in a browser, and it is the point of the project.
+  *(The chunk view has its own profile card, which compares a cast against the HYCOM chunk it
+  is standing in — a different comparison from this one, against a different model.)*
+- A **raymarched 3D water column** of the INCOIS gridded analysis — 24 depth levels, 5–2000 m.
+  **Still in the codebase, no longer in the navigation:** the chunk view replaced it in the
+  rail on 2026-09-10. See `next_session.md` §0.
 - **Currents, chlorophyll**, and the cyclone-specific hazard fields (**depth of the 26 °C
   isotherm, upper-ocean heat content, mixed layer depth**) — the fields that actually explain
   cyclone intensification.
-- **Ops** and **Explore** modes: one visual system at two control densities.
+- A **chunk view**: one 5° block of ocean from the surface to 2000 m, opened by clicking the
+  globe. Scalar field as slices, a stacked volume or an isosurface; current traces advected
+  through the real u/v field; the seabed; Argo tracks; and a live scene spec you can edit.
 
-All of it runs against INCOIS's own public ERDDAP server. No data is synthesized.
+Everything runs against public ERDDAP servers — INCOIS's own for the analysis, the Argo
+floats and ocean colour, HYCOM via APDRC for the chunk view's finer grid, and NOAA NCEI for
+the seabed. Each is named on screen wherever it is drawn. No data is synthesized.
 
 ---
 
 ## Running it
 
-Two processes. Backend first — the browser cannot reach ERDDAP directly (it sends no CORS
-headers), so nothing renders without it.
+The app is two processes — a FastAPI backend on `:8000` and Vite on `:5173` — and it needs
+**both**. The browser cannot reach ERDDAP directly (it sends no CORS headers), so the frontend
+alone renders nothing and fills the terminal with `http proxy error … ECONNREFUSED
+127.0.0.1:8000`. That error always means the same thing: the backend is not running.
 
-### Backend
+### Once, after cloning
 
 ```bash
 cd backend
@@ -44,18 +53,34 @@ python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt      # Windows
 # .venv/bin/pip install -r requirements.txt        # macOS / Linux
 
-.venv/Scripts/python -m uvicorn app.main:app --port 8000
+cd ../frontend
+npm install
 ```
 
-API docs at `http://127.0.0.1:8000/docs`.
-
-### Frontend
+### Every time
 
 ```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:5173
+npm run dev             # from the repo root OR from frontend/ — both start both
+npm run dev -- --open   # ...and open the browser once both answer
 ```
+
+App at `http://localhost:5173`, API docs at `http://127.0.0.1:8000/docs`. Ctrl+C stops both,
+and if either process dies it takes the other with it, so you never end up with half a stack.
+
+The `--` in the second line matters: `npm run dev --open` hands `--open` to npm, not to the
+script, and nothing opens.
+
+### Running the two halves separately
+
+Only if you need to — say, the backend under a debugger. Backend first:
+
+```bash
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd frontend && npm run dev:vite      # frontend ONLY — does not start the backend
+```
+
+`dev:vite` is deliberately a different name from `dev`: it is the one command here that gives
+you half a stack, so it should never be the one you type by habit.
 
 Vite proxies `/api` to port 8000, so both development and production use same-origin paths.
 

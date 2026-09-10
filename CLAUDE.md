@@ -228,8 +228,11 @@ Follow `context.md` §5.3 directly:
 ## Step 8 — Verification workflow
 
 **Serve locally:**
-- `npm run dev` from `frontend/` (Vite; default `http://localhost:5173` — update this line
-  if the team's config differs). Never screenshot a `file:///` URL.
+- `npm run dev` — from the repo root or from `frontend/`; both run `dev.mjs`, which starts the
+  backend (`:8000`) and Vite (`http://localhost:5173`) together. Never screenshot a
+  `file:///` URL. `npm run dev:vite` in `frontend/` starts Vite **alone** and is only for
+  when the backend is already running by hand; on its own it renders nothing and prints
+  `ECONNREFUSED 127.0.0.1:8000` for every API call.
 - If a dev server is already running, don't start a second instance.
 
 **Screenshot / browser automation — [settled 2026-09-01]:** local Puppeteer scripts at the

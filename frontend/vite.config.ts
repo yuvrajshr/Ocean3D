@@ -110,7 +110,7 @@ export default defineConfig({
     // holding 5173 keeps answering the tab everyone already has open while the
     // fresh one hides on the next port — so a `git pull` appears to change
     // nothing. That is how a deleted control stayed on a teammate's screen for
-    // two days after it left `main` (next_session.md §1g).
+    // two days after it left `main` (next_session.md §1h).
     strictPort: true,
     proxy: {
       "/api": {

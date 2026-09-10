@@ -31,7 +31,7 @@ export type AssistantAction =
       hide: string[];
       opacity: Record<string, number>;
     }
-  | { type: "set_view"; view: "map" | "globe" | "column" }
+  | { type: "set_view"; view: "map" | "globe" | "chunk" }
   | { type: "set_time"; time: string }
   | { type: "set_depth"; depth_m: number }
   | {
@@ -41,7 +41,15 @@ export type AssistantAction =
       lon_range: [number, number];
     }
   | { type: "set_pin"; lat: number; lon: number }
-  | { type: "set_area"; lat_range: [number, number]; lon_range: [number, number] };
+  | { type: "set_area"; lat_range: [number, number]; lon_range: [number, number] }
+  /**
+   * Open the chunk over a named region.
+   *
+   * The backend resolves the name to a centre point and nothing else; the tile
+   * is chosen here by the same snap a globe click uses, so the assistant cannot
+   * open a chunk that clicking could not.
+   */
+  | { type: "open_chunk"; label: string; lat: number; lon: number };
 
 /**
  * Provenance for one sourced claim.
