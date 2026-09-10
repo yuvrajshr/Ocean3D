@@ -24,18 +24,18 @@ import { OceanEffects } from "./effects";
 import { ANALYSIS_HEIGHT, ANALYSIS_MAX_DEPTH, GeoFrame, type Extent } from "./geo";
 import {
   buildClouds,
+  buildFloatMarkers,
   buildGlobe,
   buildStarfield,
   type CloudLayer,
   CLOUDS_URL,
   DEFAULT_BASEMAP,
+  type FloatMarkers,
   type Globe,
-  globeFloatMarkers,
   globeToLatLon,
   latLonToGlobe,
   NIGHT_LIGHTS_URL,
   OCEAN_MASK_URL,
-  regionOutline,
   setGlobeOpacity,
 } from "./globe";
 import {
@@ -48,7 +48,6 @@ import {
 } from "./ocean";
 import { buildLattice, ensureLabelFont, type Lattice, RENDER_ORDER } from "./lattice";
 import { buildTerrainMesh, type TerrainField } from "./terrain";
-import { TOKEN_RGB } from "./water";
 import {
   buildLutTexture,
   buildVolumeTexture,
@@ -179,8 +178,7 @@ export class OceanScene {
 
   private globe: Globe | null = null;
   private clouds: CloudLayer | null = null;
-  private globeOutline: THREE.LineLoop | null = null;
-  private globeFloats: THREE.Points | null = null;
+  private globeFloats: FloatMarkers | null = null;
   // Lives directly in `scene`, not `globeGroup` — it must never move with
   // the globe's fixed rotation. Visibility is synced from
   // `globeGroup.visible` once per frame in tick() rather than duplicated
@@ -254,6 +252,20 @@ export class OceanScene {
    * camera clipping into the sphere. */
   private static readonly FLYTO_CLOSE_DISTANCE = 2.3;
 
+  /**
+   * Idle spin (globe view only): after this many seconds with no drag, coast,
+   * or fly-to in flight, the camera starts drifting in azimuth on its own —
+   * Google Earth's "it's a living planet, not a poster" idle behaviour. Long
+   * enough that pausing to read a tooltip doesn't trigger it.
+   */
+  private static readonly IDLE_SPIN_DELAY = 3.5;
+  /** Seconds for the idle spin to ease from a standstill up to full speed, so
+   * it starts as an imperceptible drift rather than a visible "kick-off". */
+  private static readonly IDLE_SPIN_RAMP = 4;
+  /** Idle spin speed at full ramp, in rad/s — a full rotation takes ~5
+   * minutes. Deliberately far slower than any drag or coast speed. */
+  private static readonly IDLE_SPIN_SPEED = 0.021;
+
   private azimuth = -0.62;
   // BELOW the waterline, by about 86 m, and close enough that the analysis
   // fills ~58% of frame height instead of 25%.
@@ -302,6 +314,13 @@ export class OceanScene {
   private azimuthVelocity = 0;
   private elevationVelocity = 0;
   private coasting = false;
+  // Idle spin: `lastInteractionTime` resets on every pointerdown, drag step, and
+  // wheel event, so `tick()` can measure how long control has truly sat idle.
+  // `idleSpinRampTime` accumulates only while the spin is actively easing in, and
+  // is zeroed the instant an interaction (or coast) preempts it — no ease-out, the
+  // speed is slow enough that a hard stop is imperceptible.
+  private lastInteractionTime = performance.now();
+  private idleSpinRampTime = 0;
   // Click-anywhere fly-to (globe only): the targets `tick()` eases azimuth/
   // elevation toward while `flyToActive`, set by `flyToOutsidePoint()`.
   private azimuthTarget = 0;
@@ -460,54 +479,29 @@ export class OceanScene {
   }
 
   /**
-   * (Re)draw the marks on the sphere: the analysis extent, and the floats inside it.
+   * (Re)draw the floats on the sphere.
    *
-   * Rebuilt rather than mutated because both depend on the extent and the marker list,
-   * and both are cheap. Kept as fields so repeated calls replace rather than accumulate —
-   * the outline used to be added inside startEntry(), which leaked one loop per entry.
+   * Rebuilt rather than mutated because it depends on the marker list and is cheap. Kept
+   * as a field so repeated calls replace rather than accumulate.
+   *
+   * No visible extent outline is drawn here (removed — it read as a distracting box on
+   * the sphere). The region is still a real hit-test target: `isInsideExtent` below
+   * checks a clicked lat/lon against the same bounds regardless of what's drawn, so the
+   * click-to-dive gesture is unaffected. The floats themselves, and the hint copy in
+   * App.tsx, are what show a reader roughly where the analysis is.
    */
   private refreshGlobeMarks(): void {
-    if (this.globeOutline) {
-      this.globeGroup.remove(this.globeOutline);
-      this.globeOutline.geometry.dispose();
-      (this.globeOutline.material as THREE.Material).dispose();
-      this.globeOutline = null;
-    }
     if (this.globeFloats) {
-      this.globeGroup.remove(this.globeFloats);
-      this.globeFloats.geometry.dispose();
-      (this.globeFloats.material as THREE.Material).dispose();
+      this.globeGroup.remove(this.globeFloats.object);
+      this.globeFloats.dispose();
       this.globeFloats = null;
     }
 
-    this.globeOutline = regionOutline(this.extent.latRange, this.extent.lonRange);
-    this.globeGroup.add(this.globeOutline);
-
-    const floats = globeFloatMarkers(
-      this.markers.map(({ lat, lon }) => ({ lat, lon })),
-    );
+    const floats = buildFloatMarkers(this.markers.map(({ lat, lon }) => ({ lat, lon })));
     if (floats) {
       this.globeFloats = floats;
-      this.globeGroup.add(floats);
+      this.globeGroup.add(floats.object);
     }
-
-    this.applyRegionHighlight();
-  }
-
-  /**
-   * The outline is the click target, so it has to show that it is one.
-   *
-   * Brightness, not opacity: 0.95 -> 1.0 is invisible, and `linewidth` does nothing in
-   * WebGL, so neither of the obvious levers actually reads. Scaling the colour past 1.0
-   * drives it toward white while staying `bioluminescence` — a state change, not a change
-   * of meaning.
-   */
-  private applyRegionHighlight(): void {
-    const material = this.globeOutline?.material as THREE.LineBasicMaterial | undefined;
-    if (!material) return;
-    material.color.setRGB(...TOKEN_RGB.bioluminescence);
-    if (this.regionHovered) material.color.multiplyScalar(2.1);
-    material.opacity = this.regionHovered ? 1 : 0.9;
   }
 
   /** Is a point on the sphere inside the analysis extent? */
@@ -549,6 +543,10 @@ export class OceanScene {
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
     this.flyToActive = false;
+    // Idle spin starts counting from arrival, not from whenever the scene was
+    // constructed (which could already be well past IDLE_SPIN_DELAY).
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
 
     // Fix the Earth's rotation so the study region faces the camera on arrival, then
     // leave it alone — from here the camera orbits and the Earth stays put.
@@ -566,7 +564,6 @@ export class OceanScene {
     if (this.view === "column") return;
     this.view = "column";
     this.regionHovered = false;
-    this.applyRegionHighlight();
     this.canvas.style.cursor = "grab";
 
     if (prefersReducedMotion()) {
@@ -1032,6 +1029,8 @@ export class OceanScene {
     this.flyToActive = false;
     this.lastPointer = { x: event.clientX, y: event.clientY };
     this.lastPointerTime = performance.now();
+    this.lastInteractionTime = this.lastPointerTime;
+    this.idleSpinRampTime = 0;
     // Where the gesture started, so onClick can tell a real click (the
     // pointer barely moved) from a drag that happened to release over the
     // same element — the browser fires "click" after both.
@@ -1067,6 +1066,7 @@ export class OceanScene {
       const dt = Math.max((now - this.lastPointerTime) / 1000, 1 / 240);
       this.lastPointer = { x: event.clientX, y: event.clientY };
       this.lastPointerTime = now;
+      this.lastInteractionTime = now;
 
       const azimuthStep = -dx * 0.006;
       const elevationStep = dy * 0.005;
@@ -1085,6 +1085,8 @@ export class OceanScene {
 
   private readonly onWheel = (event: WheelEvent) => {
     event.preventDefault();
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
     const next = this.distanceTarget + event.deltaY * 0.0016;
     // The globe's near limit has to clear its own radius (1.35) or the camera ends up
     // inside the Earth, looking at the back of the texture.
@@ -1215,7 +1217,6 @@ export class OceanScene {
 
     if (inside === this.regionHovered) return;
     this.regionHovered = inside;
-    this.applyRegionHighlight();
     this.canvas.style.cursor = inside ? "pointer" : "grab";
   }
 
@@ -1411,6 +1412,32 @@ export class OceanScene {
           this.elevationVelocity = 0;
         }
       }
+
+      // Idle spin (globe view only): once nothing else is moving the camera and
+      // control has sat untouched past IDLE_SPIN_DELAY, ease in a very slow
+      // autonomous drift in azimuth. Any interaction resets `lastInteractionTime`
+      // (see onPointerDown/onPointerMove/onWheel) and zeroes the ramp, so the
+      // drift always restarts from a standstill rather than resuming mid-speed.
+      if (
+        this.view === "globe" &&
+        !this.flyToActive &&
+        !this.coasting &&
+        !prefersReducedMotion()
+      ) {
+        const idleFor = (now - this.lastInteractionTime) / 1000;
+        if (idleFor > OceanScene.IDLE_SPIN_DELAY) {
+          this.idleSpinRampTime = Math.min(
+            this.idleSpinRampTime + delta,
+            OceanScene.IDLE_SPIN_RAMP,
+          );
+          const ramp = ease(this.idleSpinRampTime / OceanScene.IDLE_SPIN_RAMP);
+          this.azimuth += OceanScene.IDLE_SPIN_SPEED * ramp * delta;
+        } else {
+          this.idleSpinRampTime = 0;
+        }
+      } else {
+        this.idleSpinRampTime = 0;
+      }
     }
 
     const cosE = Math.cos(this.elevation);
@@ -1440,6 +1467,15 @@ export class OceanScene {
     // Synced here rather than at each of the several call sites that toggle
     // globeGroup.visible — see the field's own comment for why.
     this.starfield.visible = this.globeGroup.visible;
+    // Drives per-style animation (pulse) and the individual/cluster crossfade (every
+    // Drives the pulse animation and the glow/pulse crossfade — see globe.ts's own
+    // comment on buildFloatMarkers. `this.distance` here is already the eased, per-frame
+    // value driving the visible zoom, not `distanceTarget`, so the crossfade tracks
+    // exactly what's on screen with no separate lag. Gated on visibility so it costs
+    // nothing while in the water column.
+    if (this.globeGroup.visible) {
+      this.globeFloats?.update({ time, cameraDistance: this.distance });
+    }
 
     const underwater = this.camera.position.y < 0;
     if (this.marineSnow) this.marineSnow.visible = underwater && this.worldGroup.visible;

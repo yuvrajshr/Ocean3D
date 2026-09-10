@@ -191,7 +191,13 @@ tracked-out ALL-CAPS eyebrows.
 **Motion:** One signature moment — the load-in descent through the water column, which is
 also replayed when returning to the column from globe mode. Everything else responds
 instantly, including switching *to* the globe. No scattered hover-fade-slide-up on every
-panel or marker. The globe never rotates on its own (`context.md` §5.1, Principle 3).
+panel or marker. **Exception (2026-09-10, product decision, overrides the earlier
+`context.md` §5.1 Principle 3 "never rotates on its own"):** the globe now idle-spins —
+after a few seconds with no drag/coast/fly-to in flight it eases into a very slow autonomous
+azimuth drift (`OceanScene.IDLE_SPIN_*` in `scene.ts`), and any interaction kills it
+instantly. This is deliberately *not* the "generic spinning globe demo" Step 4 warns
+against: it's slow enough (~5 min/rotation) to read as "living planet," not a spinning
+logo, and it never runs during the load-in descent or in column view.
 
 **Structure:** Numbered markers are not used anywhere except the timeline, which already
 has a real scrubber. The depth control and colorbar are literal rulers with correct units,
