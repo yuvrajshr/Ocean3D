@@ -68,7 +68,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [, bump] = useReducer((n: number) => n + 1, 0);
 
-  const [fps, setFps] = useState(60);
+  const [, setFps] = useState(60);
   const [hover, setHover] = useState<HoverReadout | null>(null);
   const [prof, setProf] = useState<ProfileView | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ scalar: true });
@@ -504,17 +504,12 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
             );
           })}
         </div>
+      </div>
 
-        <div className="chunk-region">
-          <div className="chunk-region__path">
-            <span className="chunk-region__parent">Globe</span>
-            <span className="chunk-region__sep">/</span>
-            <span className="chunk-region__name">{regionName}</span>
-          </div>
-          <div className="chunk-region__coords">{extent}</div>
-        </div>
-
-        <div className="chunk-fps">{fps} FPS</div>
+      {/* --------------------------------------------------- region label */}
+      <div className="chunk-region">
+        <div className="chunk-region__name">{regionName}</div>
+        <div className="chunk-region__coords">{extent}</div>
       </div>
 
       {ready && source && hist ? (

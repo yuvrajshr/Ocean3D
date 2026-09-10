@@ -608,51 +608,34 @@
 }
 
 .chunk-region {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  right: 0;
+  z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
-  padding: 2px 2px 0;
-}
-
-.chunk-region__path {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.chunk-region__parent {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cv-ink-ghost);
-}
-
-.chunk-region__sep {
-  font-size: 10px;
-  color: var(--cv-ink-ghost);
+  pointer-events: none;
+  animation: chunk-rise 0.7s 0.08s ease-out both;
 }
 
 .chunk-region__name {
-  font-size: 14px;
-  font-weight: 500;
+  font-family: "Cormorant Garamond", "Georgia", serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 22px;
   letter-spacing: 0.04em;
   color: var(--cv-ink-bright);
 }
 
+
 .chunk-region__coords {
   font-family: var(--cv-mono);
   font-size: 9px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--cv-ink-faint);
-}
-
-.chunk-fps {
-  font-family: var(--cv-mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  color: var(--cv-ink-faint);
-  padding-right: 2px;
 }
 
 /* -------------------------------------------------------------- layer stack */
@@ -1353,6 +1336,7 @@
 @media (prefers-reduced-motion: reduce) {
   .chunk-crumb,
   .chunk-corner,
+  .chunk-region,
   .chunk-layers,
   .chunk-inspector,
   .chunk-time {
