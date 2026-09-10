@@ -46,9 +46,12 @@ export const PRIMARY_VARIABLES = [
   { code: "temperature", name: "Sea Water Temperature", units: "°C" },
   { code: "salinity", name: "Practical Salinity", units: "PSU" },
   { code: "currents", name: "Current Velocity", units: "m/s" },
+  { code: "ph", name: "Ocean Acidity (pH)", units: "pH" },
+  { code: "zooplankton", name: "Zooplankton Biomass", units: "g/m²" },
 ];
 
 export const CYCLONE_VARIABLES = [
+  { code: "wave_height", name: "Significant Wave Height (VHM0)", units: "m" },
   { code: "heat_content", name: "Tropical Cyclone Heat Content (TCHP)", units: "kJ/cm²" },
   { code: "mixed_layer_depth", name: "Mixed Layer Depth (MLD)", units: "m" },
   { code: "d26", name: "26°C Isotherm Depth (D26)", units: "m" },
@@ -134,6 +137,74 @@ export const PRODUCTS: CatalogueProduct[] = [
       { code: "mixed_layer_depth", name: "MLD" },
     ],
   },
+  {
+    id: "prod-005",
+    title: "Global Ocean Mixed Layer Depth — Copernicus GLORYS12",
+    code: "CMEMS_MOD_GLO_PHY_MY_0.083DEG_P1D-M",
+    isModel: true,
+    spatialResolution: "Global, 0.083° × surface scalar (depth as output)",
+    coverageStart: "1 Jan 1993",
+    coverageEnd: "23 Jun 2026",
+    temporalFrequency: "Daily global reanalysis",
+    category: "cyclone",
+    badge: "Copernicus GLORYS12V1",
+    thumbnailGradient: "linear-gradient(135deg, #0f4c81, #1565c0, #1976d2, #42a5f5, #80cbc4)",
+    primaryVariable: "mixed_layer_depth",
+    variables: [
+      { code: "mixed_layer_depth", name: "Mixed Layer Depth" },
+    ],
+  },
+  {
+    id: "prod-006",
+    title: "Global Ocean Wave Reanalysis & Significant Height — Copernicus WAVERYS",
+    code: "CMEMS_MOD_GLO_WAV_MY_0.2DEG_PT3H-I",
+    isModel: true,
+    spatialResolution: "Global, 0.2° × surface wave spectrum",
+    coverageStart: "1 Jan 1980",
+    coverageEnd: "31 May 2026",
+    temporalFrequency: "3-hourly global wave reanalysis",
+    category: "cyclone",
+    badge: "Copernicus WAVERYS",
+    thumbnailGradient: "linear-gradient(135deg, #0c2340, #004b87, #0284c7, #38bdf8, #67e8f9)",
+    primaryVariable: "wave_height",
+    variables: [
+      { code: "wave_height", name: "Significant Wave Height (VHM0)" },
+    ],
+  },
+  {
+    id: "prod-007",
+    title: "Global Ocean Biogeochemistry & Acidification (pH) — Copernicus BGC",
+    code: "CMEMS_MOD_GLO_BGC_CAR_DAILY",
+    isModel: true,
+    spatialResolution: "Global, 0.25° × 50 depth levels (0.5–5728 m)",
+    coverageStart: "1 Nov 2021",
+    coverageEnd: "19 Sep 2026",
+    temporalFrequency: "Daily global biogeochemical analysis",
+    category: "primary",
+    badge: "Copernicus BGC-CAR",
+    thumbnailGradient: "linear-gradient(135deg, #be123c, #e11d48, #fb7185, #38bdf8, #0284c7)",
+    primaryVariable: "ph",
+    variables: [
+      { code: "ph", name: "Ocean Acidity (pH)" },
+    ],
+  },
+  {
+    id: "prod-008",
+    title: "Global Ocean Zooplankton Biomass — Copernicus SEAPODYM-LMTL",
+    code: "CMEMS_MOD_GLO_BGC_MY_LMTL_P1D-I",
+    isModel: true,
+    spatialResolution: "Global, 0.083° × 0.083° (approx. 9 km)",
+    coverageStart: "1 Jan 1998",
+    coverageEnd: "19 Sep 2026",
+    temporalFrequency: "Daily global biomass hindcast & forecast",
+    category: "primary",
+    badge: "Copernicus SEAPODYM",
+    thumbnailGradient: "linear-gradient(135deg, #065f46, #059669, #34d399, #10b981, #047857)",
+    primaryVariable: "zooplankton",
+    variables: [
+      { code: "zooplankton", name: "Zooplankton Biomass" },
+    ],
+  },
 ];
 
 interface DataCatalogueModalProps {
@@ -191,6 +262,15 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
   // If a cyclone variable or category is chosen, Cyclone Phailin model is the 1 available to add.
   // Otherwise, the Primary Physics model is the 1 available to add. All others remain view-only.
   const availableProductId = useMemo(() => {
+    // Copernicus products route directly so the user gets global coverage
+    if (selectedVariableCode === "zooplankton") return "prod-008";
+    if (selectedVariableCode === "ph") return "prod-007";
+    if (selectedVariableCode === "wave_height") return "prod-006";
+    if (selectedVariableCode === "mixed_layer_depth") return "prod-005";
+    if (!selectedVariableCode && selectedCategory === "cyclone") {
+      // Category-level cyclone click keeps prod-002 so heat_content/d26 still work
+      return "prod-002";
+    }
     const isCycloneSelected =
       selectedCategory === "cyclone" ||
       (selectedVariableCode && CYCLONE_VARIABLES.some((v) => v.code === selectedVariableCode));
@@ -408,7 +488,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                 <span className="catalogue-products-count">{filteredProducts.length}</span>
               </div>
               <div className="catalogue-products-subtitle">
-                1 operational layer available to map · reference models for inspection
+                {filteredProducts.filter((p) => p.id === availableProductId).length} operational layer{filteredProducts.filter((p) => p.id === availableProductId).length !== 1 ? "s" : ""} available to map · reference models for inspection
               </div>
             </div>
 

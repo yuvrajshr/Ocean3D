@@ -99,14 +99,17 @@ once, at ingestion, using the latitude-dependent UNESCO formula.
 
 ## Data
 
-Everything comes from `https://erddap.incois.gov.in/erddap`.
+Data is sourced from INCOIS ERDDAP (`https://erddap.incois.gov.in/erddap`) and Copernicus Marine Service (CMEMS).
 
-| Dataset | Provides |
-|---|---|
-| `incois_argo_10d_VAM` | Gridded temperature and salinity, 24 levels 5–2000 m, 2004 → 2026 |
-| `Indian_ARGO_Floats` | Argo profiles with QC flags, 2002 → Apr 2025 |
-| `incois_valueadded_products_datasets` | Currents, D26, heat content, mixed layer depth, 2004 → Mar 2019 |
-| `incois_oceansat2_datasets` | Chlorophyll, 2011 → 2020 |
+| Dataset | Provider | Provides |
+|---|---|---|
+| `incois_argo_10d_VAM` | INCOIS | Gridded temperature and salinity, 24 levels 5–2000 m, 2004 → 2026 |
+| `Indian_ARGO_Floats` | INCOIS | Argo profiles with QC flags, 2002 → Apr 2025 |
+| `incois_valueadded_products_datasets` | INCOIS | Currents, D26, heat content, mixed layer depth, 2004 → Mar 2019 |
+| `incois_oceansat2_datasets` | INCOIS | Chlorophyll, 2011 → 2020 |
+| `cmems_wave_height` (WAVERYS & NRT) | CMEMS | Spectral significant wave height (`VHM0`, m), 1980 → 2026 |
+| `cmems_ph` (BGC-BIO) | CMEMS | Ocean potential hydrogen (`ph`), 2023 → 2026 |
+| `cmems_zooplankton` (SEAPODYM-LMTL & Plankton NRT) | CMEMS | Zooplankton surface biomass (`zooc`, g/m²), 1998 → 2026 |
 
 The backend caches every upstream response to disk and falls back to it when INCOIS is
 unreachable, so a demo never depends on venue wifi. The header always says which it is showing —

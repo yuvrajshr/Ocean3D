@@ -128,10 +128,27 @@ function getVariableCode(key: string): string {
     case "chlorophyll": return "CHL";
     case "d26": return "D26";
     case "heat_content": return "TCHP";
+    case "mixed_layer_depth":
     case "mld": return "MLD";
+    case "wave_height": return "WAVE";
+    case "ph": return "PH";
+    case "zooplankton": return "ZOO";
     default: return key.slice(0, 4).toUpperCase();
   }
 }
+
+const DEFAULT_FALLBACK_RANGES: Record<string, [number, number]> = {
+  temperature: [0, 32],
+  salinity: [30, 36],
+  currents: [0, 150],
+  chlorophyll: [0.01, 5],
+  d26: [20, 120],
+  heat_content: [20, 120],
+  mixed_layer_depth: [10, 100],
+  wave_height: [0, 8],
+  ph: [7.6, 8.4],
+  zooplankton: [0.1, 3.5],
+};
 
 interface LayerScaleSliderProps {
   minVal: number;
@@ -584,8 +601,9 @@ export function VariablePanel({
         // field, then to a placeholder range.
         const own = fieldMetaByKey?.[k];
         const meta = own ?? (k === selected ? fieldMeta ?? undefined : undefined);
-        const minVal = meta?.value_range ? meta.value_range[0] : 0;
-        const maxVal = meta?.value_range ? meta.value_range[1] : 30;
+        const fallback = DEFAULT_FALLBACK_RANGES[v.key] ?? [0, 30];
+        const minVal = meta?.value_range ? meta.value_range[0] : fallback[0];
+        const maxVal = meta?.value_range ? meta.value_range[1] : fallback[1];
 
         return {
           id: v.key,

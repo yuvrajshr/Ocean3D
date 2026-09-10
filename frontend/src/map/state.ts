@@ -317,15 +317,18 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
       }
       const stillActive = layers.some((l) => l.id === state.activeLayerId);
       const topVisible = layers.find((l) => l.visible) ?? layers[0]!;
+      const topInfo = datasetOf({ ...state, layers } as MapState, topVisible);
+      let nextTime = state.time;
+      if (!nextTime || (topInfo && nextTime > `${topInfo.time_end}T00:00:00Z`)) {
+        nextTime = `${topInfo?.time_end ?? ""}T00:00:00Z`;
+      } else if (topInfo && nextTime < `${topInfo.time_start}T00:00:00Z`) {
+        nextTime = `${topInfo?.time_start ?? ""}T00:00:00Z`;
+      }
       return {
         ...state,
         layers,
         activeLayerId: stillActive ? state.activeLayerId : topVisible.id,
-        // The clock has to land inside the new top layer's coverage, or the
-        // map asks for a date the product does not have and draws nothing.
-        time: state.time || `${
-          datasetOf({ ...state, layers } as MapState, topVisible)?.time_end ?? ""
-        }T00:00:00Z`,
+        time: nextTime,
       };
     }
 

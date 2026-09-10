@@ -835,6 +835,7 @@ export default function App() {
         pointsCount={toolPoints.length}
         isPointsOpen={isPointsOpen}
         onTogglePoints={() => setIsPointsOpen((prev) => !prev)}
+        hasLayers={view === "map" ? map.layers.length > 0 : false}
       />
 
       <div
