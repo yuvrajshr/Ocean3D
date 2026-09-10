@@ -62,13 +62,12 @@ export const NIGHT_LIGHTS_URL = "/world.night-lights.2048x1024.jpg";
 
 export const GLOBE_RADIUS = 1.35;
 // Ordered outward from the surface: clouds sit just above it, floats and their
-// stems above the clouds, the region outline above that — each layer clear of
-// the one below rather than sharing a radius and risking z-fighting.
+// stems above the clouds — clear of the layer below rather than sharing a radius and
+// risking z-fighting.
 const CLOUD_RADIUS = GLOBE_RADIUS * 1.006;
 const MARKER_RADIUS = GLOBE_RADIUS * 1.008;
-const OUTLINE_RADIUS = GLOBE_RADIUS * 1.012;
 
-const GLOBE_SUN_DIRECTION = new THREE.Vector3(0.4, 0.5, 0.75).normalize();
+export const GLOBE_SUN_DIRECTION = new THREE.Vector3(0.4, 0.5, 0.75).normalize();
 
 /**
  * Place a lat/lon on the sphere.
@@ -454,7 +453,9 @@ export function buildClouds(cloudsUrl: string, maxAnisotropy = 1): CloudLayer {
       // outright — consistent with the main sphere's own uNightFloor, and
       // an abrupt disappearance at the terminator would read as a bug.
       uNightFloor: { value: 0.35 },
-      uOpacity: { value: 0.8 },
+      // Lowered from 0.8 — full-strength clouds were competing with the surface
+      // and markers for attention. Tunable; revisit if it reads too faint.
+      uOpacity: { value: 0.6 },
     },
     transparent: true,
     depthWrite: false,
@@ -522,76 +523,115 @@ export function setGlobeOpacity(group: THREE.Object3D, opacity: number): void {
 }
 
 /**
- * The study region, drawn on the globe so the dive has a visible destination.
+ * The floats, on the sphere — a small 3D pin standing off the surface at each float's
+ * position, base at the globe and apex pointing radially outward. Reads via shading and
+ * silhouette rather than colour contrast, so it stays legible against the basemap/clouds
+ * regardless of what's behind it.
  *
- * Deliberately NOT on BLOOM_LAYER, unlike the water column's markers. The bloom pass sets
- * the camera to that layer alone (`effects.ts`), so the sphere is culled out of it and
- * cannot occlude anything — a glowing outline would bleed straight through the Earth when
- * the Bay of Bengal is on the far side. Off the bloom layer, ordinary depth testing against
- * the opaque sphere hides it correctly. `bioluminescence` at full opacity is already the
- * brightest thing on a basemap this dark.
+ * A point sprite's "min pixel size" floor doesn't apply to real geometry, so distance
+ * compensation is done by hand instead: every instance is rescaled each frame relative to
+ * `PIN_REFERENCE_DISTANCE` (the globe view's own default entry distance, so pins look
+ * right-sized at the view most people land on), capped at `PIN_MAX_SCALE` so it doesn't
+ * balloon into a landmark at the zoom-out ceiling.
  */
-export function regionOutline(
-  latRange: [number, number],
-  lonRange: [number, number],
-): THREE.LineLoop {
-  const [lat0, lat1] = latRange;
-  const [lon0, lon1] = lonRange;
-  const points: THREE.Vector3[] = [];
-  const push = (lat: number, lon: number) =>
-    points.push(latLonToGlobe(lat, lon, OUTLINE_RADIUS));
 
-  // Walked edge by edge rather than as four corners: a straight line between two corners
-  // would cut through the sphere instead of following it.
-  for (let i = 0; i <= 32; i++) push(lat0, lon0 + ((lon1 - lon0) * i) / 32);
-  for (let i = 0; i <= 32; i++) push(lat0 + ((lat1 - lat0) * i) / 32, lon1);
-  for (let i = 0; i <= 32; i++) push(lat1, lon1 - ((lon1 - lon0) * i) / 32);
-  for (let i = 0; i <= 32; i++) push(lat1 - ((lat1 - lat0) * i) / 32, lon0);
-
-  const outline = new THREE.LineLoop(
-    new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineBasicMaterial({
-      color: new THREE.Color(...TOKEN_RGB.bioluminescence),
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-    }),
-  );
-  return outline;
+/** What the marker object receives once per frame, via scene.ts's tick(). */
+interface MarkerFrame {
+  time: number;
+  cameraDistance: number;
 }
 
-/**
- * The floats, on the sphere.
- *
- * Drawn as points rather than the instanced spheres the water column uses: at globe scale
- * the whole Phailin box is a small patch, so a mesh marker would be sub-pixel anyway. They
- * will visibly cluster, which is true — that is what a 17° box looks like from orbit.
- */
-export function globeFloatMarkers(
-  positions: { lat: number; lon: number }[],
-): THREE.Points | null {
+export interface FloatMarkers {
+  object: THREE.Object3D;
+  update(frame: MarkerFrame): void;
+  dispose(): void;
+}
+
+const PIN_HEIGHT = 0.05;
+const PIN_RADIUS = 0.012;
+/** The camera distance a pin's true (small) scale is calibrated for. */
+const PIN_REFERENCE_DISTANCE = 4.05;
+/** How far a pin is allowed to grow to compensate for zooming out past its reference
+ * distance — capped so it doesn't balloon into a landmark at the 9-unit zoom-out ceiling. */
+const PIN_MAX_SCALE = 3;
+
+const PIN_VERTEX = /* glsl */ `
+  out vec3 vNormalWorld;
+  void main() {
+    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    vNormalWorld = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const PIN_FRAGMENT = /* glsl */ `
+  precision highp float;
+  in vec3 vNormalWorld;
+  out vec4 fragColor;
+
+  uniform vec3 uColor;
+  uniform vec3 uSunDirection;
+
+  void main() {
+    float lambert = max(dot(normalize(vNormalWorld), normalize(uSunDirection)), 0.0);
+    // Never fully black on the night side — a marker that vanishes at night would read as
+    // a bug, not as accurate lighting.
+    vec3 shaded = uColor * mix(0.45, 1.0, lambert);
+    fragColor = vec4(shaded, 1.0);
+  }
+`;
+
+export function buildFloatMarkers(positions: { lat: number; lon: number }[]): FloatMarkers | null {
   if (positions.length === 0) return null;
 
-  const coords = new Float32Array(positions.length * 3);
-  positions.forEach(({ lat, lon }, i) => {
-    latLonToGlobe(lat, lon, MARKER_RADIUS).toArray(coords, i * 3);
+  const geometry = new THREE.ConeGeometry(PIN_RADIUS, PIN_HEIGHT, 8);
+  // Base at local origin, apex at +Y, so instancing can place the base exactly at the
+  // marker radius rather than centering the cone on it.
+  geometry.translate(0, PIN_HEIGHT / 2, 0);
+
+  const material = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: PIN_VERTEX,
+    fragmentShader: PIN_FRAGMENT,
+    uniforms: {
+      uColor: { value: new THREE.Color(...TOKEN_RGB.bioluminescence) },
+      uSunDirection: { value: GLOBE_SUN_DIRECTION.clone() },
+    },
   });
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(coords, 3));
+  const mesh = new THREE.InstancedMesh(geometry, material, positions.length);
+  const up = new THREE.Vector3(0, 1, 0);
+  const basePositions: THREE.Vector3[] = [];
+  const baseQuaternions: THREE.Quaternion[] = [];
+  positions.forEach(({ lat, lon }) => {
+    const point = latLonToGlobe(lat, lon, MARKER_RADIUS);
+    basePositions.push(point);
+    baseQuaternions.push(new THREE.Quaternion().setFromUnitVectors(up, point.clone().normalize()));
+  });
 
-  const points = new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color: new THREE.Color(...TOKEN_RGB.bioluminescence),
-      size: 0.028,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-    }),
-  );
-  return points;
+  const matrix = new THREE.Matrix4();
+  const scaleVector = new THREE.Vector3(1, 1, 1);
+  const applyScale = (scale: number) => {
+    scaleVector.setScalar(scale);
+    for (let i = 0; i < basePositions.length; i++) {
+      matrix.compose(basePositions[i]!, baseQuaternions[i]!, scaleVector);
+      mesh.setMatrixAt(i, matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+  applyScale(1);
+
+  return {
+    object: mesh,
+    update({ cameraDistance }) {
+      const scale = THREE.MathUtils.clamp(cameraDistance / PIN_REFERENCE_DISTANCE, 1, PIN_MAX_SCALE);
+      applyScale(scale);
+    },
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  };
 }
 
 

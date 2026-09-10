@@ -243,10 +243,17 @@ only.
 
    **The globe is a destination, but never the default one.** A control returns the user to
    it, and the same descent carries them back down; the app still *opens* by diving, because
-   a forecaster's data is in the water column, not on the sphere. What does not change: the
-   globe never rotates on its own. It turns when dragged and is otherwise still. An
-   idly-spinning Earth is the generic data-viz tell `CLAUDE.md` Step 4 names, and it is the
-   one part of this principle that survives the globe becoming somewhere you can go.
+   a forecaster's data is in the water column, not on the sphere.
+
+   **Amended 2026-09-10 — idle spin.** The globe now drifts on its own after a few seconds
+   of no drag/coast/fly-to, very slowly (~5 min/rotation) and only in globe view; any
+   interaction stops it instantly, and it never runs during the load-in descent. This is a
+   deliberate reversal of "the globe never rotates on its own" above, requested to make the
+   globe read as a live planet (Google Earth's idiom) rather than a static poster. What
+   survives from the original reasoning: it is still not the *generic* spinning-globe tell
+   `CLAUDE.md` Step 4 names, because the speed is deliberately far below anything a demo reel
+   would use, it is gated to a real interaction state machine rather than free-running, and
+   it still never runs anywhere except an idle globe view.
    **The map is the landing view** (2026-09-05). The app now opens on the 2D map
    rather than by diving. What survives the reversal, and it is most of it: the
    load-in descent is still the product's one orchestrated motion moment, it
