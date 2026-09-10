@@ -69,7 +69,7 @@ function buildIdentity(): Plugin {
       builtAt: builtAtParam,
       mode,
       changedPaths: changedBetween(builtSha, headSha),
-      reflog: parseReflog(git("reflog", "--date=unix", "--format=%gd%x09%gs", "-200") ?? ""),
+      reflog: parseReflog(git("reflog", "--date=unix", "--format=%gd%x09%H%x09%gs", "-200") ?? ""),
     });
     const api = classifyBackend({
       startedSha: apiSha,

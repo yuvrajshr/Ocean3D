@@ -17,7 +17,8 @@
  *     warning there would fire on every commit and be ignored within a day.
  *     What makes it stale is files changing *underneath* it — a pull, merge,
  *     checkout, rebase or reset: exactly the reflog entries that are not
- *     commits.
+ *     commits. And only those since the checkout last matched the build: look
+ *     at another branch and come back, and nothing is left underneath.
  *
  *   - The backend does not reload at all (uvicorn runs without --reload), so
  *     for it any change under `backend/` since the process started is stale,
@@ -30,6 +31,8 @@
 export interface ReflogEntry {
   /** When HEAD moved, in milliseconds since the epoch. */
   at: number;
+  /** The commit HEAD pointed at after the move. */
+  sha: string;
   /** The reflog subject, e.g. "pull: Fast-forward" or "commit: Fix the map". */
   subject: string;
 }
@@ -68,6 +71,7 @@ export function classifyFrontend(input: {
   mode: BuildMode;
   /** Repo-relative paths changed between builtSha and headSha. */
   changedPaths: string[];
+  /** Oldest first, as `parseReflog` returns it. */
   reflog: ReflogEntry[];
 }): BuildVerdict {
   const { builtSha, headSha, builtAt, mode, changedPaths, reflog } = input;
@@ -82,10 +86,14 @@ export function classifyFrontend(input: {
   // change since it was built makes it old — including your own commits.
   if (mode === "preview") return { status: "stale", reason: "frontend changed since this bundle was built" };
 
-  const foreign = reflog
-    .filter((entry) => entry.at >= builtAt)
-    .sort((a, b) => a.at - b.at)
-    .find((entry) => !isOwnCommit(entry.subject));
+  const since = reflog.filter((entry) => entry.at >= builtAt);
+  // Everything up to the last moment the checkout matched the build was
+  // undone by that moment, so only what came after it can be underneath.
+  let from = 0;
+  since.forEach((entry, i) => {
+    if (sameCommit(entry.sha, builtSha)) from = i + 1;
+  });
+  const foreign = since.slice(from).find((entry) => !isOwnCommit(entry.subject));
 
   return foreign ? { status: "stale", reason: foreign.subject } : { status: "current" };
 }
@@ -117,19 +125,23 @@ export function short(sha: string): string {
 }
 
 /**
- * Parse `git reflog --date=unix --format=%gd%x09%gs`.
+ * Parse `git reflog --date=unix --format=%gd%x09%H%x09%gs`, oldest first.
  *
  * With `--date=unix`, `%gd` renders as `HEAD@{1757432400}` — the time HEAD
- * moved, which is what matters here, not the commit's author date.
+ * moved, which is what matters here, not the commit's author date. Git prints
+ * newest first; entries often share a second, so order is taken from git's
+ * output rather than re-derived by sorting on the timestamp.
+ *
+ * The subject can be empty (a worktree's first entry has none), so a line with
+ * only a selector and a commit id is kept.
  */
 export function parseReflog(text: string): ReflogEntry[] {
   const out: ReflogEntry[] = [];
   for (const line of text.split(/\r?\n/)) {
-    const tab = line.indexOf("\t");
-    if (tab < 0) continue;
-    const match = /@\{(\d+)\}/.exec(line.slice(0, tab));
-    if (!match) continue;
-    out.push({ at: Number(match[1]) * 1000, subject: line.slice(tab + 1).trim() });
+    const [selector = "", sha = "", ...rest] = line.split("\t");
+    const match = /@\{(\d+)\}/.exec(selector);
+    if (!match || !sha.trim()) continue;
+    out.push({ at: Number(match[1]) * 1000, sha: sha.trim(), subject: rest.join("\t").trim() });
   }
-  return out;
+  return out.reverse();
 }
