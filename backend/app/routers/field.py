@@ -11,9 +11,10 @@ from __future__ import annotations
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ..config import HAZARD_VARIABLES, VARIABLES, VariableSpec
+from ..config import HAZARD_VARIABLES, MAP_DATASETS_BY_ID, VARIABLES, VariableSpec
 from ..erddap_client import UpstreamUnavailable
-from ..ingestion import erddap_grid
+from ..ingestion import cmems, erddap_grid
+from ..ingestion.base import VolumeResult
 from ..models.schemas import GridAxes, ModelFieldMeta
 from ..scaling import percentile_range
 
@@ -31,6 +32,19 @@ def _spec(key: str) -> VariableSpec:
 
 def _load(spec: VariableSpec, time: str, lat: tuple[float, float] | None, lon: tuple[float, float] | None):
     try:
+        if spec.dataset_id.startswith("cmems_"):
+            ds = MAP_DATASETS_BY_ID.get(f"cmems_{spec.key}") or MAP_DATASETS_BY_ID.get(spec.dataset_id)
+            if ds is not None:
+                res = cmems.fetch_slice(ds=ds, time=time, lat_range=lat, lon_range=lon)
+                return VolumeResult(
+                    values=res.values[np.newaxis, :, :],
+                    depths=[0.0],
+                    lats=res.lats,
+                    lons=res.lons,
+                    time=res.time,
+                    units=res.units,
+                    source=res.source,
+                )
         if spec.kind == "volume":
             return erddap_grid.fetch_volume(
                 variable=spec.erddap_name, time=time, dataset_id=spec.dataset_id,
@@ -47,13 +61,19 @@ def _load(spec: VariableSpec, time: str, lat: tuple[float, float] | None, lon: t
             lat_range=lat, lon_range=lon,
         )
     except UpstreamUnavailable as exc:
+        if spec.dataset_id.startswith("cmems_") or "copernicus" in str(exc).lower():
+            raise HTTPException(
+                503,
+                f"Copernicus Marine is unreachable or data is unavailable for this date ({time}).",
+            ) from exc
         raise HTTPException(
             503,
             "INCOIS ERDDAP is unreachable and this field has not been cached. "
             "Connect to the network once to fetch it.",
         ) from exc
     except (KeyError, ValueError) as exc:
-        raise HTTPException(502, f"INCOIS returned an unexpected field shape: {exc}") from exc
+        provider = "Copernicus Marine" if spec.dataset_id.startswith("cmems_") else "INCOIS"
+        raise HTTPException(502, f"{provider} returned an unexpected field shape: {exc}") from exc
 
 
 def _bounds(

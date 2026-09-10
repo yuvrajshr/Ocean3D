@@ -224,6 +224,39 @@ HAZARD_VARIABLES: tuple[VariableSpec, ...] = (
         caption="How deep the wind has stirred the surface water.",
         units_declared_by_us=True,
     ),
+    VariableSpec(
+        key="wave_height",
+        dataset_id="cmems_mod_glo_wav_my_0.2deg_PT3H-i",
+        erddap_name="VHM0",
+        label="Significant wave height",
+        units="m",
+        kind="surface",
+        colormap="speed",
+        caption="Total significant wave height from wind waves and swell.",
+        units_declared_by_us=False,
+    ),
+    VariableSpec(
+        key="ph",
+        dataset_id="cmems_mod_glo_bgc-car_anfc_0.25deg_P1D-m",
+        erddap_name="ph",
+        label="Ocean acidity (pH)",
+        units="pH",
+        kind="volume",
+        colormap="balance",
+        caption="Potential hydrogen (pH) total scale. Monitors ocean acidification.",
+        units_declared_by_us=False,
+    ),
+    VariableSpec(
+        key="zooplankton",
+        dataset_id="cmems_mod_glo_bgc_my_0.083deg-lmtl_P1D-i",
+        erddap_name="zooc",
+        label="Zooplankton biomass",
+        units="g/m²",
+        kind="surface",
+        colormap="algae",
+        caption="Low and mid-trophic level zooplankton carbon biomass from SEAPODYM-LMTL.",
+        units_declared_by_us=False,
+    ),
 )
 
 
@@ -575,6 +608,28 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         caption="How fast the water moves, and which way, at any depth.",
         **_GLORYS,
     ),
+    # --- Mixed Layer Thickness (mlotst) ---------------------------------------
+    # mlotst lives in the same GLORYS physics product as temperature and
+    # salinity, so the same credentials and cache machinery already cover it.
+    # It is a surface scalar (one value per column, not per depth level), so
+    # depth_dim is overridden to None and axis_order drops the depth axis.
+    MapDataset(
+        id="cmems_mixed_layer_depth",
+        variable_key="mixed_layer_depth",
+        preference=1,  # beats the INCOIS regional version globally
+        variable="mlotst",
+        label="Mixed layer depth (Copernicus)",
+        units="m",
+        kind="surface",
+        colormap="delta",
+        caption=(
+            "How deep the wind has stirred the ocean surface layer. "
+            "Deep mixing = warm cyclone fuel; shallow = stable, stratified ocean."
+        ),
+        # Override: mlotst has no depth dimension in the output — it IS a depth.
+        **{**_GLORYS, "depth_dim": None,
+           "axis_order": ("time", "latitude", "longitude")},
+    ),
     MapDataset(
         id="cmems_forecast_temperature",
         variable_key="temperature_forecast",
@@ -600,6 +655,105 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         lon_range=(-180.0, 179.9167),
         native_shape=(2041, 4320),
         time_range=("2022-06-01", "2026-09-13"),
+        cadence="daily",
+        cadence_days=1.0,
+        default_stride=5,
+    ),
+    # --- Ocean Waves Reanalysis (WAVERYS VHM0) --------------------------------
+    MapDataset(
+        id="cmems_wave_height",
+        variable_key="wave_height",
+        preference=1,
+        base="https://data.marine.copernicus.eu",
+        dataset_id="cmems_mod_glo_wav_my_0.2deg_PT3H-i",
+        variable="VHM0",
+        label="Significant wave height (Copernicus)",
+        provider="Copernicus Marine WAVERYS",
+        attribution=(
+            "Generated using E.U. Copernicus Marine Service Information; "
+            "Global Ocean Waves Reanalysis, doi.org/10.48670/moi-00022"
+        ),
+        doi="10.48670/moi-00022",
+        protocol="cmems",
+        units="m",
+        kind="surface",
+        colormap="speed",
+        caption=(
+            "Total significant height of wind waves and swell. "
+            "High values indicate severe storms and hazardous sea states."
+        ),
+        axis_order=("time", "latitude", "longitude"),
+        depth_dim=None,
+        lat_range=(-89.8, 89.8),
+        lon_range=(-180.0, 179.8),
+        native_shape=(899, 1800),
+        time_range=("1980-01-01", "2026-09-13"),
+        cadence="3-hourly",
+        cadence_days=1.0,
+        default_stride=2,
+    ),
+    # --- Biogeochemistry Ocean Acidification (pH) ----------------------------
+    MapDataset(
+        id="cmems_ph",
+        variable_key="ph",
+        preference=1,
+        base="https://data.marine.copernicus.eu",
+        dataset_id="cmems_mod_glo_bgc-car_anfc_0.25deg_P1D-m",
+        variable="ph",
+        label="Ocean acidity (pH)",
+        provider="Copernicus Marine Biogeochemistry",
+        attribution=(
+            "Generated using E.U. Copernicus Marine Service Information; "
+            "Global Ocean Biogeochemistry Analysis and Forecast, doi.org/10.48670/moi-00015"
+        ),
+        doi="10.48670/moi-00015",
+        protocol="cmems",
+        units="pH",
+        kind="volume",
+        colormap="balance",
+        caption=(
+            "Potential hydrogen (pH) total scale across 50 depth levels. "
+            "Low values (<8.0) indicate ocean acidification stress on coral reefs and calcifying organisms."
+        ),
+        axis_order=("time", "depth", "latitude", "longitude"),
+        depth_dim="depth",
+        lat_range=(-80.0, 90.0),
+        lon_range=(-180.0, 179.75),
+        native_shape=(681, 1440),
+        time_range=("1993-01-01", "2026-09-19"),
+        cadence="daily",
+        cadence_days=1.0,
+        default_stride=2,
+    ),
+    # --- Zooplankton Biomass (SEAPODYM-LMTL zooc) -----------------------------
+    MapDataset(
+        id="cmems_zooplankton",
+        variable_key="zooplankton",
+        preference=1,
+        base="https://data.marine.copernicus.eu",
+        dataset_id="cmems_mod_glo_bgc_my_0.083deg-lmtl_P1D-i",
+        variable="zooc",
+        label="Zooplankton biomass (Copernicus)",
+        provider="Copernicus Marine SEAPODYM-LMTL",
+        attribution=(
+            "Generated using E.U. Copernicus Marine Service Information; "
+            "Global Ocean Low and Mid-Trophic Levels Biomass Hindcast, doi.org/10.48670/moi-00033"
+        ),
+        doi="10.48670/moi-00033",
+        protocol="cmems",
+        units="g/m²",
+        kind="surface",
+        colormap="algae",
+        caption=(
+            "Zooplankton carbon biomass content. Low and mid-trophic level organisms "
+            "forming the base of pelagic marine food webs."
+        ),
+        axis_order=("time", "latitude", "longitude"),
+        depth_dim=None,
+        lat_range=(-80.0, 90.0),
+        lon_range=(-180.0, 179.9167),
+        native_shape=(2040, 4320),
+        time_range=("1998-01-01", "2026-09-19"),
         cadence="daily",
         cadence_days=1.0,
         default_stride=5,

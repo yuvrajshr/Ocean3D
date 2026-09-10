@@ -9,10 +9,10 @@
  * the panel.
  */
 
-import type { CmapName } from "../../viz/chunk/model";
+import { VARIABLES, type CmapName, type VariableKey } from "../../viz/chunk/model";
 import type { ChunkPlatform, ChunkSource } from "../../viz/chunk/source";
-import type { SceneSpec } from "../../viz/chunk/spec";
-import { gradient } from "./util";
+import type { CutAxis, LayerDesc, ScalarMode, SceneSpec } from "../../viz/chunk/spec";
+import { fmt, gradient } from "./util";
 
 const BATHY_PALETTES: CmapName[] = ["deep", "thermal", "haline"];
 
