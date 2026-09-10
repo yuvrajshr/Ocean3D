@@ -50,8 +50,11 @@ architecture, data model, and the locked design system this file assumes.
 - **Subject:** a live, browser-based 3D water column — ocean model fields (temperature,
   salinity, currents, chlorophyll) co-displayed with real Argo/Glider/CTD/BGC instrument
   readings.
-- **Audience:** two real audiences sharing one interface — INCOIS forecasters (`Ops mode`)
-  and public/student explorers (`Explore mode`). See `context.md` §5, Principle 4.
+- **Audience:** two real audiences sharing one interface — INCOIS forecasters and
+  public/student explorers. **There is no Ops/Explore mode switch** — it was removed on
+  2026-09-08 because it promised controls that were never built (`context.md` §5.1
+  Principle 4, §10). One density serves both. Do not reintroduce it; if the app seems to be
+  missing a mode, that is the design, not a regression.
 - **Job:** let a forecaster compare model prediction against real measurement, in 3D, in
   one screen, faster than switching between desktop tools — and let a newcomer explore the
   ocean without training.
@@ -115,8 +118,8 @@ risks for *this* project (beyond the generic AI-design tells):
    globe idle-spin, (b) making it the landing view instead of diving on load, or (c) painting
    any field onto the sphere at global extent, which would claim coverage we do not have.
    The water column, not the globe, is still the product.
-3. Letting `Ops mode` and `Explore mode` diverge into two different visual systems instead
-   of one system with different control density (§5.1, Principle 4).
+3. Reintroducing a second "mode" for the same screen. The Ops/Explore split was removed
+   (§5.1, Principle 4); one interface serves both audiences through approachable defaults.
 4. Reaching for the three generic tells `frontend-design` already warns about (cream +
    terracotta; near-black + single neon accent; broadsheet hairlines) as a shortcut instead
    of the depth-gradient system that's already specific to this brief.
@@ -149,7 +152,7 @@ structure) instead:
   the same way every other upstream does — through the `DataSource` interface in
   `backend/app/ingestion/base.py`, behind FastAPI, never fetched from the browser (it needs
   an account and requires attribution).
-- Mobile-first responsive for `Explore mode`; `Ops mode` can assume a larger screen
+- Mobile-first responsive — one layout for everyone, no denser variant to except
   (`context.md` §5.4).
 
 ### CSS specificity
@@ -194,7 +197,7 @@ panel or marker. The globe never rotates on its own (`context.md` §5.1, Princip
 has a real scrubber. The depth control and colorbar are literal rulers with correct units,
 not decorative gradients.
 
-**Interactive states:** every control (variable toggle, depth ruler, timeline, mode switch)
+**Interactive states:** every control (variable toggle, depth ruler, timeline, view switch)
 needs hover, `focus-visible`, and active states — including the map markers for
 Argo/Glider platforms.
 
@@ -255,7 +258,8 @@ never overwritten. That directory is gitignored — don't commit them.
 - Depth ruler tick marks are correctly scaled and labeled at the current dataset's depth
   range.
 - Colorbar legend matches the currently selected variable's real units and value range.
-- `Ops mode` and `Explore mode` both render correctly and look like one system, not two.
+- The build stamp (bottom-right) names the commit you expect. If it does not, you are
+  looking at a stale server, not a bug — see `context.md` §5.1 Principle 14.
 - Profile-chart panel opens correctly when a platform marker is clicked, and closes without
   disturbing the 3D camera state.
 - Reduced-motion setting actually suppresses the load-in descent — **in both directions**,

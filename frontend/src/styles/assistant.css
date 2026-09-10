@@ -404,6 +404,16 @@
   pointer-events: auto;
 }
 
+/* Outside the chunk view the layer takes the viewport's box, measured into
+   these two variables by App.tsx. Without them `inset: 0` made everything in
+   here window-relative: the Ask dock sat 40px into the command bar and the
+   panel ran under the timeline, because both were written against the
+   viewport they used to live in. The chunk view keeps the whole window. */
+.assistant-layer:not(.assistant-layer--chunk) {
+  top: var(--viewport-top, 0px);
+  bottom: var(--viewport-bottom, 0px);
+}
+
 /* In the chunk view the right rail is taken: the variable panel, the camera
    presets and the spec inspector all sit at right: 20px. The dock moves to the
    left of them rather than on top, keeping §5.1 Principle 11's one-rail rule. */

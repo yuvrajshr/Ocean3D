@@ -1,7 +1,8 @@
 # Session handoff — INCOIS 3D Ocean Data Visualization
 
 **SIH 2026 · Problem statement 26067 · MoES / INCOIS · Disaster Management theme**
-Written 2026-09-01. Updated the same day, at the end of the globe session.
+Written 2026-09-01. Last updated 2026-09-10, after the chunk view and the build stamp both
+landed on `main`.
 
 > Read this first, then `context.md` (problem statement, data model, locked design system)
 > and `CLAUDE.md` (frontend working rules). Those two are canon; this file is the status
@@ -11,11 +12,19 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ## 0. Start here — state as of 2026-09-10
 
-**`main` carries the chunk view.** `chunk-view` landed on 2026-09-10 through
-`integrate/chunk-view`, together with the retheme that folded it into Theme C (§1g).
-It fast-forwarded: `main` had not moved since the branch forked. Before it,
-`designTest` and `feature/ai-assistant` were merged on 2026-09-08 via
-`integrate/theme-c-assistant`; `sidePannel` and `globe-enhancements` were already in.
+**`main` carries the chunk view and the build stamp.** `chunk-view` landed on 2026-09-10
+through `integrate/chunk-view`, together with the retheme that folded it into Theme C (§1g).
+It did **not** fast-forward, whatever an earlier draft of this paragraph said: `main` had
+moved on the same day with the build stamp (§1h), so `main` was merged into the branch first,
+three conflicts were resolved (`context.md`, `next_session.md`, `App.tsx` — the last one a
+real design decision, §1g trap 21), and the result landed on `main` as a merge commit.
+Before that, `designTest` and `feature/ai-assistant` were merged on 2026-09-08 via
+`integrate/theme-c-assistant`; `sidePannel` and `globe-enhancements` were already in, and
+`designTest` was deleted from `origin` on 2026-09-10 with nothing left on it that `main` lacked.
+
+**If someone says a fix "didn't take", ask for the build stamp first** (bottom-right of the
+viewport; above the timeline in the chunk view). If it isn't the commit you pushed, they are
+running a stale server, not hitting a bug. §1h has the whole story.
 
 **The rail is now Map / Globe / Chunk. The water column is gone from navigation.** Its code
 is intact and unreachable — `handleView("column")` no longer exists as a path and
@@ -31,8 +40,9 @@ reach the *console's* 3D viewport: `designTest` touched no file in `frontend/src
 for the console. The **chunk view** is now Theme C throughout (§1g), so it is no longer part
 of that problem.
 
-Suite green as of 2026-09-10, all run rather than quoted: **65/65 backend** (live upstreams,
-~31 s), **31/31 frontend**, typecheck clean, build clean, round trip clean.
+Suite green as of 2026-09-10 on the merged tree, all run rather than quoted: **67/67
+backend** (live upstreams), **52/52 frontend**, typecheck clean, build clean, and a
+Map → Globe → Chunk → Map round trip with zero console errors.
 
 **Run it:** `npm run dev` from the repo root starts both. `npm install` and
 `pip install -r requirements.txt` first if pulling fresh — `@fontsource/inter` is new, and
@@ -293,10 +303,10 @@ the assistant then conflicted in four files (`context.md`, `next_session.md`, `A
    float markers draw `bioluminescence` as `#4FE8C4` while the chrome draws it as `#10B981`,
    in the same frame. Full audit in `context.md` §5.1.4.
 
-5. **Inter is declared and not bundled.** `--rt-font-ui` names Inter first, but there is no
-   `@fontsource/inter` dependency and `main.tsx` imports only IBM Plex Sans and Plex Mono.
-   On a clean demo machine the console renders in Segoe UI. One `npm i` either way — decide
-   before the pitch, not during it.
+5. ~~**Inter is declared and not bundled.**~~ **Resolved 2026-09-10** (§1g): `@fontsource/inter`
+   is a dependency and `main.tsx` imports 400/500/600, so `--rt-font-ui` no longer falls back
+   to Segoe UI on a clean machine. Kept here because the symptom — right font on your laptop,
+   wrong font on the demo machine — is worth recognising.
 
 6. **No `focus-visible` rule exists in any of the six new stylesheets.** `assistant.css` was
    rewritten with rings at merge time; `command-pill`, `layers-panel`, `tool-dock`,
@@ -401,9 +411,10 @@ is **untouched**. Only the alignment was asked for.
 
 ## 1g. The chunk view folded into Theme C (2026-09-10)
 
-`chunk-view` was merged through `integrate/chunk-view`. It fast-forwarded — `main` had not
-moved since the branch forked, so there were no conflicts at all. The work on top of it was
-the retheme, decided by the team:
+`chunk-view` was merged through `integrate/chunk-view`. It did not fast-forward: `main` had
+moved the same day with the build stamp (§1h), so `main` was merged into the branch first and
+three files conflicted — see trap 21. The work on top of the branch was the retheme, decided
+by the team:
 
 - **The chunk view now resolves through Theme C.** `--cv-*` survives as an alias layer mapping
   each name to an `--rt-*` token, so `chunk-view.css` keeps its own vocabulary and holds no
@@ -447,6 +458,64 @@ clicking a float marker on the sphere. The chunk view's own `ProfileCard` is a d
 comparison: cast against **HYCOM**, not against the INCOIS analysis. Selecting a float from
 the map's Floats drawer sets state and shows nothing. **Not fixed here — flagged, because it
 is a navigation decision, not a bug to patch silently.**
+
+**21. The build stamp had to move out of the viewport, and moving it exposed a second bug.**
+When `main` was merged in, `<BuildStatus />` arrived mounted inside `.viewport` — which the
+chunk view conceals, so the stale-build warning would have been missing from exactly one
+screen with nothing to say so: lesson 13 again, arriving by merge instead of by design. It now
+lives in `.assistant-layer` beside the Ask dock. That layer is `position: fixed; inset: 0`, and
+measuring it showed the Ask dock had been sitting **40px inside the command bar** in the map
+and globe since this branch moved it there — its `top: 16px` was written against the viewport
+it used to live in. Fixed at the root rather than per element: `App.tsx` measures `.viewport`
+into `--viewport-top` / `--viewport-bottom`, and outside the chunk view the layer takes that
+box. Measured rather than hardcoded, because the command bar and timeline are content-sized
+grid rows. In the chunk view the layer keeps the whole window; the stamp sits above
+`.chunk-time` and the alert in the clear band at the top centre. Verified 12/12 across all
+three views, including the alert forced stale in the chunk view.
+
+## 1h. "I pulled and it still looks old" — the build stamp (2026-09-10)
+
+A teammate on `main`, pulled recently, kept seeing the Ops/Explore toggle removed two days
+earlier. **It was never in the source.** `origin/main` had been clean since `f27d3c2`, every
+active branch was clean, there is no service worker, and `dist/` is gitignored. What was on
+their screen came from a dev server (or bundle, or tab) older than their pull — and nothing
+in the app could say so, so the first two rounds went looking for a code bug.
+
+**Now the page says which build it is.** Bottom-right of the viewport: `build 4e9202d`, or
+`ui … api …` when the two halves differ. When what is running is older than the code on
+disk, a status line top-right says so with both commits and what to run. In the chunk view
+the stamp sits above its timeline and the line moves to the top centre — both now live in
+`.assistant-layer` so the chunk view cannot conceal them (§1g trap 21).
+
+**If someone reports that a fix "didn't take", ask for the stamp first.** If it is not the
+commit you pushed, it is their runtime, and the fix is: stop every dev server, then
+`npm run dev` from the repo root, then reload. That one sentence would have ended this
+investigation in two messages.
+
+What changed and why:
+
+1. **`strictPort: true` in `vite.config.ts`.** The root runner already passed
+   `--strictPort`, but the documented `cd frontend && npm run dev` path did not — so an old
+   server holding 5173 kept answering the open tab while a fresh one hid on 5174, and the
+   pull appeared to change nothing. Now the second server fails loudly instead.
+2. **`__BUILD__`** (a Vite `define`, fixed at server start or `vite build`), **`/api/build`**
+   (the commit the API process started from — separate from `/api/health`, which probes
+   ERDDAP on every call), and **`/__build`** (Vite middleware that runs git live and
+   classifies both halves).
+3. **The stale rule is not "HEAD moved".** Your own commits are already hot-reloaded, so they
+   never warn. Pulls, merges, checkouts, rebases and resets since the checkout last matched
+   the build do. The backend never reloads, so any change under `backend/` counts for it.
+   Docs-only changes warn about nothing. `frontend/src/build/classify.ts`, 21 tests.
+
+Traps:
+
+- **Do not "simplify" the rule to a HEAD comparison.** It would warn on every commit and be
+  ignored within a day, and then it would not be there for the case it exists for.
+- **The check only runs where `/__build` exists** — `vite` and `vite preview`. A static host
+  has no such route, so the alert stays silent there by design; the stamp still renders.
+- `CLAUDE.md` no longer describes Ops/Explore modes. It used to, including a Step 8 checklist
+  item to verify both "render correctly" — which would have led a future session to
+  reintroduce the toggle. Do not add it back.
 
 ## 2. Running it
 
@@ -549,9 +618,12 @@ as `PHAILIN`.
 > ocean signal. `tests/test_ingestion.py::test_bad_qc_float_is_rejected_entirely` fails if it
 > ever produces a profile again. **Do not put it in the pitch.**
 
-This is why QC filtering is a correctness requirement: only flags 1 and 2 are accepted,
-`*_ADJUSTED` values are preferred, and the count of rejected levels is surfaced in Ops mode
-(currently 1,532 for the Phailin window).
+This is why QC filtering is a correctness requirement: only flags 1 and 2 are accepted, and
+`*_ADJUSTED` values are preferred. The count of rejected levels (1,532 for the Phailin window)
+is still computed and returned by `/api/instruments` as `rejected_by_qc` — **but since
+2026-09-08 nothing on screen shows it.** Its only readout was the viewport line removed with
+the Ops/Explore modes (§1e). If the pitch leans on "we show you what QC threw away", that
+number needs a home again first.
 
 ---
 
@@ -708,17 +780,21 @@ order the sort picks — give the one that must win an explicit `renderOrder`.
 ## 7. Verification
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest tests -v     # 52 tests, live data
+cd backend && .venv/Scripts/python -m pytest tests -v     # 67 tests, live data
 cd frontend && npx tsc --noEmit && npm run build          # both clean
 node screenshot.mjs <label>    # full pass: interactions, reduced-motion, mobile
 node shot.mjs <label> --skip   # fast single frame, for iterating on the look
 node shot.mjs <label> --globe        # captures the entry globe
-node shot.mjs <label> --globe-mode  # captures globe mode, reached via the header toggle
+node shot.mjs <label> --chunk       # the chunk view
+# --globe-mode is DEAD: it waits on .mode-toggle__button, deleted by Theme C (§1g trap 19)
 ```
 
-All passing as of 2026-09-08: **52/52 backend, 28/28 frontend**, clean typecheck and build,
-zero console errors, no horizontal overflow at 414 px, `prefers-reduced-motion` suppresses
-the entry. (This line read "11/11 backend" for several sessions after the count had grown.)
+All passing as of 2026-09-10: **67/67 backend, 52/52 frontend**, clean typecheck and build,
+zero console errors across Map → Globe → Chunk → Map, `prefers-reduced-motion` suppresses the
+entry. **Not passing: 414px still overflows horizontally** — `CommandPill` reaches 625px there (measured on the merged build, 2026-09-10)
+(§1d trap 7). An earlier version of this line claimed no overflow, which stopped being true at
+the Theme C merge. (It also read "11/11 backend" for several sessions after the count had
+grown — this line has a history of going stale, so re-run before quoting it.)
 
 The globe session additionally verified, with a throwaway puppeteer script (not kept — rebuild
 it if you touch view switching): panels unmount and remount across the toggle; the timeline
@@ -779,8 +855,8 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 ## 9. Working agreement, in short
 
 - `CLAUDE.md` and `context.md` must never drift apart. **Any new colour, shadow, type role or
-  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to thirteen
-  principles and §10 to ~75 decision-log entries, including several that explicitly *reverse*
+  structural pattern goes into `context.md` §5.1 *before* it ships.** §5.1 now runs to fourteen
+  principles and §10 to 109 decision-log entries, including several that explicitly *reverse*
   earlier ones. Keep that up — and when reversing a decision, say so and say what survives,
   rather than quietly editing the old entry.
 - Chrome uses the six tokens; data uses cmocean colormaps. They never mix.
@@ -796,10 +872,12 @@ Links tables from the PS PDF, which the text extraction dropped. Needed before t
 
 See §0 for the ordered list — this is the longer tail.
 
-1. **Finish the two assistant checks** (§0 item 0) and **decide Google Search billing**
-   (§0 item 1). Both are minutes, and the second unlocks live answers for the demo.
-2. **Land `feature/ai-assistant`** before anyone else touches the frontend — it sits on
-   four of the five known collision files.
+1. **Finish the last assistant check** (§0 item 0 — the general-knowledge path) and **decide
+   Google Search billing** (§0 item 1). Both are minutes, and the second unlocks live answers
+   for the demo.
+2. ~~**Land `feature/ai-assistant`**~~ — done 2026-09-08. The collision-file warning that went
+   with it still applies to anyone merging into `App.tsx`: every merge this project has made
+   through it has needed a real decision, not just a resolution (§1d, §1g trap 21).
 3. **Look at it on a real GPU** and decide whether the visual work is done. Still the one
    thing no session has been able to do. The globe especially — it was tuned against a
    software renderer at 2–4 fps.

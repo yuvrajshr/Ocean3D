@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   api,
@@ -22,6 +22,7 @@ import { CommandPill } from "./components/CommandPill";
 import { snapTile, type Bbox } from "./viz/chunk/loader";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { AssistantDock } from "./assistant/AssistantDock";
+import { BuildStatus } from "./build/BuildStatus";
 import {
   applyLayerAction,
   type AppSnapshot,
@@ -59,6 +60,8 @@ const PLAY_INTERVAL_MS = 1100;
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const assistantLayerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<OceanScene | null>(null);
 
   const [webglReady] = useState(isWebGL2Available);
@@ -850,6 +853,31 @@ export default function App() {
     return (v?.colormap as ColormapName) || (fieldMeta?.colormap as ColormapName) || "thermal";
   }, [variables, variableKey, fieldMeta]);
 
+  // The assistant layer is fixed to the window so it survives the chunk view,
+  // which conceals `.console`. But in the map and globe everything in it — the
+  // Ask dock, its panel, the build stamp — is placed as if it were inside the
+  // viewport, and with `inset: 0` the dock sat 40px into the command bar. So
+  // the layer takes the viewport's box. Measured rather than written down,
+  // because the command bar and the timeline are both content-sized rows.
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const layer = assistantLayerRef.current;
+    if (!viewport || !layer) return;
+    const sync = () => {
+      const box = viewport.getBoundingClientRect();
+      layer.style.setProperty("--viewport-top", `${Math.round(box.top)}px`);
+      layer.style.setProperty("--viewport-bottom", `${Math.round(window.innerHeight - box.bottom)}px`);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(viewport);
+    window.addEventListener("resize", sync);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, [view]);
+
   return (
     <div className={`console${view === "chunk" ? " console--concealed" : ""}`}>
       <CommandPill
@@ -868,7 +896,7 @@ export default function App() {
       <div
         className={`console__main${view === "globe" ? " console__main--globe" : ""}`}
       >
-        <div className="viewport">
+        <div className="viewport" ref={viewportRef}>
           {/* The layer panel is shared: it drives the 3D column's single field and
               the map's whole stack. Not shown on the globe, which has no layers. */}
           {view === "column" || view === "map" ? (
@@ -1057,7 +1085,15 @@ export default function App() {
           absent from the screen, which is exactly the failure AssistantDock's
           own header was written about. Out here it is reachable in all three
           views, which is what "ask anywhere" has to mean. */}
-      <div className={`assistant-layer${view === "chunk" ? " assistant-layer--chunk" : ""}`}>
+      <div
+        ref={assistantLayerRef}
+        className={`assistant-layer${view === "chunk" ? " assistant-layer--chunk" : ""}`}
+      >
+        {/* Here rather than in the viewport for the same reason as the Ask
+            dock: a stale-build warning that vanishes in the chunk view would
+            be absent from exactly one screen, with no sign it was missing. */}
+        <BuildStatus />
+
         <AssistantDock
           open={assistantOpen}
           onToggle={() => setAssistantOpen((open) => !open)}

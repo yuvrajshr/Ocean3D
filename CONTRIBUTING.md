@@ -48,6 +48,11 @@ a half-running stack renders a blank page that reads as a bug in the 3D rather
 than as a dead server, which is the most expensive false trail this repo has
 recorded (`next_session.md` §2).
 
+**The page names its build** in the viewport's bottom-right corner, and warns when the
+code on disk has moved past what is running. If a fix you pulled "didn't take", check that
+stamp before anything else — a stale server looks exactly like a bug. Either start path now
+refuses to run a second server on a busy port rather than drifting to 5174.
+
 Starting them separately still works, backend first, because the browser cannot
 reach ERDDAP directly:
 

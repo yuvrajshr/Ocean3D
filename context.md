@@ -409,6 +409,37 @@ only.
     knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
     closes when dismissed, and the viewport is never obscured while it is shut.
 
+14. **The page states which build it is, and says when that is out of date.** *(Added
+    2026-09-08.)* A deleted control stayed on a teammate's screen for two days after it left
+    `main`, because their dev server predated their pull — and nothing on screen could tell a
+    stale runtime from a bug, so the first diagnosis looked for a defect in code that was
+    already fixed. Two elements, one job each:
+
+    **The stamp** is a faint IBM Plex Mono readout in the viewport's bottom-right corner, the
+    mirror of the map's pan/zoom readout on the left: `build 4e9202d`. It splits into
+    `ui …` and `api …` only when the two differ, because then the split *is* the diagnosis.
+    A commit id is a literal readout, so it takes mono for the same reason a platform id does.
+    *(Amended 2026-09-10.)* Both elements live in `.assistant-layer`, not the viewport, so the
+    chunk view — which conceals `.console` — cannot hide them; there the stamp sits above
+    `.chunk-time` and the alert takes the clear band at the top centre.
+
+    **The alert** appears only when what is running is older than the code on disk. It is a
+    status line in the right-hand system corner — hairline border, a 3px `advisory` stripe,
+    both commits in mono and git's own verb for what happened — and it states the action:
+    *"Stop the dev server, run `npm run dev` from the repo root, then reload."* It is
+    deliberately **not** the SaaS "new version available — Refresh" toast: there is no
+    Refresh button, because reloading cannot fix a stale server; and it does not hide on a
+    timer, because staleness does not resolve itself. It is dismissible per exact situation,
+    so a newer pull brings it back.
+
+    **"HEAD moved" is not the test**, and getting this wrong would make the alert useless.
+    The dev server hot-reloads, so your own commits leave the page current; warning on them
+    would fire all day and be ignored. It is stale when files changed *underneath* it — a
+    pull, merge, checkout, rebase or reset, i.e. the reflog entries that are not commits —
+    since the checkout last matched the build. The backend never reloads, so for it any
+    change under `backend/` counts. Both are scoped by path; a docs-only pull warns about
+    nothing. The decision is `frontend/src/build/classify.ts`, pure and tested.
+
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
 refracted through the surface; caustics on the seafloor *only in shallow water, faded out by
@@ -513,7 +544,10 @@ The four changed hues are Tailwind's `sky-400`, `emerald-500`, `amber-500` and `
 §5.2 checks this palette against generic defaults; that check has not been re-run against
 these values, and should be before the pitch.
 
-**The UI font is declared as Inter and is not bundled.** `--rt-font-ui` names
+**~~The UI font is declared as Inter and is not bundled.~~ Resolved 2026-09-10:**
+`@fontsource/inter` is now a dependency and `main.tsx` imports it, so the finding below no
+longer holds. Kept as written because the failure — correct on the author's machine, wrong on
+the demo machine — is the useful part. `--rt-font-ui` names
 `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`, but there is no
 `@fontsource/inter` dependency and no import — `main.tsx` still imports IBM Plex Sans and
 Plex Mono only. Inter therefore resolves only on a machine that already has it installed; on
@@ -532,7 +566,9 @@ documentation.
 `CLAUDE.md`'s quality floor repeats it. `assistant.css` was rewritten with rings in the Theme
 C accent at merge time; the other six need the same pass.
 
-**`CommandPill` overflows a 414px viewport by 308px.** Measured at merge time: every
+**`CommandPill` overflows a 414px viewport by 308px** *(211px as of 2026-09-10: the
+Ops/Explore toggle is gone and the rail changed, measured at 625px on the merged build — still
+overflowing).* Measured at merge time: every
 element past the right edge is `command-pill__*` — the mode toggle, the points button and the
 view segmented control, which sit at a fixed width with no responsive treatment. §5.4 asks for
 "a single-column layout on mobile/tablet for the Explore/outreach audience" and
@@ -653,7 +689,7 @@ Checked against common AI-generated tells before locking this in:
   `advisory` amber and an icon/label, never color alone).
 - Responsive down to a single-column layout on mobile/tablet. There is no denser variant to
   except: one interface serves both audiences (Principle 4), so the narrow layout is simply
-  the layout. **Not currently true — `CommandPill` overflows 414px by 308px (§5.1.4).**
+  the layout. **Not currently true — `CommandPill` overflows 414px by 211px (§5.1.4).**
 
 ### 5.5 Standing external references — design and data
 
@@ -1482,6 +1518,35 @@ each — component, decision, one-line reason, date.)*
   choice, and a black seafloor that §6 lesson 2 specifically warns reads as a silhouette. The
   layer now writes into `geometry.attributes.color.array`. Worth remembering generally: only
   the skirt and the isosurface in that file ever did it correctly._
+- _2026-09-10 — **The Ops/Explore toggle "coming back" was a stale runtime, not a regression.**
+  A teammate on `main`, pulled recently, still saw the control removed in `9c16e34`. Verified
+  before touching anything: the source on `origin/main` has had no toggle since `f27d3c2`,
+  every active branch (`globe-enhancements`, `chunk-view`) is based on `28ff21d` and clean,
+  nothing is cached by a service worker, and `dist/` is gitignored. So what was on screen came
+  from a process or bundle older than the pull. **The repo made that invisible and, in one
+  place, caused it:** nothing named the build on screen, and `vite.config.ts` had `port: 5173`
+  with no `strictPort`, so the documented `cd frontend && npm run dev` path silently moved a
+  fresh server to 5174 while the old one kept answering the tab everyone had open. Fixed by
+  `strictPort: true` and §5.1 Principle 14. The lesson generalises past this bug: **when
+  someone says "it still does X" after a fix, ask for the build stamp before reopening the
+  code.**_
+- _2026-09-10 — Build identity lives in three places, each for a reason. `__BUILD__` is a Vite
+  `define` fixed at dev-server start or `vite build`, so it is exactly what the bundle is.
+  `GET /api/build` reports the commit the API process *started* from and is deliberately not
+  `/api/health`, which probes ERDDAP on every call and so cannot be polled. `GET /__build` is a
+  Vite middleware (dev and `vite preview`) that runs git live and classifies both halves; a
+  static host has no such route, so the check goes silent there and the stamp still renders.
+  Everything degrades to "unknown" rather than a guess when git is absent._
+- _2026-09-10 — **The stale rule is reflog-based and path-scoped, and a first version was
+  wrong.** It initially counted every non-commit HEAD move since the server started, so
+  looking at another branch and coming back left the warning up until a restart. The reflog
+  now carries the commit HEAD pointed at after each move, and only operations since the
+  checkout last matched the build count. Order is taken from git's output rather than a sort,
+  because entries routinely share a second. Verified end to end against a live server:
+  alert on a pull, silent on an own commit, silent after returning to the build, 13/13._
+- _2026-09-10 — `origin/designTest` deleted, on the team's instruction. It had zero commits not
+  already in `main` (its only unique work, Theme C, was merged on 2026-09-08) and was 19
+  commits behind, so it was the one remaining place the old toggle still existed._
 
 ---
 
@@ -1625,6 +1690,27 @@ chosen client-side by the same snap a click uses, so it cannot open a chunk a re
   typography, were removed in the same change. **§5.1's locked UI face is amended
   accordingly** — see the note there; Plex Mono for literal readouts is unchanged, and that is
   the role §5.1 actually cares about._
+
+- _2026-09-10 — **The chunk view and the build stamp landed on `main` together, and the handoff
+  had described a merge that could no longer happen.** `chunk-view`'s `next_session.md` said
+  "`main` carries the chunk view … it fast-forwarded" before either was true, and the build
+  stamp moved `main` the same day, which made the fast-forward impossible. So `main` was merged
+  into `integrate/chunk-view` first — `context.md` and `next_session.md` were append-both
+  conflicts, two sections both numbered §1g became §1g and §1h — and the result landed on
+  `main` as a merge commit. **A handoff that states a merge before it happens is a claim about
+  the future; write it after, or the next session inherits a fiction.**_
+- _2026-09-10 — **The build stamp moved into `.assistant-layer`, and that exposed a layout bug
+  already on `chunk-view`.** Merged as-is, `<BuildStatus />` sat inside `.viewport`, which the
+  chunk view conceals — the §6 lesson-13 failure again, arriving by merge. In the always-visible
+  layer beside the Ask dock it survives every view. That layer is `position: fixed; inset: 0`,
+  and measuring it showed the dock sitting 40px inside the command bar in the map and globe,
+  because its `top: 16px` was written against the viewport it had lived in. Fixed at the root:
+  `App.tsx` measures `.viewport` into `--viewport-top` / `--viewport-bottom` and the layer takes
+  that box outside the chunk view. Measured, not hardcoded, because the command bar and the
+  timeline are content-sized rows. Verified 12/12 in all three views, including the alert
+  forced stale in the chunk view, with zero console errors._
+
+---
 
 ## 11. Open questions for the team
 
