@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from .. import build_info
 from ..config import HAZARD_VARIABLES, PHAILIN, SCENARIOS, VALUE_ADDED_TIME_RANGE, VARIABLES
 from ..ingestion import erddap_grid
 from ..models.schemas import ScenarioInfo, VariableInfo
@@ -75,6 +76,14 @@ def list_scenarios() -> list[ScenarioInfo]:
             )
         )
     return out
+
+
+@router.get("/build")
+def build() -> dict[str, object]:
+    """The commit this API process started from. Deliberately separate from
+    /health, which probes the upstream on every call — this is polled, so it
+    must cost nothing."""
+    return build_info.identity()
 
 
 @router.get("/health")

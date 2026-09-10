@@ -1,0 +1,109 @@
+/**
+ * Build identity — context.md §5.1 Principle 14.
+ *
+ * Theme C tokens only. The commit ids are literal readouts, so they are IBM
+ * Plex Mono wherever they appear (§5.1), the same rule a platform id follows.
+ * The alert's stripe is `advisory`, and it is never the only signal: the
+ * sentence says what happened, and the stamp says "stale" in words.
+ */
+
+/* ── The stamp ────────────────────────────────────────────────────────────
+   Bottom-right of the viewport, mirroring the map's pan/zoom readout on the
+   left. Beneath every panel in z-order: it is the least important thing on
+   the screen until someone asks which build they are on. */
+.build-stamp {
+  position: absolute;
+  right: var(--rt-space-4, 16px);
+  bottom: var(--rt-space-2, 8px);
+  z-index: 4;
+  margin: 0;
+  display: flex;
+  gap: var(--rt-space-2, 8px);
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+  font-size: var(--rt-text-xs, 9.5px);
+  color: var(--rt-ink-faint, #606370);
+  pointer-events: auto;
+}
+
+/* One click selects the whole id, so it can be pasted into a message as-is. */
+.build-sha {
+  user-select: all;
+}
+
+.build-stamp__stale {
+  color: rgb(var(--advisory-rgb, 245 158 11));
+}
+
+/* ── The alert ────────────────────────────────────────────────────────────
+   A status line in the right-hand system corner, beside the Ask dock and
+   under the provenance chip. Above the map, below the assistant panel. */
+.build-alert {
+  position: absolute;
+  top: var(--rt-space-4, 16px);
+  right: 84px;
+  z-index: 30;
+  width: min(460px, calc(100% - 100px));
+  display: flex;
+  align-items: flex-start;
+  gap: var(--rt-space-4, 16px);
+  padding: var(--rt-space-3, 12px) var(--rt-space-4, 16px);
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-left: 3px solid rgb(var(--advisory-rgb, 245 158 11));
+  border-radius: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-family: var(--rt-font-ui, "Inter", sans-serif);
+}
+
+.build-alert__text {
+  margin: 0;
+  flex: 1;
+  font-size: var(--rt-text-base, 14px);
+  line-height: 1.5;
+  color: var(--rt-ink, #f4efe6);
+}
+
+.build-alert__text .build-sha,
+.build-alert__text kbd {
+  font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
+  font-size: 0.92em;
+  /* A command or a commit id broken across lines stops being copyable as one. */
+  white-space: nowrap;
+}
+
+.build-alert__text kbd {
+  padding: 0 var(--rt-space-1, 4px);
+  background: var(--rt-inset, #111215);
+  border: 1px solid var(--rt-border-color, #2e303a);
+}
+
+.build-alert__dismiss {
+  flex: none;
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0;
+  background: transparent;
+  color: var(--rt-ink-muted, #9698a3);
+  padding: var(--rt-space-1, 4px) var(--rt-space-2, 8px);
+  font-family: inherit;
+  font-size: var(--rt-text-sm, 10.7px);
+  cursor: pointer;
+}
+.build-alert__dismiss:hover {
+  background: var(--rt-surface-hover, #262830);
+  color: var(--rt-ink, #f4efe6);
+}
+.build-alert__dismiss:active {
+  background: var(--rt-surface-active, #2f313c);
+}
+.build-alert__dismiss:focus-visible {
+  outline: 2px solid var(--rt-copper, #e59858);
+  outline-offset: -2px;
+}
+
+@media (max-width: 900px) {
+  .build-alert {
+    left: var(--rt-space-4, 16px);
+    right: var(--rt-space-4, 16px);
+    width: auto;
+  }
+}

@@ -398,6 +398,34 @@ only.
     knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
     closes when dismissed, and the viewport is never obscured while it is shut.
 
+14. **The page states which build it is, and says when that is out of date.** *(Added
+    2026-09-08.)* A deleted control stayed on a teammate's screen for two days after it left
+    `main`, because their dev server predated their pull — and nothing on screen could tell a
+    stale runtime from a bug, so the first diagnosis looked for a defect in code that was
+    already fixed. Two elements, one job each:
+
+    **The stamp** is a faint IBM Plex Mono readout in the viewport's bottom-right corner, the
+    mirror of the map's pan/zoom readout on the left: `build 4e9202d`. It splits into
+    `ui …` and `api …` only when the two differ, because then the split *is* the diagnosis.
+    A commit id is a literal readout, so it takes mono for the same reason a platform id does.
+
+    **The alert** appears only when what is running is older than the code on disk. It is a
+    status line in the right-hand system corner — hairline border, a 3px `advisory` stripe,
+    both commits in mono and git's own verb for what happened — and it states the action:
+    *"Stop the dev server, run `npm run dev` from the repo root, then reload."* It is
+    deliberately **not** the SaaS "new version available — Refresh" toast: there is no
+    Refresh button, because reloading cannot fix a stale server; and it does not hide on a
+    timer, because staleness does not resolve itself. It is dismissible per exact situation,
+    so a newer pull brings it back.
+
+    **"HEAD moved" is not the test**, and getting this wrong would make the alert useless.
+    The dev server hot-reloads, so your own commits leave the page current; warning on them
+    would fire all day and be ignored. It is stale when files changed *underneath* it — a
+    pull, merge, checkout, rebase or reset, i.e. the reflog entries that are not commits —
+    since the checkout last matched the build. The backend never reloads, so for it any
+    change under `backend/` counts. Both are scoped by path; a docs-only pull warns about
+    nothing. The decision is `frontend/src/build/classify.ts`, pure and tested.
+
 **Cinematic effects are anchored, and never touch the data.** The viewport is allowed to be
 beautiful, but every effect in it corresponds to a real phenomenon: crepuscular light shafts
 refracted through the surface; caustics on the seafloor *only in shallow water, faded out by
@@ -1367,6 +1395,36 @@ each — component, decision, one-line reason, date.)*
   2026-09-01: the fill is the data's own no-data mask and may never be invented); only the
   coastline and border strokes now draw unconditionally. They encode nothing, so they cannot
   claim coverage the data lacks — the same argument §5.1 Principle 7 makes for the graticule._
+
+- _2026-09-10 — **The Ops/Explore toggle "coming back" was a stale runtime, not a regression.**
+  A teammate on `main`, pulled recently, still saw the control removed in `9c16e34`. Verified
+  before touching anything: the source on `origin/main` has had no toggle since `f27d3c2`,
+  every active branch (`globe-enhancements`, `chunk-view`) is based on `28ff21d` and clean,
+  nothing is cached by a service worker, and `dist/` is gitignored. So what was on screen came
+  from a process or bundle older than the pull. **The repo made that invisible and, in one
+  place, caused it:** nothing named the build on screen, and `vite.config.ts` had `port: 5173`
+  with no `strictPort`, so the documented `cd frontend && npm run dev` path silently moved a
+  fresh server to 5174 while the old one kept answering the tab everyone had open. Fixed by
+  `strictPort: true` and §5.1 Principle 14. The lesson generalises past this bug: **when
+  someone says "it still does X" after a fix, ask for the build stamp before reopening the
+  code.**_
+- _2026-09-10 — Build identity lives in three places, each for a reason. `__BUILD__` is a Vite
+  `define` fixed at dev-server start or `vite build`, so it is exactly what the bundle is.
+  `GET /api/build` reports the commit the API process *started* from and is deliberately not
+  `/api/health`, which probes ERDDAP on every call and so cannot be polled. `GET /__build` is a
+  Vite middleware (dev and `vite preview`) that runs git live and classifies both halves; a
+  static host has no such route, so the check goes silent there and the stamp still renders.
+  Everything degrades to "unknown" rather than a guess when git is absent._
+- _2026-09-10 — **The stale rule is reflog-based and path-scoped, and a first version was
+  wrong.** It initially counted every non-commit HEAD move since the server started, so
+  looking at another branch and coming back left the warning up until a restart. The reflog
+  now carries the commit HEAD pointed at after each move, and only operations since the
+  checkout last matched the build count. Order is taken from git's output rather than a sort,
+  because entries routinely share a second. Verified end to end against a live server:
+  alert on a pull, silent on an own commit, silent after returning to the build, 13/13._
+- _2026-09-10 — `origin/designTest` deleted, on the team's instruction. It had zero commits not
+  already in `main` (its only unique work, Theme C, was merged on 2026-09-08) and was 19
+  commits behind, so it was the one remaining place the old toggle still existed._
 
 ---
 
