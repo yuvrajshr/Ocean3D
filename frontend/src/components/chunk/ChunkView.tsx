@@ -481,12 +481,6 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
               <div className="chunk-crumb__mark">INCOIS</div>
               <div className="chunk-crumb__view">Chunk view</div>
             </div>
-            <div className="chunk-crumb__path">
-              <div className="chunk-crumb__parent">Globe</div>
-              <div className="chunk-crumb__sep">/</div>
-              <div className="chunk-crumb__location">{regionName}</div>
-            </div>
-            <div className="chunk-crumb__coords">{extent}</div>
           </div>
         </div>
 
@@ -511,9 +505,14 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           })}
         </div>
 
-
-
-
+        <div className="chunk-region">
+          <div className="chunk-region__path">
+            <span className="chunk-region__parent">Globe</span>
+            <span className="chunk-region__sep">/</span>
+            <span className="chunk-region__name">{regionName}</span>
+          </div>
+          <div className="chunk-region__coords">{extent}</div>
+        </div>
 
         <div className="chunk-fps">{fps} FPS</div>
       </div>

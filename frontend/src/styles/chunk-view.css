@@ -607,19 +607,44 @@
   color: var(--cv-accent);
 }
 
-.chunk-locator {
-  padding: 10px;
+.chunk-region {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 7px;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 2px 2px 0;
 }
 
-.chunk-locator__label {
+.chunk-region__path {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chunk-region__parent {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cv-ink-ghost);
+}
+
+.chunk-region__sep {
+  font-size: 10px;
+  color: var(--cv-ink-ghost);
+}
+
+.chunk-region__name {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--cv-ink-bright);
+}
+
+.chunk-region__coords {
   font-family: var(--cv-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
-  color: var(--cv-ink-label);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--cv-ink-faint);
 }
 
 .chunk-fps {
