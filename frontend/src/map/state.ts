@@ -94,6 +94,8 @@ export type MapAction =
   | { type: "time/step"; steps: number }
   | { type: "time/play"; playing: boolean }
   | { type: "viewport/set"; viewport: Viewport }
+  | { type: "viewport/zoom"; factor: number }
+  | { type: "viewport/reset" }
   | { type: "pin/set"; point: GeoPoint | null }
   | { type: "area/begin"; corner: GeoPoint }
   | { type: "area/update"; corner: GeoPoint }
@@ -315,15 +317,18 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
       }
       const stillActive = layers.some((l) => l.id === state.activeLayerId);
       const topVisible = layers.find((l) => l.visible) ?? layers[0]!;
+      const topInfo = datasetOf({ ...state, layers } as MapState, topVisible);
+      let nextTime = state.time;
+      if (!nextTime || (topInfo && nextTime > `${topInfo.time_end}T00:00:00Z`)) {
+        nextTime = `${topInfo?.time_end ?? ""}T00:00:00Z`;
+      } else if (topInfo && nextTime < `${topInfo.time_start}T00:00:00Z`) {
+        nextTime = `${topInfo?.time_start ?? ""}T00:00:00Z`;
+      }
       return {
         ...state,
         layers,
         activeLayerId: stillActive ? state.activeLayerId : topVisible.id,
-        // The clock has to land inside the new top layer's coverage, or the
-        // map asks for a date the product does not have and draws nothing.
-        time: state.time || `${
-          datasetOf({ ...state, layers } as MapState, topVisible)?.time_end ?? ""
-        }T00:00:00Z`,
+        time: nextTime,
       };
     }
 
@@ -347,6 +352,17 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
 
     case "viewport/set":
       return { ...state, viewport: action.viewport };
+
+    case "viewport/zoom": {
+      const zoom = Math.max(1, Math.min(5000, state.viewport.zoom * action.factor));
+      return { ...state, viewport: { ...state.viewport, zoom } };
+    }
+
+    case "viewport/reset":
+      return {
+        ...state,
+        viewport: { lonCentre: 0, latCentre: 0, zoom: 3 },
+      };
 
     case "pin/set":
       return { ...state, pin: action.point };

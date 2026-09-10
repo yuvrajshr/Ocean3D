@@ -111,7 +111,7 @@ function drawGrid(
   ctx.globalAlpha = 1;
 }
 
-export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: Props) {
+export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _onOpenColumn }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const basemapRef = useRef<HTMLCanvasElement>(null);
   const dataRef = useRef<HTMLCanvasElement>(null);
@@ -480,20 +480,6 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: P
     return v === null ? null : { value: v, units: r.meta.units, label: r.meta.label };
   })();
 
-  const areaSpan = state.area
-    ? {
-        lat: Math.abs(state.area.latRange[1] - state.area.latRange[0]),
-        lon: Math.abs(state.area.lonRange[1] - state.area.lonRange[0]),
-      }
-    : null;
-
-  const areaInsideIncois =
-    state.area !== null &&
-    state.area.latRange[0] < INCOIS_EXTENT.latRange[1] &&
-    state.area.latRange[1] > INCOIS_EXTENT.latRange[0] &&
-    state.area.lonRange[0] < INCOIS_EXTENT.lonRange[1] &&
-    state.area.lonRange[1] > INCOIS_EXTENT.lonRange[0];
-
   return (
     <div
       ref={hostRef}
@@ -611,31 +597,6 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn }: P
           {hoverValue ? ` · ${hoverValue.label} ${hoverValue.value.toFixed(2)} ${hoverValue.units}` : ""}
         </span>
       </div>
-
-      {state.area && !state.area.dragging && areaSpan ? (
-        <div className="map__area-action">
-          <p className="readout">
-            {areaSpan.lat.toFixed(1)}° × {areaSpan.lon.toFixed(1)}°
-          </p>
-          {areaInsideIncois ? (
-            <button
-              type="button"
-              onClick={() =>
-                onOpenColumn({ latRange: state.area!.latRange, lonRange: state.area!.lonRange })
-              }
-            >
-              Open in 3D
-            </button>
-          ) : (
-            <p className="map__area-warn">
-              No INCOIS analysis here — the water column covers 30.5–119.5°E, 29.5°S–29.5°N.
-            </p>
-          )}
-          <button type="button" onClick={() => dispatch({ type: "area/clear" })}>
-            Clear
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }
