@@ -529,6 +529,21 @@
   color: var(--cv-ink-mono);
 }
 
+.chunk-crumb__location {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--cv-ink-bright);
+  font-weight: 500;
+}
+
+.chunk-crumb__coords {
+  font-family: var(--cv-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: var(--cv-ink-faint);
+  margin-top: 1px;
+}
+
 .chunk-res {
   display: flex;
   align-items: center;

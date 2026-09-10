@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { ApiError, api } from "../../api/client";
 import { ChunkEngine, type HoverReadout } from "../../viz/chunk/engine";
 import { ChunkStore, dailyWindow, type Bbox } from "../../viz/chunk/loader";
+import { resolveRegionName } from "../../viz/chunk/oceanRegions";
 import { VARIABLES, dateLabel, type VariableKey } from "../../viz/chunk/model";
 import { buildProfile } from "../../viz/chunk/profile";
 import type { ChunkPlatform, ChunkSource } from "../../viz/chunk/source";
@@ -450,6 +451,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
   const hist = useMemo(() => source?.histogram() ?? null, [source]);
 
   const extent = `${bbox[1]}°N–${bbox[3]}°N, ${bbox[0]}°E–${bbox[2]}°E`;
+  const regionName = resolveRegionName(bbox);
   const hoverInfo = hover ? VARIABLES[hover.variable] : null;
 
   return (
@@ -482,8 +484,9 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
             <div className="chunk-crumb__path">
               <div className="chunk-crumb__parent">Globe</div>
               <div className="chunk-crumb__sep">/</div>
-              <div className="chunk-crumb__extent">{extent}</div>
+              <div className="chunk-crumb__location">{regionName}</div>
             </div>
+            <div className="chunk-crumb__coords">{extent}</div>
           </div>
         </div>
 
@@ -508,20 +511,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           })}
         </div>
 
-        <div className="chunk-locator chunk-panel chunk-panel--lifted">
-          {/* A wire globe with the analysis extent boxed on it — orientation,
-              not a second map. Nothing is ever painted on this sphere. */}
-          <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
-            <circle cx="48" cy="48" r="40" fill="var(--cv-inset)" stroke="rgba(150,152,163,0.3)" strokeWidth="0.8" />
-            <ellipse cx="48" cy="48" rx="40" ry="13" fill="none" stroke="rgba(150,152,163,0.16)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="36" ry="31" fill="none" stroke="rgba(150,152,163,0.11)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="13" ry="40" fill="none" stroke="rgba(150,152,163,0.16)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="31" ry="40" fill="none" stroke="rgba(150,152,163,0.11)" strokeWidth="0.7" />
-            <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(150,152,163,0.3)" strokeWidth="0.8" />
-            <rect x="54" y="40" width="12" height="12" fill="rgba(229,152,88,0.28)" stroke="var(--cv-accent)" strokeWidth="1.1" />
-          </svg>
-          <div className="chunk-locator__label">BAY OF BENGAL</div>
-        </div>
+
 
 
 
