@@ -252,6 +252,20 @@ export class OceanScene {
    * camera clipping into the sphere. */
   private static readonly FLYTO_CLOSE_DISTANCE = 2.3;
 
+  /**
+   * Idle spin (globe view only): after this many seconds with no drag, coast,
+   * or fly-to in flight, the camera starts drifting in azimuth on its own —
+   * Google Earth's "it's a living planet, not a poster" idle behaviour. Long
+   * enough that pausing to read a tooltip doesn't trigger it.
+   */
+  private static readonly IDLE_SPIN_DELAY = 3.5;
+  /** Seconds for the idle spin to ease from a standstill up to full speed, so
+   * it starts as an imperceptible drift rather than a visible "kick-off". */
+  private static readonly IDLE_SPIN_RAMP = 4;
+  /** Idle spin speed at full ramp, in rad/s — a full rotation takes ~5
+   * minutes. Deliberately far slower than any drag or coast speed. */
+  private static readonly IDLE_SPIN_SPEED = 0.021;
+
   private azimuth = -0.62;
   // BELOW the waterline, by about 86 m, and close enough that the analysis
   // fills ~58% of frame height instead of 25%.
@@ -300,6 +314,13 @@ export class OceanScene {
   private azimuthVelocity = 0;
   private elevationVelocity = 0;
   private coasting = false;
+  // Idle spin: `lastInteractionTime` resets on every pointerdown, drag step, and
+  // wheel event, so `tick()` can measure how long control has truly sat idle.
+  // `idleSpinRampTime` accumulates only while the spin is actively easing in, and
+  // is zeroed the instant an interaction (or coast) preempts it — no ease-out, the
+  // speed is slow enough that a hard stop is imperceptible.
+  private lastInteractionTime = performance.now();
+  private idleSpinRampTime = 0;
   // Click-anywhere fly-to (globe only): the targets `tick()` eases azimuth/
   // elevation toward while `flyToActive`, set by `flyToOutsidePoint()`.
   private azimuthTarget = 0;
@@ -522,6 +543,10 @@ export class OceanScene {
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
     this.flyToActive = false;
+    // Idle spin starts counting from arrival, not from whenever the scene was
+    // constructed (which could already be well past IDLE_SPIN_DELAY).
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
 
     // Fix the Earth's rotation so the study region faces the camera on arrival, then
     // leave it alone — from here the camera orbits and the Earth stays put.
@@ -964,6 +989,8 @@ export class OceanScene {
     this.flyToActive = false;
     this.lastPointer = { x: event.clientX, y: event.clientY };
     this.lastPointerTime = performance.now();
+    this.lastInteractionTime = this.lastPointerTime;
+    this.idleSpinRampTime = 0;
     // Where the gesture started, so onClick can tell a real click (the
     // pointer barely moved) from a drag that happened to release over the
     // same element — the browser fires "click" after both.
@@ -999,6 +1026,7 @@ export class OceanScene {
       const dt = Math.max((now - this.lastPointerTime) / 1000, 1 / 240);
       this.lastPointer = { x: event.clientX, y: event.clientY };
       this.lastPointerTime = now;
+      this.lastInteractionTime = now;
 
       const azimuthStep = -dx * 0.006;
       const elevationStep = dy * 0.005;
@@ -1017,6 +1045,8 @@ export class OceanScene {
 
   private readonly onWheel = (event: WheelEvent) => {
     event.preventDefault();
+    this.lastInteractionTime = performance.now();
+    this.idleSpinRampTime = 0;
     const next = this.distanceTarget + event.deltaY * 0.0016;
     // The globe's near limit has to clear its own radius (1.35) or the camera ends up
     // inside the Earth, looking at the back of the texture.
@@ -1341,6 +1371,32 @@ export class OceanScene {
           this.azimuthVelocity = 0;
           this.elevationVelocity = 0;
         }
+      }
+
+      // Idle spin (globe view only): once nothing else is moving the camera and
+      // control has sat untouched past IDLE_SPIN_DELAY, ease in a very slow
+      // autonomous drift in azimuth. Any interaction resets `lastInteractionTime`
+      // (see onPointerDown/onPointerMove/onWheel) and zeroes the ramp, so the
+      // drift always restarts from a standstill rather than resuming mid-speed.
+      if (
+        this.view === "globe" &&
+        !this.flyToActive &&
+        !this.coasting &&
+        !prefersReducedMotion()
+      ) {
+        const idleFor = (now - this.lastInteractionTime) / 1000;
+        if (idleFor > OceanScene.IDLE_SPIN_DELAY) {
+          this.idleSpinRampTime = Math.min(
+            this.idleSpinRampTime + delta,
+            OceanScene.IDLE_SPIN_RAMP,
+          );
+          const ramp = ease(this.idleSpinRampTime / OceanScene.IDLE_SPIN_RAMP);
+          this.azimuth += OceanScene.IDLE_SPIN_SPEED * ramp * delta;
+        } else {
+          this.idleSpinRampTime = 0;
+        }
+      } else {
+        this.idleSpinRampTime = 0;
       }
     }
 
