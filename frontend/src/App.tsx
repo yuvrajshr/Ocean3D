@@ -21,6 +21,7 @@ import { DepthRuler, DEFAULT_DEPTH_LEVELS } from "./components/DepthRuler";
 import { CommandPill } from "./components/CommandPill";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { AssistantDock } from "./assistant/AssistantDock";
+import { BuildStatus } from "./build/BuildStatus";
 import {
   applyLayerAction,
   type AppSnapshot,
@@ -970,6 +971,8 @@ export default function App() {
             selectedPointId={selected?.platform_id}
             onOpenGraphForPoint={handleOpenGraphForPoint}
           />
+
+          <BuildStatus />
 
           <AssistantDock
             open={assistantOpen}
