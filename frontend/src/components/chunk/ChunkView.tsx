@@ -517,13 +517,10 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           <LayerStackPanel
             spec={spec}
             source={source}
-            platforms={platforms}
             expanded={expanded}
-            selectedPlatform={prof?.id ?? null}
             onToggleExpand={(id) => setExpanded((e) => ({ ...e, [id]: !e[id] }))}
             onCommit={commit}
             onExaggeration={setExaggeration}
-            onOpenProfile={openProfile}
           />
 
           <FieldPanel spec={spec} hist={hist} onCommit={commit} onVariable={setVariable} />

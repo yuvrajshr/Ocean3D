@@ -73,7 +73,6 @@ export const DEFAULT_SPEC: SceneSpec = {
   colorRange: { palette: "thermal", scale: "linear", min: 4, max: 30 },
   time: { steps: 30, index: 12, start: "2026-03-01" },
   layers: [
-    { id: "surface", type: "sea-surface", label: "Sea surface", visible: true, opacity: 0.16, props: {} },
     {
       id: "scalar",
       type: "scalar-field",
@@ -97,14 +96,6 @@ export const DEFAULT_SPEC: SceneSpec = {
       visible: true,
       opacity: 0.85,
       props: { count: 900, speed: 1, trail: 10 },
-    },
-    {
-      id: "instruments",
-      type: "instruments",
-      label: "Instrument traces",
-      visible: true,
-      opacity: 1,
-      props: { platforms: ["ARGO-2903471", "ARGO-2903618", "ARGO-5906204", "SG-INCOIS-04"] },
     },
     { id: "bathy", type: "bathymetry", label: "Bathymetry", visible: true, opacity: 1, props: { palette: "deep" } },
   ],

@@ -20,13 +20,10 @@ interface Props {
   spec: SceneSpec;
   /** The loaded chunk. Its grid, not a constant, bounds every control here. */
   source: ChunkSource;
-  platforms: ChunkPlatform[];
   expanded: Record<string, boolean>;
-  selectedPlatform: string | null;
   onToggleExpand: (id: string) => void;
   onCommit: (rebuildAxis?: boolean) => void;
   onExaggeration: (value: number) => void;
-  onOpenProfile: (id: string) => void;
 }
 
 /** The cut the active axis exposes: which prop it writes, and in what units. */
@@ -79,13 +76,10 @@ function cutFor(axis: CutAxis, props: LayerDesc["props"], source: ChunkSource) {
 export function LayerStackPanel({
   spec,
   source,
-  platforms,
   expanded,
-  selectedPlatform,
   onToggleExpand,
   onCommit,
   onExaggeration,
-  onOpenProfile,
 }: Props) {
   const variable: VariableKey = spec.field.variable;
   const info = VARIABLES[variable];
@@ -395,54 +389,9 @@ export function LayerStackPanel({
                     </div>
                   ) : null}
 
-                  {layer.type === "instruments" ? (
-                    <div className="chunk-platforms">
-                      <div className="chunk-caption">Platforms</div>
-                      {platforms.length === 0 ? (
-                        <div className="chunk-note">
-                          No Argo or glider data in this chunk and window — try a
-                          neighbouring chunk, or widen the dates.
-                        </div>
-                      ) : null}
-                      {platforms.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className={`chunk-platform${
-                            selectedPlatform === p.id ? " chunk-platform--on" : ""
-                          }`}
-                          onClick={() => onOpenProfile(p.id)}
-                        >
-                          <span
-                            className="chunk-platform__dot"
-                            style={{
-                              // Matches the 3D track colours in
-                              // viz/chunk/registry.ts. Both are measured
-                              // platforms, so neither takes the model's amber.
-                              background:
-                                p.type === "argo_float"
-                                  ? "var(--cv-accent)"
-                                  : "var(--current)",
-                            }}
-                          />
-                          <span className="chunk-platform__id">{p.id}</span>
-                          <span className="chunk-platform__kind">
-                            {`${p.fixes.length} cast${p.fixes.length === 1 ? "" : "s"}`}
-                          </span>
-                        </button>
-                      ))}
-                      <div className="chunk-note">
-                        The track joins real surfacings, roughly ten days apart. What a
-                        float does between them is not measured, so it is not drawn.
-                      </div>
-                    </div>
-                  ) : null}
 
-                  {layer.type === "sea-surface" ? (
-                    <div className="chunk-note">
-                      Translucent plane at z = 0 m marking the air–sea interface.
-                    </div>
-                  ) : null}
+
+
                 </div>
               ) : null}
             </div>
