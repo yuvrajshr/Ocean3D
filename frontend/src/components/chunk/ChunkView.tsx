@@ -127,12 +127,12 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
             built
               ? { ...built, variable }
               : {
-                  // Nothing to compare is a real answer, not a failure: a core
-                  // Argo float measures temperature and salinity and nothing else.
-                  unavailable: `${VARIABLES[variable].label} is not measured by ${id}. Argo core floats report temperature and salinity.`,
-                  id,
-                  variable,
-                },
+                // Nothing to compare is a real answer, not a failure: a core
+                // Argo float measures temperature and salinity and nothing else.
+                unavailable: `${VARIABLES[variable].label} is not measured by ${id}. Argo core floats report temperature and salinity.`,
+                id,
+                variable,
+              },
           );
         } catch (error) {
           setProf({
@@ -164,8 +164,8 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
       console.error("chunk view failed to start", err);
       setError(
         "This browser cannot draw the chunk. The view needs WebGL2 — recent Chrome, Edge, " +
-          "Firefox and Safari all have it, and enabling hardware acceleration usually brings " +
-          "it back.",
+        "Firefox and Safari all have it, and enabling hardware acceleration usually brings " +
+        "it back.",
       );
       return;
     }
@@ -486,14 +486,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
             </div>
           </div>
         </div>
-        <div className="chunk-res chunk-panel chunk-panel--strong">
-          <div className="chunk-res__pulse" />
-          <div className="chunk-res__label">
-            {source
-              ? `${source.grid.nx}×${source.grid.ny}×${source.grid.nz}  ·  ${times.length}D`
-              : "—"}
-          </div>
-        </div>
+
       </div>
 
       {/* ---------------------------------------------------- presets + map */}
@@ -530,17 +523,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           <div className="chunk-locator__label">BAY OF BENGAL</div>
         </div>
 
-        {source ? (
-          <div className="chunk-provenance chunk-panel chunk-panel--lifted">
-            <div className="chunk-provenance__provider">{source.meta.provider}</div>
-            <div className="chunk-provenance__detail">
-              {`${source.meta.stride > 1 ? `stride ${source.meta.stride} · ` : ""}` +
-                `${source.grid.nz} level${source.grid.nz === 1 ? "" : "s"} · ` +
-                `${source.meta.source.provenance}`}
-            </div>
-            <div className="chunk-provenance__detail">{source.meta.attribution}</div>
-          </div>
-        ) : null}
+
 
         <div className="chunk-fps">{fps} FPS</div>
       </div>
@@ -636,7 +619,7 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           {error ??
             loadError ??
             `Loading ${VARIABLES[spec.field.variable].label.toLowerCase()} for ` +
-              `${bbox[1]}°N–${bbox[3]}°N, ${bbox[0]}°E–${bbox[2]}°E…`}
+            `${bbox[1]}°N–${bbox[3]}°N, ${bbox[0]}°E–${bbox[2]}°E…`}
         </div>
       ) : loading ? (
         <div className="chunk-loading chunk-loading--inline" role="status">
