@@ -9,24 +9,34 @@ Written 2026-09-01. Updated the same day, at the end of the globe session.
 
 ---
 
-## 0. Start here — state as of 2026-09-08
+## 0. Start here — state as of 2026-09-10
 
-**`main` now carries both outstanding branches.** `designTest` (Ashish's Theme C redesign)
-and `feature/ai-assistant` were merged together on 2026-09-08 via
-`integrate/theme-c-assistant`. `sidePannel` and `globe-enhancements` were already in `main`
-before that and are ahead by nothing — the only branch that was genuinely outstanding was
-`designTest`.
+**`main` carries the chunk view.** `chunk-view` landed on 2026-09-10 through
+`integrate/chunk-view`, together with the retheme that folded it into Theme C (§1g).
+It fast-forwarded: `main` had not moved since the branch forked. Before it,
+`designTest` and `feature/ai-assistant` were merged on 2026-09-08 via
+`integrate/theme-c-assistant`; `sidePannel` and `globe-enhancements` were already in.
 
-**Read `context.md` §5.1.4 before doing any visual work.** The merge audit found that
-Theme C did not reach the 3D viewport: `designTest` touched no file in `frontend/src/viz/`,
-and `viz/scene.ts` hardcodes its own copy of the six tokens. The app therefore renders three
-colour systems at once, and §11's two-palette question is **reopened, not resolved**.
+**The rail is now Map / Globe / Chunk. The water column is gone from navigation.** Its code
+is intact and unreachable — `handleView("column")` no longer exists as a path and
+`if (next === "map" || next === "chunk") return;` means the scene never enters it. Deleting
+`viz/volume.ts`, `lattice.ts`, `terrain.ts`, `ocean.ts` and the column half of `scene.ts` is
+deliberately a **separate** commit, so a regression in the globe has an obvious owner.
+**Consequence worth knowing before the pitch: `/api/compare` is now reachable only from the
+globe — see §1g trap 20.**
 
-Suite green after the merge: **28/28 frontend**, typecheck clean, build clean.
+**Read `context.md` §5.1.4 and §5.1.5 before doing any visual work.** Theme C still does not
+reach the *console's* 3D viewport: `designTest` touched no file in `frontend/src/viz/`, and
+`viz/scene.ts` hardcodes its own copy of the six tokens. §11's palette question is still open
+for the console. The **chunk view** is now Theme C throughout (§1g), so it is no longer part
+of that problem.
 
-**Run it:** backend `uvicorn app.main:app --port 8000`, frontend `npm run dev` → :5173.
-`npm install` and `pip install -r requirements.txt` first if pulling fresh — `lucide-react`
-and `google-genai` are new.
+Suite green as of 2026-09-10, all run rather than quoted: **65/65 backend** (live upstreams,
+~31 s), **31/31 frontend**, typecheck clean, build clean, round trip clean.
+
+**Run it:** `npm run dev` from the repo root starts both. `npm install` and
+`pip install -r requirements.txt` first if pulling fresh — `@fontsource/inter` is new, and
+`@fontsource/archivo` / `@fontsource/jetbrains-mono` were removed.
 
 **The assistant needs a key.** `GEMINI_API_KEY` in `backend/.env` (gitignored; see
 `.env.example`). Without one the dock button states the reason and everything else works.
@@ -389,6 +399,55 @@ Everything else in that feedback document — the zoom buttons, the naming, the 
 overlapping the depth ruler, the doubled `+`, the download-image option, globe idle motion —
 is **untouched**. Only the alignment was asked for.
 
+## 1g. The chunk view folded into Theme C (2026-09-10)
+
+`chunk-view` was merged through `integrate/chunk-view`. It fast-forwarded — `main` had not
+moved since the branch forked, so there were no conflicts at all. The work on top of it was
+the retheme, decided by the team:
+
+- **The chunk view now resolves through Theme C.** `--cv-*` survives as an alias layer mapping
+  each name to an `--rt-*` token, so `chunk-view.css` keeps its own vocabulary and holds no
+  independent values. Glass → flat, 2px/3px radii → `var(--rt-radius)`. `context.md` §5.1.5 is
+  rewritten as a **recorded reversal** of the exception adopted the day before, not a quiet
+  edit — the original reasoning is kept above the reversal.
+- **The water was exempted on purpose.** Depth ramp, light source and sea surface keep the six
+  ocean tokens; cmocean ramps in `viz/chunk/model.ts` were not touched. Theme C is for
+  instruments. **Do not "finish the job" by making the ocean copper.**
+- **Inter is bundled at last**, so `--rt-font-ui` stops falling back to Segoe UI on a clean
+  machine — the §5.1.4 defect, open since the Theme C merge. `@fontsource/archivo` and
+  `@fontsource/jetbrains-mono` were removed with the palette they came for.
+
+### Traps
+
+**17. Copper and `advisory` are the profile chart's two series, and they are near-identical.**
+The team chose copper for "observation" and `advisory` amber for "model" knowingly, after
+being shown that §10 (2026-09-08) already records those two as too close to distinguish —
+it is why the assistant's ungrounded marker kept `advisory` rather than the accent. Confirmed
+on screen: on the rendered chart they read as one colour. **What actually separates them is
+that the model trace is dashed and its legend swatch is striped.** If you ever restyle that
+chart, the dash is load-bearing, not decoration — removing it makes the two curves
+indistinguishable and §5.4 forbids that.
+
+**18. Platform identity is not model-vs-observation.** `registry.ts` had `isArgo ? cyan :
+modelAmber`, which said a glider was a prediction. Both branches are measured platforms:
+Argo is copper, the second type is `current` blue, and `LayerStackPanel`'s dot must keep
+matching the 3D track — they are two renderings of one fact.
+
+**19. `shot.mjs --globe-mode` is dead and has been for a while.** It looks for
+`.mode-toggle__button`, a selector the Theme C redesign deleted, so it hangs rather than
+failing. `--chunk` works, because that flag was written after the redesign. This is §1d trap 8
+still unfixed and now confirmed to affect `shot.mjs` as well as `screenshot.mjs`. Verification
+for this merge used a focused script, the same way the Theme C merge did.
+
+**20. `/api/compare` is now reachable only from the globe.** `ProfilePanel` renders on
+`view !== "map" && selected`, which the branch did not change — but the views are now map,
+globe and chunk, and the chunk view conceals the console. So the INCOIS model-vs-observation
+comparison, the thing `README.md` calls the point of the project, is reachable *only* by
+clicking a float marker on the sphere. The chunk view's own `ProfileCard` is a different
+comparison: cast against **HYCOM**, not against the INCOIS analysis. Selecting a float from
+the map's Floats drawer sets state and shows nothing. **Not fixed here — flagged, because it
+is a navigation decision, not a bug to patch silently.**
+
 ## 2. Running it
 
 **`npm run dev` from the repo root starts both** (added 2026-09-08) — prefixed output,
@@ -406,8 +465,17 @@ cd backend
 
 # Frontend →  http://localhost:5173
 cd frontend
-npm run dev
+npm run dev:vite    # frontend ONLY. `npm run dev` here now starts both (see below).
 ```
+
+> **`npm run dev` inside `frontend/` used to start Vite alone** (2026-09-10). Its script was
+> plain `vite` while the root's was `dev.mjs`, so the same command meant two different
+> things by directory — and README and CLAUDE.md both pointed people at the frontend one.
+> The result was the half-stack this section warns about, announcing itself only as one
+> `http proxy error … ECONNREFUSED 127.0.0.1:8000` per API request. `frontend/`'s `dev` now
+> runs `node ../dev.mjs`; frontend-only is the explicitly named `dev:vite`. **If you ever
+> see `ECONNREFUSED 127.0.0.1:8000`, the backend is not running — that is the whole
+> diagnosis.**
 
 Both were running at the end of the session. Vite proxies `/api` to port 8000.
 

@@ -519,13 +519,13 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
           {/* A wire globe with the analysis extent boxed on it — orientation,
               not a second map. Nothing is ever painted on this sphere. */}
           <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
-            <circle cx="48" cy="48" r="40" fill="rgba(24,52,74,0.5)" stroke="rgba(126,166,196,0.3)" strokeWidth="0.8" />
-            <ellipse cx="48" cy="48" rx="40" ry="13" fill="none" stroke="rgba(126,166,196,0.16)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="36" ry="31" fill="none" stroke="rgba(126,166,196,0.11)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="13" ry="40" fill="none" stroke="rgba(126,166,196,0.16)" strokeWidth="0.7" />
-            <ellipse cx="48" cy="48" rx="31" ry="40" fill="none" stroke="rgba(126,166,196,0.11)" strokeWidth="0.7" />
-            <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(126,166,196,0.3)" strokeWidth="0.8" />
-            <rect x="54" y="40" width="12" height="12" fill="rgba(111,227,240,0.28)" stroke="#6fe3f0" strokeWidth="1.1" />
+            <circle cx="48" cy="48" r="40" fill="var(--cv-inset)" stroke="rgba(150,152,163,0.3)" strokeWidth="0.8" />
+            <ellipse cx="48" cy="48" rx="40" ry="13" fill="none" stroke="rgba(150,152,163,0.16)" strokeWidth="0.7" />
+            <ellipse cx="48" cy="48" rx="36" ry="31" fill="none" stroke="rgba(150,152,163,0.11)" strokeWidth="0.7" />
+            <ellipse cx="48" cy="48" rx="13" ry="40" fill="none" stroke="rgba(150,152,163,0.16)" strokeWidth="0.7" />
+            <ellipse cx="48" cy="48" rx="31" ry="40" fill="none" stroke="rgba(150,152,163,0.11)" strokeWidth="0.7" />
+            <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(150,152,163,0.3)" strokeWidth="0.8" />
+            <rect x="54" y="40" width="12" height="12" fill="rgba(229,152,88,0.28)" stroke="var(--cv-accent)" strokeWidth="1.1" />
           </svg>
           <div className="chunk-locator__label">BAY OF BENGAL</div>
         </div>

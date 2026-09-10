@@ -51,7 +51,7 @@ export function FieldPanel({ spec, hist, onCommit, onVariable }: Props) {
       h,
       fill: inRange
         ? "rgb(" + rgb.map((n) => Math.round(n)).join(",") + ")"
-        : "rgba(126,166,196,0.16)",
+        : "rgba(150,152,163,0.16)",
     };
   });
 

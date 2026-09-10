@@ -170,6 +170,17 @@ icon or label, never carrying meaning by color alone.
   telemetry, not a decorative label face. Sentence case throughout; no tracked-out
   all-caps eyebrows.
 
+> **Amended 2026-09-10 — the UI face is Inter; the readout face is unchanged.** Theme C
+> (§5.1.3) set `--rt-font-ui` to Inter without saying so and without bundling it, so the
+> console fell back to Segoe UI on any machine that did not already have Inter installed —
+> the defect §5.1.4 records. Rather than have canon and the shipped app disagree, the face is
+> now Inter and `@fontsource/inter` is a real dependency imported in `main.tsx`. **The rule
+> this section actually exists to protect is untouched:** one UI family, one mono family, and
+> **IBM Plex Mono for every literal readout, everywhere, including the chunk view.** The face
+> for headings and labels moved; the two-role split did not. Archivo and JetBrains Mono,
+> introduced for the chunk view's own typography, were removed with the palette they came
+> with (§5.1.5).
+
 **Layout** — instrument console, not card grid. The 3D water column is full-bleed and *is*
 the hero — there's no headline banner above it. Controls dock to the edges as functional
 instruments, each one doing double duty as both control and readout:
@@ -538,12 +549,7 @@ Principle 11 reserves, clear of the depth ruler's centred 240px track. The panel
 unchanged — 420px, same z-plane, same citation line. `ToolDock.tsx` still exists and renders
 nowhere.
 
-### 5.1.5 The chunk view carries its own palette and typeface (adopted 2026-09-09)
-
-The chunk view (`components/chunk/`, `viz/chunk/`) is the one screen in this product that
-does **not** resolve through `tokens.css`. This is a deliberate, fenced exception, recorded
-here because CLAUDE.md's hard rule is that a colour cannot exist in CSS without existing in
-this section first.
+### 5.1.5 The chunk view's own palette, and its reversal (adopted 2026-09-09, **reversed 2026-09-10**)
 
 **What it is.** A full-screen instrument for one 5°×5° block of ocean, 0–2000 m, reached from
 the globe and left by the breadcrumb's back control. It covers the console rather than
@@ -551,29 +557,60 @@ docking into it, because the question it answers is a different one — not "wha
 model say at this depth today", which the console answers, but "what is the structure of this
 block of water, and does the instrument inside it agree".
 
-**Its palette.** Cold glass over deep water: void `#04070A`, panel glass a 180° gradient from
-`rgba(16,29,41,0.8)` to `rgba(7,13,20,0.76)` with a lit top edge, ink `#D8E6EE` down a
-nine-step ramp to `#3D5568`, one accent cyan `#6FE3F0` meaning "this control is on", and one
-amber `#F2B45C` meaning "model, as opposed to observation" in the profile chart. Type is
-Archivo for UI and JetBrains Mono for every literal readout — the same two-role split
-`tokens.css` enforces with IBM Plex, in a different pair of faces.
+**What was adopted on 2026-09-09, and is kept here because the reasoning was sound.** The
+view shipped with its own palette and typefaces: cold glass over deep water — void `#04070A`,
+panel glass a 180° gradient from `rgba(16,29,41,0.8)` to `rgba(7,13,20,0.76)` with a lit top
+edge, a nine-step ink ramp from `#D8E6EE` to `#3D5568`, one accent cyan `#6FE3F0` meaning
+"this control is on", one amber `#F2B45C` meaning "model, as opposed to observation"; Archivo
+for UI and JetBrains Mono for readouts. The argument was that every value was scoped as a
+`--cv-*` custom property on the single `.chunk-view` root, so the two systems *could not*
+mix, which made it a fenced exception rather than drift — and that a self-contained screen
+cannot reproduce the failure §5.1.2 and §5.1.4 record, where two palettes met inside one view
+and neither won.
 
-**Why it is allowed to differ.** Every value is declared as a `--cv-*` custom property on the
-single `.chunk-view` root in `styles/chunk-view.css`. Nothing in that file can reach the
-console, and nothing in `tokens.css` is overridden — the two systems cannot mix, which is the
-property that makes this an exception rather than drift. Being one self-contained screen, it
-also cannot produce the failure §5.1.2 and §5.1.4 record, where two palettes met inside one
-view and neither won.
+**Why it was reversed on 2026-09-10.** That argument defends the exception against *leaking*.
+It does not answer the cost the reader pays: §11's oldest open question is that a reader
+cannot learn what a colour means when one role has several values, and §5.1.4 counts three
+colour systems already. A fourth that is *safely fenced* is still a fourth. The team's call
+was one system, so the chunk view now resolves through Theme C's `--rt-*` tokens like every
+other surface: copper `#E59858` where cyan was, `advisory` `#F59E0B` where the model amber
+was, warm basalt surfaces, the warm parchment ink ramp, and Theme C's strict 0px geometry in
+place of the 2px/3px radii. The `--cv-*` names survive as a *local alias layer* — one block at
+the top of `chunk-view.css` mapping each to an `--rt-*` token — so the file still reads in its
+own vocabulary while carrying no independent values.
+
+**The glass went with it.** Theme C is flat: solid surfaces, hairline borders, square corners.
+The `--cv-glass-top` / `--cv-glass-bottom` pair is deliberately left in place with *identical*
+values, so every `linear-gradient(180deg, top, bottom)` already written resolves to a flat
+Theme C surface without editing its call site.
+
+**Typography follows.** Archivo and JetBrains Mono are gone, and both `@fontsource`
+dependencies with them. `--cv-font` and `--cv-mono` now resolve to `--rt-font-ui` and
+`--rt-font-mono`, which is IBM Plex Mono for every literal readout — the role §5.1 assigns,
+unchanged; only the face the chunk view used for it has moved back.
+
+**What the reversal deliberately did NOT touch, and this is the important part.** The chunk
+view's **water is not chrome**. Its depth ramp, its light source and its sea-surface plane keep
+the six named ocean tokens — `thermocline` → `abyss` for the depth gradient, `current` for the
+light in the water and the sea surface. Painting an ocean in the console's accent would make
+the sea the colour of a button, and §5.1 has always separated the viewport from the
+instruments around it (Principle 6, and the split §5.1.4 records). Theme C governs the chrome;
+the ocean tokens govern the water; cmocean still governs the data and was not touched at all —
+the ramps in `viz/chunk/model.ts` are byte-identical.
+
+**One consequence worth stating.** Copper now means "this control is on" *and* "observation",
+while `advisory` amber means "model" — and §10 (2026-09-08) already records those two as too
+close to tell apart, which is why the assistant's ungrounded marker kept `advisory` rather than
+taking the accent. The team chose the pairing knowingly. It is made safe the way §5.4 requires
+rather than by hue: **the model trace is dashed, its legend swatch is striped to match, and both
+series are labelled.** If a reader ever reports confusing the two curves, the fix is to move the
+model to a non-adjacent hue, not to add more amber.
 
 **What it does not change.** The chunk view still obeys everything §5.1 asks of an
 instrument: hairline dividers, square housings, literal rulers with real units, one
 orchestrated motion (the load-in descent, skipped under `prefers-reduced-motion` along with
 the panel entrances), instant feedback everywhere else, and no numbered markers outside the
-timeline's real scrubber. The data ramps remain cmocean, and remain distinct from the chrome.
-
-**If this spreads, it stops being an exception.** A second screen wanting `--cv-*` is the
-signal to fold this palette into `tokens.css` as a named theme, or to drop it — not to copy
-the block.
+timeline's real scrubber.
 
 ### 5.2 Self-critique against generic defaults
 
@@ -1547,6 +1584,47 @@ same way `zoom_to_region` is: it resolves a named region from the fixed table an
 chosen client-side by the same snap a click uses, so it cannot open a chunk a reader could not.
 
 ---
+
+### 2026-09-10 — The chunk view folds into Theme C, and Inter is finally bundled
+
+- _**REVERSES "the chunk view carries its own palette and typeface" (§5.1.5, adopted the day
+  before).** The original fencing argument was sound about leakage and silent about cost: a
+  scoped fourth colour system is still a fourth one a reader has to learn, and §11's oldest
+  design question is precisely that a role cannot mean anything when it has several values.
+  The team chose one system. `--cv-*` survives as a **local alias layer** — one block mapping
+  each name to an `--rt-*` token — so `chunk-view.css` keeps its own vocabulary while holding
+  no independent values. Glass became flat, 2px/3px radii became `var(--rt-radius)`, and the
+  `--cv-glass-top`/`-bottom` pair was left in place with identical values so every
+  `linear-gradient(180deg, top, bottom)` already written resolves to a flat surface without
+  editing its call site. Full reasoning, and what survives, in §5.1.5._
+- _**The water was deliberately exempted, and this is the load-bearing part.** The chunk
+  view's depth ramp, light source and sea-surface plane keep the six named ocean tokens
+  (`thermocline` → `abyss`, and `current` for light in water and the sea surface). Copper is
+  the console's accent; an ocean painted in it stops reading as an ocean. This is the split
+  §5.1 Principle 6 has always drawn and §5.1.4 records — Theme C governs instruments, the
+  ocean tokens govern the viewport, cmocean governs the data. **The cmocean ramps in
+  `viz/chunk/model.ts` were not touched at all.**_
+- _**Copper and `advisory` now sit next to each other on the profile chart, knowingly.** The
+  team chose copper for "on/observation" and `advisory` amber for "model". §10 (2026-09-08)
+  records those two as near neighbours — it is why the assistant's ungrounded marker kept
+  `advisory` rather than the accent. Verified on screen: they are very hard to tell apart. So
+  the distinction does not rest on hue: **the model trace is dashed, its legend swatch is
+  striped to match, and both series are labelled**, which is §5.4's "never colour alone"
+  applied to a chart. If anyone reports confusing the curves, move the model to a
+  non-adjacent hue rather than adding more amber._
+- _**Platform identity is not model-vs-observation.** `registry.ts` coloured Argo cyan and
+  everything else the model amber. Both are **measured** platforms, so reusing the model hue
+  would have said a glider was a prediction. Argo is copper, a second platform type is
+  `current` blue, and `LayerStackPanel`'s dot matches the 3D track — they are two renderings
+  of one fact and drifted apart would be a quiet lie._
+- _**Inter is bundled, and `--rt-font-ui` stops lying.** Theme C named Inter first and no
+  `@fontsource/inter` dependency existed, so on any machine without it installed the whole
+  console silently fell back to Segoe UI — recorded as a defect in §5.1.4 and open since the
+  Theme C merge. `@fontsource/inter` is now a dependency and imported in `main.tsx`.
+  `@fontsource/archivo` and `@fontsource/jetbrains-mono`, added for the chunk view's own
+  typography, were removed in the same change. **§5.1's locked UI face is amended
+  accordingly** — see the note there; Plex Mono for literal readouts is unchanged, and that is
+  the role §5.1 actually cares about._
 
 ## 11. Open questions for the team
 

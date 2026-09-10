@@ -27,12 +27,20 @@ session each. Re-introducing one is the most likely way to lose a day here.
 
 ## 2. Getting it running
 
-**One command, from the repo root:**
+**One command, from the repo root or from `frontend/` — both start both:**
 
 ```bash
-npm run dev          # both processes, prefixed output, Ctrl+C stops both
-npm run dev --open   # ...and open the browser once both answer
+npm run dev            # both processes, prefixed output, Ctrl+C stops both
+npm run dev -- --open  # ...and open the browser once both answer
 ```
+
+The `--` is required. `npm run dev --open` hands `--open` to npm as a config flag, so the
+script never sees it and no browser opens — this line said exactly that until 2026-09-10.
+
+`frontend/`'s `dev` script used to be plain `vite`, so the same command meant "both" at the
+root and "frontend only" one directory down. That second meaning produced the half-running
+stack below with no warning beyond one `ECONNREFUSED 127.0.0.1:8000` stack trace per API
+call. It now delegates to `dev.mjs` too.
 
 It resolves the venv itself (`Scripts/` on Windows, `bin/` elsewhere), refuses to
 start on a port that already answers, and **takes both down if either one dies** —
@@ -47,8 +55,9 @@ reach ERDDAP directly:
 # Backend  → http://127.0.0.1:8000   (docs at /docs)
 cd backend && .venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Frontend → http://localhost:5173
-cd frontend && npm run dev
+# Frontend → http://localhost:5173   — dev:vite, NOT dev: `dev` would start dev.mjs,
+# find the backend you just started on :8000, and refuse to run a second one.
+cd frontend && npm run dev:vite
 ```
 
 On a fresh clone, fetch the globe basemaps once (they are committed, so only if

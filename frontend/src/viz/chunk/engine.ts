@@ -315,7 +315,7 @@ export class ChunkEngine {
     this.chrome.add(
       new THREE.LineSegments(
         g,
-        new THREE.LineBasicMaterial({ color: 0x7ea6c4, transparent: true, opacity: 0.45 }),
+        new THREE.LineBasicMaterial({ color: 0x9698a3, transparent: true, opacity: 0.45 }),
       ),
     );
 
@@ -331,7 +331,7 @@ export class ChunkEngine {
     this.chrome.add(
       new THREE.LineSegments(
         g2,
-        new THREE.LineBasicMaterial({ color: 0x7ea6c4, transparent: true, opacity: 0.2 }),
+        new THREE.LineBasicMaterial({ color: 0x9698a3, transparent: true, opacity: 0.2 }),
       ),
     );
   }

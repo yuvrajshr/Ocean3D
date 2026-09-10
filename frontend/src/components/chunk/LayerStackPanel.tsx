@@ -416,7 +416,13 @@ export function LayerStackPanel({
                           <span
                             className="chunk-platform__dot"
                             style={{
-                              background: p.type === "argo_float" ? "#6fe3f0" : "#f2b45c",
+                              // Matches the 3D track colours in
+                              // viz/chunk/registry.ts. Both are measured
+                              // platforms, so neither takes the model's amber.
+                              background:
+                                p.type === "argo_float"
+                                  ? "var(--cv-accent)"
+                                  : "var(--current)",
                             }}
                           />
                           <span className="chunk-platform__id">{p.id}</span>

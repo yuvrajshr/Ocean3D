@@ -321,7 +321,7 @@ export function createRegistry(): Registry {
         for (const m of [slice, secLon, secLat]) {
           const e = new THREE.LineSegments(
             new THREE.EdgesGeometry(m.geometry, 1),
-            new THREE.LineBasicMaterial({ color: 0x9fe8f4, transparent: true, opacity: 0.42 }),
+            new THREE.LineBasicMaterial({ color: 0xe59858, transparent: true, opacity: 0.42 }),
           );
           m.add(e);
           m.userData.edge = e;
@@ -784,7 +784,7 @@ void main(){
     group.add(mesh);
     const wire = new THREE.LineSegments(
       new THREE.WireframeGeometry(g),
-      new THREE.LineBasicMaterial({ color: 0x8fd6e6, transparent: true, opacity: 0.05 }),
+      new THREE.LineBasicMaterial({ color: 0x9698a3, transparent: true, opacity: 0.05 }),
     );
     group.add(wire);
 
@@ -933,7 +933,11 @@ void main(){
     const built = insts.map((inst) => {
       const sub = new THREE.Group();
       const isArgo = inst.type === "argo_float";
-      const color = isArgo ? 0x6fe3f0 : 0xf2b45c;
+      // Both branches are MEASURED platforms, so neither may take the model's
+      // amber — that hue means "model, not observation" in the profile chart
+      // and reusing it here would say a glider was a prediction. Copper is the
+      // measurement accent; `current` blue separates the second platform type.
+      const color = isArgo ? 0xe59858 : 0x38bdf8;
       // The track runs along the surface, because that is where the fixes are.
       const pts: number[] = [];
       for (const f of inst.fixes) {
@@ -1109,7 +1113,10 @@ void main(){
     const mesh = new THREE.Mesh(
       horizontalQuad(ctx.geo),
       new THREE.MeshBasicMaterial({
-        color: 0x86d8ee,
+        // The sea surface is water, not chrome: it keeps the six-token
+        // `current` blue for the same reason chunk-view.css keeps its depth
+        // ramp. Copper here would paint the sea the colour of a button.
+        color: 0x38bdf8,
         transparent: true,
         opacity: 0.16,
         side: THREE.DoubleSide,

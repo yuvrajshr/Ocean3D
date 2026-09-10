@@ -126,11 +126,14 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
 
       <div className="chunk-profile__legend">
         <div className="chunk-profile__key">
-          <div className="chunk-profile__swatch" style={{ background: "#6fe3f0" }} />
+          <div className="chunk-profile__swatch" style={{ background: "var(--cv-accent)" }} />
           <div className="chunk-profile__key-label">Observed</div>
         </div>
         <div className="chunk-profile__key">
-          <div className="chunk-profile__swatch" style={{ background: "#f2b45c" }} />
+          {/* Striped, because the trace it stands for is dashed. Copper and
+              advisory amber are near neighbours (context.md §10, 2026-09-08),
+              so the legend carries the same non-colour cue the chart does. */}
+          <div className="chunk-profile__swatch chunk-profile__swatch--model" />
           <div className="chunk-profile__key-label">Model</div>
         </div>
         <div className="chunk-profile__rmsd">RMSD {rmsd}</div>
@@ -143,8 +146,8 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
             y="10"
             width="300"
             height="266"
-            fill="rgba(10,20,30,0.55)"
-            stroke="rgba(126,166,196,0.16)"
+            fill="var(--cv-inset)"
+            stroke="var(--cv-edge)"
             strokeWidth="0.7"
           />
           {yTicks.map((tk) => (
@@ -154,15 +157,15 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
                 y1={tk.y}
                 x2="346"
                 y2={tk.y}
-                stroke="rgba(126,166,196,0.09)"
+                stroke="var(--cv-rule-faint)"
                 strokeWidth="0.7"
               />
               <text
                 x="40"
                 y={tk.ty}
                 textAnchor="end"
-                fill="#6d8a9d"
-                fontFamily="JetBrains Mono, monospace"
+                fill="var(--cv-ink-caption)"
+                style={{ fontFamily: "var(--cv-mono)" }}
                 fontSize="9"
               >
                 {tk.label}
@@ -176,32 +179,38 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
                 y1="10"
                 x2={tk.x}
                 y2="276"
-                stroke="rgba(126,166,196,0.07)"
+                stroke="var(--cv-rule-faint)"
                 strokeWidth="0.7"
               />
               <text
                 x={tk.x}
                 y="291"
                 textAnchor="middle"
-                fill="#6d8a9d"
-                fontFamily="JetBrains Mono, monospace"
+                fill="var(--cv-ink-caption)"
+                style={{ fontFamily: "var(--cv-mono)" }}
                 fontSize="9"
               >
                 {tk.label}
               </text>
             </g>
           ))}
+          {/* The model is DASHED and the observation is solid. The two hues
+              chosen for them — copper and advisory amber — are close enough
+              that §10 (2026-09-08) records mistaking one for the other, so the
+              dash carries the distinction and colour only reinforces it. This
+              is §5.4's "never colour alone" applied to a chart. */}
           <polyline
             points={points(profile.model)}
             fill="none"
-            stroke="#f2b45c"
+            stroke="var(--cv-model)"
             strokeWidth="1.6"
+            strokeDasharray="4 2.5"
             strokeLinejoin="round"
           />
           <polyline
             points={points(profile.obs)}
             fill="none"
-            stroke="#6fe3f0"
+            stroke="var(--cv-accent)"
             strokeWidth="1.8"
             strokeLinejoin="round"
           />
@@ -209,8 +218,8 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
             x="196"
             y="308"
             textAnchor="middle"
-            fill="#5b7688"
-            fontFamily="JetBrains Mono, monospace"
+            fill="var(--cv-ink-faint)"
+            style={{ fontFamily: "var(--cv-mono)" }}
             fontSize="9"
             letterSpacing="1.4"
           >
@@ -220,8 +229,8 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
             x="13"
             y="143"
             textAnchor="middle"
-            fill="#5b7688"
-            fontFamily="JetBrains Mono, monospace"
+            fill="var(--cv-ink-faint)"
+            style={{ fontFamily: "var(--cv-mono)" }}
             fontSize="9"
             letterSpacing="1.4"
             transform="rotate(-90 13 143)"
