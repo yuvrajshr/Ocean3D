@@ -150,15 +150,15 @@
   background: var(--rt-surface, #1c1d22);
 }
 
-/* --- Left Sidebar (240px) --- */
+/* --- Left Sidebar (290px) --- */
 .catalogue-sidebar {
-  width: 240px;
+  width: 290px;
   flex-shrink: 0;
   border-right: 1px solid var(--rt-border-color, #2e303a);
   background: var(--rt-ground, #15161a);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .catalogue-sidebar-header {
@@ -202,11 +202,14 @@
 }
 
 .catalogue-sidebar-content {
-  padding: 12px 14px;
+  padding: 14px 14px 24px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 152, 88, 0.3) transparent;
 }
 
 /* Search Input */
@@ -217,7 +220,7 @@
 
 .catalogue-search-icon {
   position: absolute;
-  left: 8px;
+  left: 9px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--rt-ink-muted, #9698a3);
@@ -229,12 +232,13 @@
   background: var(--rt-inset, #111215);
   border: 1px solid var(--rt-border-color, #2e303a);
   border-radius: 0px !important;
-  padding: 6px 8px 6px 26px;
+  padding: 6px 26px 6px 26px;
   font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 11px;
   color: var(--rt-ink, #f4efe6);
   outline: none;
   box-sizing: border-box;
+  transition: border-color 0.15s ease;
 }
 
 .catalogue-search-input:focus {
@@ -246,11 +250,32 @@
   color: var(--rt-ink-muted, #9698a3);
 }
 
+.catalogue-search-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--rt-ink-muted, #9698a3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 0px !important;
+  transition: color 0.15s ease;
+}
+
+.catalogue-search-clear-btn:hover {
+  color: var(--rt-copper, #e59858);
+}
+
 /* Filter Categories */
 .catalogue-filter-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .catalogue-section-header-btn {
@@ -263,12 +288,13 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--rt-ink, #f4efe6);
-  padding: 6px 10px;
+  padding: 7px 10px;
   background: var(--rt-surface, #1c1d22);
   border: 1px solid var(--rt-border-color, #2e303a);
   border-radius: 0px !important;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
 }
 
 .catalogue-section-header-btn:hover {
@@ -277,31 +303,35 @@
 }
 
 .catalogue-section-header-btn--active {
-  background: var(--rt-copper, #e59858) !important;
-  color: #15161a !important;
-  border-color: var(--rt-copper, #e59858) !important;
+  background: rgba(229, 152, 88, 0.14) !important;
+  color: var(--rt-ink, #f4efe6) !important;
+  border: 1px solid var(--rt-copper, #e59858) !important;
+  border-left: 3px solid var(--rt-copper, #e59858) !important;
 }
 
 .catalogue-count-badge {
   font-size: 9.5px;
   font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  font-weight: 600;
   background: var(--rt-ground, #15161a);
   color: var(--rt-copper, #e59858);
   border: 1px solid var(--rt-border-color, #2e303a);
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 0px !important;
 }
 
+.catalogue-section-header-btn:hover .catalogue-count-badge,
 .catalogue-section-header-btn--active .catalogue-count-badge {
-  background: #15161a;
+  background: var(--rt-ground, #15161a);
   color: var(--rt-copper, #e59858);
+  border-color: var(--rt-copper, #e59858);
 }
 
 .catalogue-options-list {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .catalogue-option-item {
@@ -321,8 +351,9 @@
   background: var(--rt-surface, #1c1d22);
   border: 1px solid var(--rt-border-color, #2e303a);
   box-shadow: none !important;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
   box-sizing: border-box;
+  position: relative;
 }
 
 .catalogue-option-item:hover {
@@ -330,11 +361,12 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* Selected Item Inversion */
+/* Selected Item - Swiss Theme C Sharp Copper Inset */
 .catalogue-option-item--selected {
-  background: var(--rt-copper, #e59858) !important;
-  color: #15161a !important;
-  border-color: var(--rt-copper, #e59858) !important;
+  background: rgba(229, 152, 88, 0.16) !important;
+  color: var(--rt-ink, #f4efe6) !important;
+  border: 1px solid var(--rt-copper, #e59858) !important;
+  border-left: 3px solid var(--rt-copper, #e59858) !important;
 }
 
 .catalogue-option-label {
@@ -343,19 +375,44 @@
   white-space: nowrap;
   flex: 1;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  padding-right: 6px;
+}
+
+.catalogue-option-item--selected .catalogue-option-label {
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .catalogue-option-unit {
   font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
   font-size: 9.5px;
   color: var(--rt-ink-muted, #9698a3);
+  background: var(--rt-ground, #15161a);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  padding: 1px 5px;
+  border-radius: 0px !important;
   margin-left: 6px;
   flex-shrink: 0;
 }
 
+.catalogue-option-item:hover .catalogue-option-unit {
+  border-color: var(--rt-copper, #e59858);
+  color: var(--rt-ink, #f4efe6);
+}
+
 .catalogue-option-item--selected .catalogue-option-unit {
-  color: #15161a;
+  color: var(--rt-copper, #e59858);
+  border-color: var(--rt-copper, #e59858);
   font-weight: 700;
+}
+
+.catalogue-option-empty {
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  font-size: 10px;
+  color: var(--rt-ink-muted, #71717a);
+  padding: 5px 8px;
+  font-style: italic;
 }
 
 /* --- Right Area: Products Main --- */
@@ -703,20 +760,23 @@
 
 /* Scrollbars */
 .catalogue-products-main::-webkit-scrollbar,
-.catalogue-sidebar::-webkit-scrollbar,
 .catalogue-sidebar-content::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
 
 .catalogue-products-main::-webkit-scrollbar-track,
-.catalogue-sidebar::-webkit-scrollbar-track,
 .catalogue-sidebar-content::-webkit-scrollbar-track {
   background: var(--rt-ground, #15161a);
 }
 
 .catalogue-products-main::-webkit-scrollbar-thumb,
-.catalogue-sidebar::-webkit-scrollbar-thumb,
 .catalogue-sidebar-content::-webkit-scrollbar-thumb {
+  background: var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
+  transition: background 0.15s ease;
+}
+
+.catalogue-products-main::-webkit-scrollbar-thumb:hover,
+.catalogue-sidebar-content::-webkit-scrollbar-thumb:hover {
   background: var(--rt-copper, #e59858);
-  border-radius: 0px;
 }
