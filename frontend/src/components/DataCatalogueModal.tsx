@@ -22,6 +22,7 @@ import {
   Flame,
   Layers,
   Lock,
+  ArrowRight,
 } from "lucide-react";
 import "../styles/data-catalogue-modal.css";
 
@@ -449,7 +450,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                           {isAnyVarActive && " · Active"}
                         </div>
 
-                        {/* ONLY the single available product displays "+ Add to map..." */}
+                        {/* ONLY the single available product displays "Add to Map" */}
                         {isAvailableToAdd ? (
                           <button
                             type="button"
@@ -457,13 +458,16 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                             className="catalogue-add-to-map-btn"
                             title={`Add ${product.title} to 3D map`}
                           >
-                            <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, strokeWidth: 3 }} />
-                            + Add to map...
+                            <span className="catalogue-add-btn__icon">
+                              <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, strokeWidth: 2.5 }} />
+                            </span>
+                            <span className="catalogue-add-btn__label">Add to Map</span>
+                            <ArrowRight className="catalogue-add-btn__arrow" style={{ width: 13, height: 13, strokeWidth: 2 }} />
                           </button>
                         ) : (
                           <div className="catalogue-readonly-badge">
                             <Lock className="w-3 h-3" style={{ width: 11, height: 11 }} />
-                            Reference Dataset
+                            <span>Reference Dataset</span>
                           </div>
                         )}
                       </div>

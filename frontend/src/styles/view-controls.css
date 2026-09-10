@@ -1,0 +1,75 @@
+/* ============================================================================
+   view-controls.css — Ratio Design System Viewport Navigation Controls
+   Theme C: Warm Maritime Chronometer & Copper
+   ========================================================================== */
+
+.view-controls {
+  position: absolute;
+  right: 20px;
+  bottom: 14px;
+  z-index: 25;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: var(--rt-surface, #1c1d22);
+  border: 1px solid var(--rt-border-color, #2e303a);
+  border-radius: 0px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  user-select: none;
+  pointer-events: auto;
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.view-controls__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0px !important;
+  color: var(--rt-ink, #f4efe6);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.view-controls__btn:hover {
+  background: var(--rt-surface-hover, #262830);
+  color: var(--rt-copper, #e59858);
+}
+
+.view-controls__btn:active {
+  background: var(--rt-ground, #15161a);
+  color: var(--rt-copper, #e59858);
+}
+
+.view-controls__btn:focus-visible {
+  outline: 1px solid var(--rt-copper, #e59858);
+  outline-offset: -1px;
+}
+
+.view-controls__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--rt-border-color, #2e303a);
+}
+
+.view-controls__btn--reset {
+  color: var(--rt-ink-muted, #9a9b9e);
+}
+
+.view-controls__btn--reset:hover {
+  color: var(--rt-copper, #e59858);
+}
+
+/* Responsive adjustment for small screens */
+@media (max-width: 900px) {
+  .view-controls {
+    right: 14px;
+    bottom: 12px;
+  }
+}
