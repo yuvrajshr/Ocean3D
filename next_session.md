@@ -389,6 +389,48 @@ Everything else in that feedback document — the zoom buttons, the naming, the 
 overlapping the depth ruler, the doubled `+`, the download-image option, globe idle motion —
 is **untouched**. Only the alignment was asked for.
 
+## 1g. "I pulled and it still looks old" — the build stamp (2026-09-10)
+
+A teammate on `main`, pulled recently, kept seeing the Ops/Explore toggle removed two days
+earlier. **It was never in the source.** `origin/main` had been clean since `f27d3c2`, every
+active branch was clean, there is no service worker, and `dist/` is gitignored. What was on
+their screen came from a dev server (or bundle, or tab) older than their pull — and nothing
+in the app could say so, so the first two rounds went looking for a code bug.
+
+**Now the page says which build it is.** Bottom-right of the viewport: `build 4e9202d`, or
+`ui … api …` when the two halves differ. When what is running is older than the code on
+disk, a status line top-right says so with both commits and what to run.
+
+**If someone reports that a fix "didn't take", ask for the stamp first.** If it is not the
+commit you pushed, it is their runtime, and the fix is: stop every dev server, then
+`npm run dev` from the repo root, then reload. That one sentence would have ended this
+investigation in two messages.
+
+What changed and why:
+
+1. **`strictPort: true` in `vite.config.ts`.** The root runner already passed
+   `--strictPort`, but the documented `cd frontend && npm run dev` path did not — so an old
+   server holding 5173 kept answering the open tab while a fresh one hid on 5174, and the
+   pull appeared to change nothing. Now the second server fails loudly instead.
+2. **`__BUILD__`** (a Vite `define`, fixed at server start or `vite build`), **`/api/build`**
+   (the commit the API process started from — separate from `/api/health`, which probes
+   ERDDAP on every call), and **`/__build`** (Vite middleware that runs git live and
+   classifies both halves).
+3. **The stale rule is not "HEAD moved".** Your own commits are already hot-reloaded, so they
+   never warn. Pulls, merges, checkouts, rebases and resets since the checkout last matched
+   the build do. The backend never reloads, so any change under `backend/` counts for it.
+   Docs-only changes warn about nothing. `frontend/src/build/classify.ts`, 21 tests.
+
+Traps:
+
+- **Do not "simplify" the rule to a HEAD comparison.** It would warn on every commit and be
+  ignored within a day, and then it would not be there for the case it exists for.
+- **The check only runs where `/__build` exists** — `vite` and `vite preview`. A static host
+  has no such route, so the alert stays silent there by design; the stamp still renders.
+- `CLAUDE.md` no longer describes Ops/Explore modes. It used to, including a Step 8 checklist
+  item to verify both "render correctly" — which would have led a future session to
+  reintroduce the toggle. Do not add it back.
+
 ## 2. Running it
 
 **`npm run dev` from the repo root starts both** (added 2026-09-08) — prefixed output,
