@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useMemo } from "react";
+import { X } from "lucide-react";
 
 import type { Comparison, PlatformSummary } from "../api/client";
 import { depthToNorm, LABELLED_TICKS, RULER_TICKS } from "../viz/depth";
@@ -27,6 +28,7 @@ interface ProfilePanelProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  shifted?: boolean;
 }
 
 const WIDTH = 340;
@@ -45,7 +47,7 @@ function formatTime(iso: string): string {
   });
 }
 
-export function ProfilePanel({ platform, comparison, loading, error, onClose }: ProfilePanelProps) {
+export function ProfilePanel({ platform, comparison, loading, error, onClose, shifted }: ProfilePanelProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -123,7 +125,7 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose }: 
 
   return (
     <aside
-      className="profile-panel"
+      className={`profile-panel ${shifted ? "profile-panel--shifted" : ""}`}
       aria-label={`Profile for float ${platform.platform_id}`}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -144,8 +146,11 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose }: 
             onClose();
           }}
           onMouseDown={(e) => e.stopPropagation()}
+          title="Close profile panel (Esc)"
+          aria-label="Close profile panel"
         >
-          Close
+          <X size={13} />
+          <span>Close</span>
         </button>
       </header>
 

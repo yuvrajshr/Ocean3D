@@ -547,62 +547,175 @@ export interface FloatMarkers {
   dispose(): void;
 }
 
-const PIN_HEIGHT = 0.05;
-const PIN_RADIUS = 0.012;
+const PIN_STEM_HEIGHT = 0.052;
+const PIN_STEM_RADIUS = 0.0018;
+const PIN_HEAD_RADIUS = 0.014;
+const PIN_SHADOW_RADIUS = 0.016;
 /** The camera distance a pin's true (small) scale is calibrated for. */
 const PIN_REFERENCE_DISTANCE = 4.05;
 /** How far a pin is allowed to grow to compensate for zooming out past its reference
  * distance — capped so it doesn't balloon into a landmark at the 9-unit zoom-out ceiling. */
 const PIN_MAX_SCALE = 3;
 
-const PIN_VERTEX = /* glsl */ `
+/** Vertex shader for needle stem & spherical bead — transforms normal and view dir into world space. */
+const PIN_COMMON_VERTEX = /* glsl */ `
   out vec3 vNormalWorld;
+  out vec3 vViewDir;
   void main() {
     vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
     vNormalWorld = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+    vViewDir = normalize(cameraPosition - worldPosition.xyz);
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
 `;
 
-const PIN_FRAGMENT = /* glsl */ `
+/** Fragment shader for the glossy spherical pinhead bead. */
+const PIN_HEAD_FRAGMENT = /* glsl */ `
   precision highp float;
   in vec3 vNormalWorld;
+  in vec3 vViewDir;
   out vec4 fragColor;
 
   uniform vec3 uColor;
   uniform vec3 uSunDirection;
+  uniform float uOpacity;
 
   void main() {
-    float lambert = max(dot(normalize(vNormalWorld), normalize(uSunDirection)), 0.0);
-    // Never fully black on the night side — a marker that vanishes at night would read as
-    // a bug, not as accurate lighting.
-    vec3 shaded = uColor * mix(0.45, 1.0, lambert);
-    fragColor = vec4(shaded, 1.0);
+    vec3 n = normalize(vNormalWorld);
+    vec3 sun = normalize(uSunDirection);
+    vec3 view = normalize(vViewDir);
+
+    float lambert = max(dot(n, sun), 0.0);
+    // Sharp specular glint: glossy reflection spot on the curved bead
+    vec3 reflectDir = reflect(-sun, n);
+    float specAngle = max(dot(reflectDir, view), 0.0);
+    float specular = pow(specAngle, 32.0);
+
+    // Warm edge rim/sheen for high-energy contrast
+    float rim = pow(1.0 - max(dot(view, n), 0.0), 2.5);
+
+    vec3 diffuse = uColor * mix(0.45, 1.15, lambert);
+    vec3 shaded = diffuse + vec3(1.0, 0.98, 0.95) * specular * 0.95 + vec3(1.0, 0.6, 0.5) * rim * 0.4;
+
+    fragColor = vec4(shaded, uOpacity);
+  }
+`;
+
+/** Fragment shader for the polished steel needle stem. */
+const PIN_STEM_FRAGMENT = /* glsl */ `
+  precision highp float;
+  in vec3 vNormalWorld;
+  in vec3 vViewDir;
+  out vec4 fragColor;
+
+  uniform vec3 uSunDirection;
+  uniform float uOpacity;
+
+  // Polished chrome / stainless steel needle
+  const vec3 STEEL_BRIGHT = vec3(0.88, 0.91, 0.96);
+  const vec3 STEEL_DARK = vec3(0.38, 0.42, 0.48);
+
+  void main() {
+    vec3 n = normalize(vNormalWorld);
+    vec3 sun = normalize(uSunDirection);
+    vec3 view = normalize(vViewDir);
+
+    float lambert = max(dot(n, sun), 0.0);
+    vec3 reflectDir = reflect(-sun, n);
+    float specAngle = max(dot(reflectDir, view), 0.0);
+    float specular = pow(specAngle, 18.0);
+
+    vec3 shaded = mix(STEEL_DARK, STEEL_BRIGHT, lambert) + vec3(0.95, 0.98, 1.0) * specular * 0.65;
+    fragColor = vec4(shaded, uOpacity);
+  }
+`;
+
+/** Soft drop shadow vertex shader. */
+const PIN_SHADOW_VERTEX = /* glsl */ `
+  out vec2 vUv;
+  void main() {
+    vUv = uv;
+    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+/** Soft drop shadow on the globe surface beneath each pin. */
+const PIN_SHADOW_FRAGMENT = /* glsl */ `
+  precision highp float;
+  in vec2 vUv;
+  out vec4 fragColor;
+
+  uniform float uOpacity;
+
+  void main() {
+    float dist = length(vUv - vec2(0.5)) * 2.0;
+    if (dist > 1.0) discard;
+    float alpha = smoothstep(1.0, 0.15, dist) * 0.52 * uOpacity;
+    fragColor = vec4(0.01, 0.03, 0.07, alpha);
   }
 `;
 
 export function buildFloatMarkers(positions: { lat: number; lon: number }[]): FloatMarkers | null {
   if (positions.length === 0) return null;
 
-  const geometry = new THREE.ConeGeometry(PIN_RADIUS, PIN_HEIGHT, 8);
-  // Base at local origin, apex at +Y, so instancing can place the base exactly at the
-  // marker radius rather than centering the cone on it.
-  geometry.translate(0, PIN_HEIGHT / 2, 0);
+  // 1. Slender steel needle stem
+  const stemGeometry = new THREE.CylinderGeometry(PIN_STEM_RADIUS, PIN_STEM_RADIUS, PIN_STEM_HEIGHT, 12);
+  stemGeometry.translate(0, PIN_STEM_HEIGHT / 2, 0);
 
-  const material = new THREE.ShaderMaterial({
+  const stemMaterial = new THREE.ShaderMaterial({
     glslVersion: THREE.GLSL3,
-    vertexShader: PIN_VERTEX,
-    fragmentShader: PIN_FRAGMENT,
+    vertexShader: PIN_COMMON_VERTEX,
+    fragmentShader: PIN_STEM_FRAGMENT,
     uniforms: {
-      uColor: { value: new THREE.Color(...TOKEN_RGB.bioluminescence) },
       uSunDirection: { value: GLOBE_SUN_DIRECTION.clone() },
+      uOpacity: { value: 1.0 },
     },
+    transparent: true,
   });
 
-  const mesh = new THREE.InstancedMesh(geometry, material, positions.length);
+  // 2. Glossy spherical bead head atop the needle
+  const headGeometry = new THREE.SphereGeometry(PIN_HEAD_RADIUS, 20, 16);
+  headGeometry.translate(0, PIN_STEM_HEIGHT, 0);
+
+  const headMaterial = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: PIN_COMMON_VERTEX,
+    fragmentShader: PIN_HEAD_FRAGMENT,
+    uniforms: {
+      // High-contrast electric crimson / scarlet pushpin bead that pops vividly against blue oceans
+      uColor: { value: new THREE.Color(1.0, 0.18, 0.32) },
+      uSunDirection: { value: GLOBE_SUN_DIRECTION.clone() },
+      uOpacity: { value: 1.0 },
+    },
+    transparent: true,
+  });
+
+  // 3. Soft drop shadow disc on the globe surface
+  const shadowGeometry = new THREE.CircleGeometry(PIN_SHADOW_RADIUS, 18);
+  shadowGeometry.rotateX(-Math.PI / 2);
+  shadowGeometry.translate(0.005, 0.0004, 0.005);
+
+  const shadowMaterial = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: PIN_SHADOW_VERTEX,
+    fragmentShader: PIN_SHADOW_FRAGMENT,
+    uniforms: {
+      uOpacity: { value: 1.0 },
+    },
+    transparent: true,
+    depthWrite: false,
+  });
+
+  const count = positions.length;
+  const stemMesh = new THREE.InstancedMesh(stemGeometry, stemMaterial, count);
+  const headMesh = new THREE.InstancedMesh(headGeometry, headMaterial, count);
+  const shadowMesh = new THREE.InstancedMesh(shadowGeometry, shadowMaterial, count);
+
   const up = new THREE.Vector3(0, 1, 0);
   const basePositions: THREE.Vector3[] = [];
   const baseQuaternions: THREE.Quaternion[] = [];
+
   positions.forEach(({ lat, lon }) => {
     const point = latLonToGlobe(lat, lon, MARKER_RADIUS);
     basePositions.push(point);
@@ -615,21 +728,34 @@ export function buildFloatMarkers(positions: { lat: number; lon: number }[]): Fl
     scaleVector.setScalar(scale);
     for (let i = 0; i < basePositions.length; i++) {
       matrix.compose(basePositions[i]!, baseQuaternions[i]!, scaleVector);
-      mesh.setMatrixAt(i, matrix);
+      stemMesh.setMatrixAt(i, matrix);
+      headMesh.setMatrixAt(i, matrix);
+      shadowMesh.setMatrixAt(i, matrix);
     }
-    mesh.instanceMatrix.needsUpdate = true;
+    stemMesh.instanceMatrix.needsUpdate = true;
+    headMesh.instanceMatrix.needsUpdate = true;
+    shadowMesh.instanceMatrix.needsUpdate = true;
   };
   applyScale(1);
 
+  const group = new THREE.Group();
+  group.add(shadowMesh);
+  group.add(stemMesh);
+  group.add(headMesh);
+
   return {
-    object: mesh,
+    object: group,
     update({ cameraDistance }) {
-      const scale = THREE.MathUtils.clamp(cameraDistance / PIN_REFERENCE_DISTANCE, 1, PIN_MAX_SCALE);
+      const scale = THREE.MathUtils.clamp(cameraDistance / PIN_REFERENCE_DISTANCE, 0.85, PIN_MAX_SCALE);
       applyScale(scale);
     },
     dispose() {
-      geometry.dispose();
-      material.dispose();
+      stemGeometry.dispose();
+      stemMaterial.dispose();
+      headGeometry.dispose();
+      headMaterial.dispose();
+      shadowGeometry.dispose();
+      shadowMaterial.dispose();
     },
   };
 }
