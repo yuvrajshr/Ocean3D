@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from ..config import MAP_DATASETS, MAP_DATASETS_BY_ID, MAX_TIME_ENTRIES, MapDataset
-from ..erddap_client import UpstreamUnavailable
+from ..erddap_client import UpstreamRefused, UpstreamUnavailable
 from ..ingestion import cmems, erddap_map
 from ..models.schemas import SourceStatus
 from ..scaling import percentile_range
@@ -65,6 +65,12 @@ def _levels(ds: MapDataset) -> list[float]:
 def _guard(ds: MapDataset, call):
     try:
         return call()
+    except UpstreamRefused as exc:
+        raise HTTPException(
+            502,
+            f"{ds.provider} refused this request (HTTP {exc.status}). The date or "
+            "area may be outside what it serves — try another.",
+        ) from exc
     except UpstreamUnavailable as exc:
         raise HTTPException(
             503,

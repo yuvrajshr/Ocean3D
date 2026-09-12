@@ -1,20 +1,25 @@
 /**
- * Actions the assistant may take, and how they reach app state.
+ * Actions the assistant may take, and the shapes they reach the app in.
  *
- * THE IMPORTANT PART, and the thing that will bite anyone who skips it:
- * `layerStack` in App.tsx is the source of truth for layers, NOT `map.layers`.
- * The layers panel owns the stack, and an effect pushes it into the map
- * reducer with `layers/sync`, which derives `map.layers` from it. So a layer
- * change must produce a new stack here and go through `setLayerStack`.
- * Dispatching `layer/add` at the reducer appears to work and is then silently
- * overwritten by the next sync — exactly the class of bug next_session.md §6
- * exists to catalogue.
+ * Every action the backend returns has been validated against the view that was
+ * on screen, and carries that view as `scope` (context.md §5.1 Principle 13,
+ * amended 2026-09-10). The bridge routes on it: a `scope: "chunk"` action goes
+ * to the chunk view's controller and nowhere else, which is what "changes apply
+ * to the view you are on" means in code. `set_view` and `open_chunk` move
+ * between views and are handled first, whatever their scope.
  *
- * Every action arrives already validated by the backend against the state
- * snapshot the client sent, so this file does not re-check bounds. It only
- * applies. What it must get right is the transformation itself, which is why
- * the layer half is a pure function with its own tests.
+ * THE LAYER SEAM, which bit once already: `layerStack` in App.tsx is the source
+ * of truth for the map's layers, NOT `map.layers`, and VariablePanel owns the
+ * stack in its own state. A layer change must produce a new stack and reach the
+ * panel through `externalStack`; dispatching `layer/add` at the reducer appears
+ * to work and is silently overwritten by the next `layers/sync`.
  */
+
+import type { GeoPoint } from "../map/state";
+import type { Bbox } from "../viz/chunk/loader";
+import type { ChunkAssistantAction, ChunkSnapshot } from "./chunkActions";
+
+export type AssistantScope = "map" | "globe" | "chunk";
 
 export interface LayerStack {
   keys: string[];
@@ -22,7 +27,7 @@ export interface LayerStack {
   opacity: Record<string, number>;
 }
 
-export type AssistantAction =
+export type MapAssistantAction =
   | {
       type: "set_layers";
       add: string[];
@@ -31,9 +36,9 @@ export type AssistantAction =
       hide: string[];
       opacity: Record<string, number>;
     }
-  | { type: "set_view"; view: "map" | "globe" | "chunk" }
   | { type: "set_time"; time: string }
-  | { type: "set_depth"; depth_m: number }
+  /** `depth_index` indexes the active layer's own levels, as the ruler does. */
+  | { type: "set_depth"; depth_m: number; depth_index: number; requested_m: number }
   | {
       type: "zoom_to_region";
       label: string;
@@ -41,24 +46,34 @@ export type AssistantAction =
       lon_range: [number, number];
     }
   | { type: "set_pin"; lat: number; lon: number }
-  | { type: "set_area"; lat_range: [number, number]; lon_range: [number, number] }
+  | { type: "set_area"; lat_range: [number, number]; lon_range: [number, number] };
+
+export type GlobeAssistantAction =
+  | { type: "set_time"; time: string }
+  | { type: "select_float"; platform_id: string }
+  | { type: "clear_selection" };
+
+export type AppAssistantAction =
+  | { type: "set_view"; view: AssistantScope }
   /**
-   * Open the chunk over a named region.
-   *
-   * The backend resolves the name to a centre point and nothing else; the tile
-   * is chosen here by the same snap a globe click uses, so the assistant cannot
-   * open a chunk that clicking could not.
+   * Open the chunk over a named region or stated coordinates. The tile is chosen
+   * here by the same snap a globe click uses, so the assistant cannot open a
+   * chunk that clicking could not.
    */
   | { type: "open_chunk"; label: string; lat: number; lon: number };
+
+export type AssistantAction =
+  | (AppAssistantAction & { scope: AssistantScope })
+  | (MapAssistantAction & { scope: "map" })
+  | (GlobeAssistantAction & { scope: "globe" })
+  | (ChunkAssistantAction & { scope: "chunk" });
 
 /**
  * Provenance for one sourced claim.
  *
- * `kind` is the distinction that matters. "data" is a measurement from one of
- * this project's own upstreams — INCOIS, Copernicus, HYCOM, VIIRS. "web" is a
- * page Google Search returned. Both are real sources and neither is a guess,
- * but a reader must never mistake a web page for the ocean analysis, so the
- * panel renders them differently.
+ * `kind` is the distinction that matters: "data" is a measurement from one of
+ * this project's own upstreams, "web" is a page Google Search returned. A reader
+ * must never mistake one for the other, so the panel renders them differently.
  */
 export interface Citation {
   kind?: "data" | "web";
@@ -77,17 +92,13 @@ export interface Citation {
 /**
  * The next layer stack after one `set_layers` action.
  *
- * Removals are applied before additions so that swapping a layer ("show me
- * chlorophyll instead of currents") stays inside the three-layer cap rather
- * than briefly exceeding it.
- *
- * A new layer goes on TOP (index 0), because index 0 is drawn last and is what
- * the reader sees — someone who just asked for chlorophyll means the one they
- * can look at, not one buried under two others.
+ * Removals are applied before additions so that swapping a layer stays inside
+ * the three-layer cap. A new layer goes on TOP (index 0), because index 0 is
+ * drawn last and is what the reader sees.
  */
 export function applyLayerAction(
   stack: LayerStack,
-  action: Extract<AssistantAction, { type: "set_layers" }>,
+  action: Extract<MapAssistantAction, { type: "set_layers" }>,
 ): LayerStack {
   const visibility = { ...stack.visibility };
   const opacity = { ...stack.opacity };
@@ -112,10 +123,16 @@ export function applyLayerAction(
   return { keys, visibility, opacity };
 }
 
-/** Everything an action can change, captured so one click can put it all back. */
+/** Everything a batch of actions can change, captured so one click puts it all back. */
 export interface AppSnapshot {
-  layerStack: LayerStack;
   view: string;
-  time: string;
-  depthIndex: number;
+  map: {
+    stack: LayerStack;
+    time: string;
+    pin: GeoPoint | null;
+    /** The active layer and its depth index, when there is one. */
+    active: { id: string; depthIndex: number } | null;
+  };
+  globe: { timeIndex: number; selectedId: string | null };
+  chunk: { bbox: Bbox; spec: ChunkSnapshot | null };
 }

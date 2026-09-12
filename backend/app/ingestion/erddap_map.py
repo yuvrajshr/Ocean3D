@@ -15,14 +15,15 @@ is the extensibility claim in the problem statement, tested rather than asserted
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 
-import netCDF4
 import numpy as np
 import xarray as xr
 
 from .. import erddap_client as client
 from ..config import MAX_SLICE_CELLS, MAX_VOLUME_CELLS, MapDataset
 from ..models.schemas import SourceStatus
+from .netcdf_memory import open_in_memory
 
 
 class SliceResult:
@@ -118,9 +119,35 @@ class PointBlock:
         self.source = source
 
 
+class PointValue:
+    """One value at one grid cell, one time and one depth — the assistant's readout.
+
+    Not a `PointBlock`: that carries every level for a month for the map's point
+    panel and costs seconds. A question about one number should cost one level.
+    """
+
+    __slots__ = ("value", "lat", "lon", "depth", "time", "units", "source", "direction_deg")
+
+    def __init__(self, value, lat, lon, depth, time, units, source, direction_deg=None) -> None:
+        self.value = value
+        self.lat = lat
+        self.lon = lon
+        self.depth = depth
+        self.time = time
+        self.units = units
+        self.source = source
+        self.direction_deg = direction_deg
+
+
+def speed_direction(u, v) -> tuple[float | None, float | None]:
+    """Speed, and the compass bearing the water moves TOWARDS, from u (east) and v (north)."""
+    if u is None or v is None or not (np.isfinite(u) and np.isfinite(v)):
+        return None, None
+    return float(np.hypot(u, v)), float((np.degrees(np.arctan2(u, v)) + 360.0) % 360.0)
+
+
 def _open(payload: bytes) -> xr.Dataset:
-    nc = netCDF4.Dataset("map.nc", mode="r", memory=payload)
-    return xr.open_dataset(xr.backends.NetCDF4DataStore(nc))
+    return open_in_memory(payload, "map.nc")
 
 
 def _stamp(time: str) -> str:
@@ -485,4 +512,48 @@ def fetch_point_block(
         values=np.ascontiguousarray(values, dtype=np.float32),
         depths=depths, times=times, lat=grid_lat, lon=grid_lon,
         units=ds.units, source=source,
+    )
+
+
+def _read_point(payload: bytes, ds: MapDataset, name: str):
+    with _open(payload) as dset:
+        raw = float(np.asarray(dset[name].values, dtype=np.float64).ravel()[0])
+        lat = float(np.atleast_1d(dset[ds.lat_dim].values)[0])
+        lon = float(np.atleast_1d(dset[ds.lon_dim].values)[0])
+        depth = (
+            float(np.atleast_1d(dset[ds.depth_dim].values)[0]) if ds.depth_dim is not None else None
+        )
+    return (raw if np.isfinite(raw) else None), lat, lon, depth
+
+
+def fetch_point_value(
+    *, ds: MapDataset, lat: float, lon: float, time: str, depth: float | None = None
+) -> PointValue:
+    """One level at one cell. A vector product returns speed and bearing.
+
+    `ds.variable` alone is only the u component of a current, so a vector
+    product reads both components (in parallel) and combines them.
+    """
+    names = list(ds.vector_components) if ds.vector_components else [ds.variable]
+
+    def one(name: str):
+        query = _query(ds, name, time=time[:10], depth=depth, lat_point=lat, lon_point=lon)
+        payload, source = client.fetch(
+            client.griddap_url(ds.dataset_id, query, fmt="nc", base=ds.base)
+        )
+        return _read_point(payload, ds, name), source
+
+    if len(names) == 1:
+        results = [one(names[0])]
+    else:
+        with ThreadPoolExecutor(max_workers=len(names)) as pool:
+            results = list(pool.map(one, names))
+
+    (value, cell_lat, cell_lon, cell_depth), source = results[0]
+    direction = None
+    if ds.vector_components:
+        value, direction = speed_direction(results[0][0][0], results[1][0][0])
+    return PointValue(
+        value=value, lat=cell_lat, lon=cell_lon, depth=cell_depth,
+        time=_stamp(time[:10]), units=ds.units, source=source, direction_deg=direction,
     )

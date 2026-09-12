@@ -67,11 +67,24 @@ COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 # the same degradation the Copernicus layers already have.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-# gemini-3.5-flash, not the newer 3.8. Free-tier quota is per model, and the
-# newest flash is the one everyone is hammering: measured on this key, 3.8 was
-# rate-limited (20/min, ~55 s to reset) while 3.5 answered immediately. 3.5
-# handles this tool loop identically. Override with GEMINI_MODEL to move.
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+# gemini-3.5-flash-lite at minimal thinking: measured 1.86 s per round against
+# 8-13 s for gemini-3.5-flash on the same prompt and tools (2026-09-10), choosing
+# the same tool call. Every answer costs at least one round and most cost two,
+# so this is the difference between a 3 s answer and a 20 s one.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+# Tried in order when the model above is rate limited or times out. Free-tier
+# quota is per model, so the next model is a fresh quota, not a retry.
+GEMINI_FALLBACK_MODELS: tuple[str, ...] = tuple(
+    m.strip()
+    for m in os.environ.get(
+        "GEMINI_FALLBACK_MODELS", "gemini-3.1-flash-lite,gemini-3.5-flash"
+    ).split(",")
+    if m.strip()
+)
+# "minimal" | "low" | "medium" | "high", or "" for the model's own default.
+GEMINI_THINKING = os.environ.get("GEMINI_THINKING", "minimal").strip().lower()
+# A request past this is abandoned for the next model rather than waited on.
+GEMINI_TIMEOUT_SECONDS = 20.0
 
 # Conversations and the analysis cache. SQLite rather than a hosted database:
 # context.md 1 requires the app be deployable on INCOIS infrastructure, and 4
@@ -87,6 +100,13 @@ ASSISTANT_CACHE_TTL_SECONDS = 60 * 60 * 24
 # A hard ceiling on tool-calling rounds per message. Without it a confused
 # model can loop until the quota is gone.
 ASSISTANT_MAX_STEPS = 6
+
+# A read past this budget is reported to the model as still loading. The fetch
+# finishes in the background and lands in the analysis cache for the next ask.
+ASSISTANT_READ_BUDGET_SECONDS = 10.0
+# Conversation turns resent to the model. Older ones cost latency on every
+# request and rarely change the answer.
+ASSISTANT_HISTORY_MESSAGES = 12
 
 # Google Search grounding, which lets the assistant answer live real-world
 # questions ("what is oil trading at?") with real sources instead of an honest
@@ -705,7 +725,25 @@ MAP_DATASETS = MAP_DATASETS + INCOIS_MAP_DATASETS
 MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}
 
 
-def map_dataset_for(variable_key: str) -> MapDataset | None:
-    """The best map source for a UI layer, or None if the map cannot draw it."""
+def map_dataset_for(variable_key: str, date: str | None = None) -> MapDataset | None:
+    """The best source for a variable, or None if nothing serves it.
+
+    Lowest `preference` wins. With `date`, only sources whose stated coverage
+    includes that day are considered: the assistant asking HYCOM (1994-2015)
+    for a 2026 date is how "HYCOM is unreachable" reached a reader (2026-09-10).
+    """
     candidates = [d for d in MAP_DATASETS if d.variable_key == variable_key]
+    if date:
+        day = date[:10]
+        candidates = [
+            d for d in candidates if d.time_range[0][:10] <= day <= d.time_range[1][:10]
+        ]
     return min(candidates, key=lambda d: d.preference) if candidates else None
+
+
+def coverage_for(variable_key: str) -> list[tuple[str, str, str]]:
+    """(provider, start, end) for every source of a variable, most preferred first."""
+    ranked = sorted(
+        (d for d in MAP_DATASETS if d.variable_key == variable_key), key=lambda d: d.preference
+    )
+    return [(d.provider, d.time_range[0][:10], d.time_range[1][:10]) for d in ranked]

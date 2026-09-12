@@ -61,6 +61,21 @@ class UpstreamUnavailable(RuntimeError):
     """
 
 
+class UpstreamRefused(UpstreamUnavailable):
+    """The upstream answered, with an error status, for this request.
+
+    Split from "unreachable" because the two send a reader to different places:
+    a refused request usually means the query is outside what the dataset holds
+    (a date past its end, a depth range APDRC chokes on), not that the network is
+    down. Subclassing keeps every existing `except UpstreamUnavailable` working.
+    """
+
+    def __init__(self, host: str, status: int) -> None:
+        super().__init__(f"{host} refused this request (HTTP {status}).")
+        self.host = host
+        self.status = status
+
+
 def _host(url: str) -> str:
     """The server actually being talked to.
 
@@ -111,6 +126,8 @@ def fetch(url: str, *, allow_cache: bool = True) -> tuple[bytes, SourceStatus]:
                 upstream=url,
                 note=f"{_host(url)} did not answer — showing the last copy we fetched.",
             )
+        if isinstance(exc, httpx.HTTPStatusError):
+            raise UpstreamRefused(_host(url), exc.response.status_code) from exc
         raise UpstreamUnavailable(
             f"{_host(url)} did not answer this request and it has not been cached."
         ) from exc

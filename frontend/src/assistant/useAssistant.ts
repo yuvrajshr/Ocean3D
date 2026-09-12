@@ -26,13 +26,9 @@ export interface ChatMessage {
   failed?: boolean;
 }
 
-export interface ScreenStatePayload {
-  view: string;
-  layers: { key: string; visible: boolean; opacity: number }[];
-  time: string;
-  depth_index: number;
-  depth_m: number;
-}
+// Every view's state, every turn — defined beside the bridge that builds it.
+export type { ScreenStatePayload } from "./useAssistantBridge";
+import type { ScreenStatePayload } from "./useAssistantBridge";
 
 interface Options {
   /** Applied after the answer lands. Returns the snapshot taken before applying. */

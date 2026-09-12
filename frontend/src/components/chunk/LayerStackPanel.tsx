@@ -10,7 +10,7 @@
  */
 
 import { VARIABLES, type CmapName, type VariableKey } from "../../viz/chunk/model";
-import type { ChunkPlatform, ChunkSource } from "../../viz/chunk/source";
+import type { ChunkSource } from "../../viz/chunk/source";
 import type { CutAxis, LayerDesc, ScalarMode, SceneSpec } from "../../viz/chunk/spec";
 import { fmt, gradient } from "./util";
 

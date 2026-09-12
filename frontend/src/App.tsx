@@ -24,11 +24,7 @@ import { ViewControls } from "./components/ViewControls";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { AssistantDock } from "./assistant/AssistantDock";
 import { BuildStatus } from "./build/BuildStatus";
-import {
-  applyLayerAction,
-  type AppSnapshot,
-  type AssistantAction,
-} from "./assistant/actions";
+import { useAssistantBridge } from "./assistant/useAssistantBridge";
 import { MapView } from "./map/MapView";
 import { ChunkView } from "./components/chunk/ChunkView";
 import { PointReadout } from "./map/PointReadout";
@@ -168,134 +164,19 @@ export default function App() {
 
   // ----------------------------------------------------------- assistant
   //
-  // The assistant reaches app state through exactly these three functions, and
-  // nowhere else.
-  //
-  // Layers are the awkward one, and there are TWO wrong ways to write them:
-  //
-  //   1. `dispatchMap({type: "layer/add"})` is overwritten by the `layers/sync`
-  //      effect below, which derives map.layers from the stack.
-  //   2. `setLayerStack` alone changes nothing on screen. VariablePanel owns the
-  //      stack in its own useState and only mirrors it up to `layerStack`; the
-  //      mirror is downstream, not the source.
-  //
-  // So a layer change sets the mirror AND hands the panel the new stack through
-  // `externalStack`, whose nonce is what marks it a fresh instruction. Both
-  // failures look like the assistant cheerfully reporting a change that did not
-  // happen, which is the worst shape of bug this feature can have.
-
-  /** What the assistant is told is currently on screen. Actions are validated against it. */
-  const assistantState = useCallback(
-    () => ({
-      view,
-      layers: layerStack.keys.map((key) => ({
-        key,
-        visible: layerStack.visibility[key] ?? true,
-        opacity: layerStack.opacity[key] ?? 1,
-      })),
-      time: map.time ?? "",
-      depth_index: depthIndex,
-      depth_m: DEFAULT_DEPTH_LEVELS[depthIndex]?.depthMeters ?? 0,
-      // Which chunk is open, so the assistant describes what is actually on
-      // screen. Without this it answers about the map's layers while the reader
-      // is looking at a block of the Bay of Bengal.
-      chunk_bbox: view === "chunk" ? [...chunk.bbox] : null,
-    }),
-    [view, layerStack, map.time, depthIndex, chunk.bbox],
-  );
-
-  /** Apply a batch of actions, returning the state as it was immediately before. */
-  const applyAssistantActions = useCallback(
-    (actions: AssistantAction[]): AppSnapshot | undefined => {
-      if (actions.length === 0) return undefined;
-      const before: AppSnapshot = {
-        layerStack,
-        view,
-        time: map.time ?? "",
-        depthIndex,
-      };
-
-      for (const action of actions) {
-        switch (action.type) {
-          case "set_layers": {
-            const nextStack = applyLayerAction(layerStack, action);
-            setLayerStack(nextStack);
-            setAssistantStack((prev) => ({
-              ...nextStack,
-              nonce: (prev?.nonce ?? 0) + 1,
-            }));
-            break;
-          }
-          case "set_view":
-            handleView(action.view as AppView);
-            break;
-          case "open_chunk":
-            // Through the same resolver a click uses, so a chunk the assistant
-            // opens is one the reader could have opened themselves.
-            openChunkRef.current(action.lat, action.lon);
-            break;
-          case "set_time":
-            dispatchMap({ type: "time/set", time: action.time });
-            break;
-          case "set_depth": {
-            // Nearest real level, not an interpolation: the depth ruler is an
-            // instrument and only has the levels the grid actually has.
-            let nearest = 0;
-            let best = Infinity;
-            DEFAULT_DEPTH_LEVELS.forEach((level, i) => {
-              const d = Math.abs(level.depthMeters - action.depth_m);
-              if (d < best) {
-                best = d;
-                nearest = i;
-              }
-            });
-            handleDepthIndexChange(nearest);
-            break;
-          }
-          case "zoom_to_region": {
-            const [south, north] = action.lat_range;
-            const [west, east] = action.lon_range;
-            dispatchMap({
-              type: "area/begin",
-              corner: { lat: south, lon: west },
-            });
-            dispatchMap({ type: "area/update", corner: { lat: north, lon: east } });
-            dispatchMap({ type: "area/commit" });
-            break;
-          }
-          case "set_pin":
-            dispatchMap({ type: "pin/set", point: { lat: action.lat, lon: action.lon } });
-            break;
-          case "set_area":
-            dispatchMap({
-              type: "area/begin",
-              corner: { lat: action.lat_range[0], lon: action.lon_range[0] },
-            });
-            dispatchMap({
-              type: "area/update",
-              corner: { lat: action.lat_range[1], lon: action.lon_range[1] },
-            });
-            dispatchMap({ type: "area/commit" });
-            break;
-        }
-      }
-      return before;
+  // The assistant reaches app state only through useAssistantBridge, created
+  // below once everything it routes to exists. The one piece that stays here is
+  // the layer seam, because App owns that state: VariablePanel owns the stack
+  // and only mirrors it up, so a new stack must set the mirror AND be handed to
+  // the panel through `externalStack`, whose nonce marks a fresh instruction.
+  // Either half alone looks like the assistant reporting a change that did not
+  // happen (next_session.md §1c trap 1).
+  const pushLayerStack = useCallback(
+    (stack: { keys: string[]; visibility: Record<string, boolean>; opacity: Record<string, number> }) => {
+      setLayerStack(stack);
+      setAssistantStack((prev) => ({ ...stack, nonce: (prev?.nonce ?? 0) + 1 }));
     },
-    [layerStack, view, map.time, depthIndex, handleView, handleDepthIndexChange],
-  );
-
-  const undoAssistant = useCallback(
-    (snapshot: AppSnapshot) => {
-      setLayerStack(snapshot.layerStack);
-      setAssistantStack((prev) => ({
-        ...snapshot.layerStack,
-        nonce: (prev?.nonce ?? 0) + 1,
-      }));
-      if (snapshot.view !== view) handleView(snapshot.view as AppView);
-      if (snapshot.time) dispatchMap({ type: "time/set", time: snapshot.time });
-      handleDepthIndexChange(snapshot.depthIndex);
-    },
-    [view, handleView, handleDepthIndexChange],
+    [],
   );
 
   const activeVariable = variables.find((v) => v.key === variableKey);
@@ -905,6 +786,30 @@ export default function App() {
     }
   }, [view]);
 
+  // Routes each assistant action to the view it was validated for (context.md
+  // §5.1 Principle 13, amended 2026-09-10).
+  const assistant = useAssistantBridge({
+    view,
+    handleView,
+    map,
+    dispatchMap,
+    mapSize: () => {
+      const box = viewportRef.current?.getBoundingClientRect();
+      return { width: box?.width || window.innerWidth, height: box?.height || window.innerHeight };
+    },
+    layerStack,
+    pushLayerStack,
+    scenario,
+    timeIndex,
+    setTimeIndex,
+    selected,
+    setSelected,
+    reportingFloats: visiblePlatforms,
+    instruments,
+    chunkBbox: chunk.bbox,
+    openChunkAt,
+  });
+
   return (
     <div className={`console${view === "chunk" ? " console--concealed" : ""}`}>
       <CommandPill
@@ -1137,9 +1042,11 @@ export default function App() {
         <AssistantPanel
           open={assistantOpen}
           onClose={() => setAssistantOpen(false)}
-          onActions={applyAssistantActions}
-          onUndo={undoAssistant}
-          getState={assistantState}
+          onActions={assistant.applyActions}
+          onUndo={assistant.undo}
+          getState={assistant.getState}
+          view={view === "globe" || view === "chunk" ? view : "map"}
+          scope={assistant.scope}
         />
       </div>
 
@@ -1149,6 +1056,8 @@ export default function App() {
             onBack={() => handleView("globe")}
             bbox={chunk.bbox}
             movedFrom={chunk.movedFrom}
+            onAssistantController={assistant.registerChunk}
+            onMove={openChunkAt}
           />
         </div>
       ) : null}

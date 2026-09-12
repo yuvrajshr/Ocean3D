@@ -10,11 +10,14 @@ Deliberately thin. Three jobs only:
 from __future__ import annotations
 
 import logging
+import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import CACHE_DIR
+from .config import CACHE_DIR, MAP_DATASETS
+from .ingestion import cmems
 from .routers import (
     assistant,
     catalog,
@@ -32,6 +35,15 @@ logging.basicConfig(
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The first Copernicus point read otherwise pays ~8 s to open the store.
+    # OCEANVIZ_WARM=off skips it (tests, or a machine with no network).
+    if os.environ.get("OCEANVIZ_WARM", "on").lower() != "off":
+        cmems.warm_in_background(MAP_DATASETS)
+    yield
+
+
 app = FastAPI(
     title="INCOIS 3D Ocean Data Visualization",
     description=(
@@ -39,6 +51,7 @@ app = FastAPI(
         "observations. SIH 2026, problem statement 26067."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Vite proxies /api in development, so this is belt-and-braces for the case

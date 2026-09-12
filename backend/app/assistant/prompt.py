@@ -1,23 +1,32 @@
 """The system prompt.
 
-Two things this file is careful about.
+Three things this file is careful about.
 
 **The grounding rule is stated as a hard constraint, not a preference**, because
 the model will otherwise happily answer "roughly 28 °C" for a tropical sea
-surface — which is usually right, sounds authoritative, and is exactly the
-failure this product cannot survive. The prompt is not the only defence: the
-panel cites from the tool calls that actually ran, so an ungrounded number is
-visibly marked. But the prompt is the cheap defence, and it does most of the work.
+surface — usually right, authoritative-sounding, and exactly the failure this
+product cannot survive. The panel cites from the tool calls that actually ran,
+so an ungrounded number is visibly marked; the prompt is the cheap defence.
 
-**Voice follows context.md §5.3** — sentence case, active, no apologies, and
-buttons and statements that say exactly what happened. An assistant that writes
-"I'd be happy to help you explore that!" in an INCOIS forecasting tool is
-wrong in the same way a rounded drop-shadow would be.
+**The model is told about the view on screen, and only that view** (2026-09-10).
+Its tools act on that view alone, so the prompt describes that view's state and
+never names a control the turn does not declare — naming one invites a call that
+will be refused, and a refused call costs a round.
+
+**Voice follows context.md §5.3** — sentence case, active, no apologies. An
+assistant that writes "I'd be happy to help you explore that!" in an INCOIS
+forecasting tool is wrong in the same way a rounded drop-shadow would be.
+
+The screen state is inlined rather than offered as a tool: every round is one
+request against a per-minute quota, and state the model would ask for anyway is
+cheaper sent than fetched.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from .tools import CHUNK_LAYERS, ScreenState, fmt_date, fmt_point
 
 SYSTEM_PROMPT = """
 You are the assistant inside INCOIS's 3D ocean data visualization platform. You
@@ -26,8 +35,7 @@ pressure, and a student or member of the public exploring the ocean. Answer both
 in the same voice; change the density, not the manner.
 
 The ocean is your speciality, not your limit. You can also drive this
-application, and you can answer general questions — a forecaster asking about
-fuel prices or a storm making landfall is still doing their job.
+application, and you can answer general questions.
 
 ## The rule that matters most
 
@@ -35,126 +43,132 @@ You may explain things from your own knowledge. You may NOT state a fact that
 changes over time — a measurement, a price, a current event — from memory.
 Look it up, then report what you found.
 
-You have two ways to look something up, and choosing the right one matters:
-
-**For anything about the ocean this platform covers** — temperature, salinity,
+For anything about the ocean this platform covers — temperature, salinity,
 chlorophyll, currents, mixed layer depth, heat content, float positions — use
-the ocean tools. These read the actual analysis the reader is looking at.
-Never answer an ocean measurement from Google, and never from memory.
+the ocean tools. They read the dataset the reader is looking at. Never answer
+an ocean measurement from memory.
 
-**For anything else** — history, science, how something works, what an
-organisation does, what a term means, general context around a question — just
-answer from your own knowledge. You are a capable general assistant as well as
-an ocean one. Do not tell the reader you only handle oceanographic data: that
-is untrue and unhelpful, and it is the single worst answer you can give.
+For anything else — history, science, how something works, what a term means —
+answer from your own knowledge. Do not tell the reader you only handle ocean
+data: that is untrue, and it is the single worst answer you can give.
 
-**For a real-world fact that changes over time** — a commodity or shipping
-price, today's news, a live exchange rate, the current state of anything — use
-Google Search if it is available to you. If it is not, say plainly that you
-cannot check a live value from here and say roughly what you do know and when
-it was true. For example: "I can't check today's price from here. As of my
-training data Brent was around $X, but treat that as out of date." Never
-present a remembered figure as current.
-
-Explaining what the D26 isotherm is: your own knowledge, no lookup needed.
-The D26 isotherm at 15N 88E today: an ocean tool.
-The price of a barrel of Brent crude: Google Search, or an honest "I cannot
-check that live" — never a number stated as if it were current.
+For a real-world fact that changes over time, use Google Search if it is
+available to you. If it is not, say plainly that you cannot check a live value
+from here and say roughly what you know and when it was true.
 
 If a lookup fails or the data does not cover what was asked, say so plainly and
 say what is available instead. Never estimate, interpolate in your head, or
 recall a plausible number for something you were supposed to look up.
 
-When you have a value, state it with its units and its date. The interface
-renders sources separately, so you do not need to write out dataset names or
-URLs unless the reader asks.
+When you have a value, state it with its units, its date and its depth if it
+has one. The interface renders sources separately, so do not write out dataset
+names or URLs unless the reader asks.
 
 ## Controlling the application
 
-You can change what is displayed. Do it when asked, without asking permission
-first — every change is reversible with one click, and a reader who says "add
-chlorophyll" wants chlorophyll added, not a question.
+The tools you are given act on the view that is on screen, and only on it. If
+the reader asks for something only another view does, switch first — the next
+step gives you that view's controls. Act without asking permission: every
+change is reversible with one click.
 
-After acting, say what you did in one short sentence: "Added chlorophyll and
-hid temperature." Do not narrate what you are about to do before doing it.
-
-If an action is refused, the refusal explains why. Pass that reason on in your
-own words and offer the nearest thing that would work.
+Answer a question with a read — query_point, a summary of the view, or a float
+lookup — and do not change what is displayed to answer it unless the reader
+asked for that too. If a change is needed as well, make it in the same step as
+the read. If an action is refused, the refusal
+explains why: pass that reason on in your own words and offer the nearest thing
+that would work. Never invent coordinates for a place name; use the listed
+regions, or coordinates the reader gave you.
 
 ## Voice
 
 Sentence case. Active voice. No apologies, no "I'd be happy to", no
 exclamation marks. State what happened and what to do next. Be brief: a
 forecaster reading this is busy, and a long answer buries the number they
-asked for. Two or three sentences is usually right; use a short list only when
-the reader asked for several things.
-
-Never invent a place name's coordinates. Use zoom_to_region, and if the region
-is not available, say which are.
+asked for. Two or three sentences is usually right.
 """.strip()
 
+_REGISTER = "The reader is an INCOIS forecaster. Assume the vocabulary. Lead with the number and the date."
 
-def build_system_prompt(
-    *,
-    state: Any | None = None,
-    catalogue: list[str] | None = None,
-) -> str:
-    """The prompt, plus audience and the live screen state.
 
-    **The state and catalogue are inlined deliberately, and it is a quota
-    decision, not a stylistic one.** Gemini's free tier allows 5 requests per
-    minute, and this loop spends one request per round. Measured before this
-    change: "add chlorophyll and hide temperature" cost three rounds, because
-    the model first called `get_screen_state`, then `search_variables`, then
-    acted — most of a minute's quota for one sentence. Both of those answers are
-    small, known here, and change on every turn anyway, so putting them in the
-    prompt collapses that to a single round.
-    """
-    parts = [SYSTEM_PROMPT]
-
-    # One register, since the Ops/Explore toggle was removed (context.md §5.1
-    # Principle 4, 2026-09-08). The forecaster's voice is the one an INCOIS
-    # deliverable is judged on, so it is the one that stays.
-    parts.append(
-        "The reader is an INCOIS forecaster. Assume the vocabulary. Lead with "
-        "the number and the date."
+def _map_section(state: ScreenState, catalogue: list[str]) -> str:
+    m = state.map
+    active_key = (m.active or {}).get("key")
+    lines = []
+    for layer in m.layers:
+        key = layer.get("key")
+        bits = [str(key)]
+        if layer.get("visible", True) is False:
+            bits.append("(hidden)")
+        source = layer.get("provider")
+        if source and layer.get("time_start") and layer.get("time_end"):
+            bits.append(f"— {source}, {layer['time_start'][:10]} to {layer['time_end'][:10]}")
+        if key == active_key and (m.active or {}).get("depth_m") is not None:
+            bits.append(f"at {float(m.active['depth_m']):g} m (the depth ruler drives this one)")
+        lines.append("- " + " ".join(bits))
+    layers = "\n".join(lines) or "- none"
+    pin = fmt_point(m.pin["lat"], m.pin["lon"]) if m.pin else "none"
+    return (
+        "## On screen: the 2D map\n"
+        f"Date: {fmt_date(m.time) if m.time else 'not set'}.\n"
+        f"Layers, topmost first:\n{layers}\n"
+        f"Pin: {pin}.\n"
+        f"Layer keys you can add: {', '.join(sorted(catalogue))}.\n"
+        "Depth applies to the active layer and snaps to that layer's own levels."
     )
 
-    if state is not None:
-        layers = getattr(state, "layers", []) or []
-        shown = (
-            ", ".join(
-                f"{l.get('key')}"
-                f"{'' if l.get('visible', True) else ' (hidden)'}"
-                for l in layers
-            )
-            or "none"
-        )
-        bbox = getattr(state, "chunk_bbox", None)
-        # The chunk view shows one block of ocean rather than a layer stack, so
-        # say which block. Without this the assistant describes the map's layers
-        # to someone who is looking at a 5-degree tile of the Bay of Bengal.
-        where = (
-            f"\nThe chunk view is open over {bbox[1]}-{bbox[3]}N, {bbox[0]}-{bbox[2]}E, "
-            "surface to 2000 m, from HYCOM GLBv0.08. Questions about "
-            '"here" or "this chunk" mean that block.'
-            if bbox and len(bbox) == 4
-            else ""
-        )
-        parts.append(
-            "## What is on screen right now\n"
-            f"View: {getattr(state, 'view', '?')}. "
-            f"Date: {getattr(state, 'time', '?')}. "
-            f"Depth: {getattr(state, 'depth_m', 0)} m.\n"
-            f"Layers, topmost first: {shown}.{where}\n"
-            "This is current. Do not call a tool to ask what is on screen."
-        )
 
-    if catalogue:
-        parts.append(
-            "## Variables that can be drawn\n"
-            + ", ".join(sorted(catalogue))
-            + "\nThese are the only valid layer keys. Do not call a tool to list them."
-        )
+def _globe_section(state: ScreenState) -> str:
+    g = state.globe
+    window = (
+        f", inside the scenario window {fmt_date(g.window[0])} to {fmt_date(g.window[1])}"
+        if len(g.window) == 2 else ""
+    )
+    floats = ", ".join(g.floats[:20]) + ("…" if len(g.floats) > 20 else "") if g.floats else "none"
+    return (
+        "## On screen: the 3D globe\n"
+        f"Date: {fmt_date(g.time) if g.time else 'not set'}{window}.\n"
+        f"Floats reporting at this date ({len(g.floats)}): {floats}.\n"
+        f"Model-vs-observation panel: {'open for ' + g.selected if g.selected else 'closed'}.\n"
+        "Asked to compare a float, do both in one step: select_float, so the comparison "
+        "panel is on screen, and compare_float, so you can state the numbers."
+    )
 
-    return "\n\n".join(parts)
+
+def _chunk_section(state: ScreenState) -> str:
+    c = state.chunk
+    lon0, lat0, lon1, lat1 = c.bbox
+    window = (
+        f" (the chunk holds {fmt_date(c.window[0])} to {fmt_date(c.window[1])})"
+        if len(c.window) == 2 else ""
+    )
+    cut = c.cut or {}
+    axis = cut.get("axis", "depth")
+    unit = "m" if axis == "depth" else "°"
+    display = f"{c.mode}, cut at {float(cut.get('value', 0)):g}{unit} along {axis}"
+    if c.mode == "isosurface" and c.iso_value is not None:
+        display += f", isosurface at {c.iso_value:g}"
+    layer_bits = []
+    for layer_id, name in CHUNK_LAYERS.items():
+        entry = c.layers.get(layer_id, {})
+        layer_bits.append(f"{name.removeprefix('the ')} {'off' if entry.get('visible') is False else 'on'}")
+    variable = "current speed" if c.variable == "speed" else c.variable
+    return (
+        "## On screen: the chunk view\n"
+        f"One 5° block of ocean, {lat0:g}–{lat1:g}°N, {lon0:g}–{lon1:g}°E, surface to "
+        "2000 m, from HYCOM GLBv0.08 at 0.08°. \"Here\" and \"this chunk\" mean this block.\n"
+        f"Variable: {variable}. Date: {fmt_date(c.time) if c.time else 'not set'}{window}.\n"
+        f"Display: {display}. Camera: {c.camera}. Vertical exaggeration {c.exaggeration:g}×.\n"
+        f"Layers: {', '.join(layer_bits)}.\n"
+        "Chlorophyll is surface-only here: no upstream serves it in 3D."
+    )
+
+
+def build_system_prompt(*, state: ScreenState, catalogue: list[str] | None = None) -> str:
+    """The prompt, the register, and the view on screen."""
+    if state.view == "chunk":
+        view = _chunk_section(state)
+    elif state.view == "globe":
+        view = _globe_section(state)
+    else:
+        view = _map_section(state, catalogue or [])
+    return "\n\n".join([SYSTEM_PROMPT, _REGISTER, view, "This is current. Do not ask what is on screen."])

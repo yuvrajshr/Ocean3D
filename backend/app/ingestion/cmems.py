@@ -24,6 +24,7 @@ import io as _io
 import logging
 import shutil
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,7 +41,7 @@ from ..config import (
 )
 from ..erddap_client import UpstreamUnavailable
 from ..models.schemas import SourceStatus
-from .erddap_map import PointBlock, SliceResult, VectorResult
+from .erddap_map import PointBlock, PointValue, SliceResult, VectorResult, speed_direction
 
 log = logging.getLogger(__name__)
 
@@ -318,3 +319,96 @@ def fetch_point_block(
     return PointBlock(values=np.ascontiguousarray(values), depths=depths, times=times,
                       lat=float(cell[0]), lon=float(cell[1]), units=ds.units,
                       source=_status("live", at, ds))
+
+
+# ------------------------------------------------------------- point reads
+
+_arco_lock = threading.Lock()
+_arco: dict[str, xr.Dataset] = {}
+
+
+def _arco_handle(ds: MapDataset) -> xr.Dataset:
+    """A lazily-opened ARCO store, held for the life of the process.
+
+    Spiked 2026-09-10: opening costs ~8 s once, and after that one cell costs
+    4-6 s, against ~11 s for every `subset`. Point reads are the one request
+    shape where holding the handle pays, so only they use it.
+    """
+    with _arco_lock:
+        handle = _arco.get(ds.dataset_id)
+        if handle is None:
+            _ensure_login()
+            import copernicusmarine as cm
+
+            try:
+                handle = cm.open_dataset(dataset_id=ds.dataset_id, service="arco-time-series")
+            except Exception as exc:  # noqa: BLE001 - toolbox raises a wide variety
+                raise CopernicusUnavailable(
+                    f"Copernicus Marine could not open {ds.dataset_id}: {exc}"
+                ) from exc
+            _arco[ds.dataset_id] = handle
+        return handle
+
+
+def _point_value(arrays: dict, ds: MapDataset, day: str, source: SourceStatus) -> PointValue:
+    vals = [float(v) if np.isfinite(v) else None for v in arrays["values"]]
+    value, direction = vals[0], None
+    if ds.vector_components:
+        value, direction = speed_direction(vals[0], vals[1])
+    cell = arrays["cell"]
+    return PointValue(
+        value=value, lat=float(cell[0]), lon=float(cell[1]),
+        depth=float(cell[2]) if np.isfinite(cell[2]) else None,
+        time=f"{day}T00:00:00Z", units=ds.units, source=source, direction_deg=direction,
+    )
+
+
+def fetch_point_value(
+    *, ds: MapDataset, lat: float, lon: float, time: str, depth: float | None = None
+) -> PointValue:
+    """One native cell through the held ARCO handle, disk-cached for 30 days."""
+    day = time[:10]
+    names = list(ds.vector_components) if ds.vector_components else [ds.variable]
+    key = _key(ds, "value", var=",".join(names), lat=round(lat, 3), lon=round(lon, 3), t=day, d=depth)
+    hit = cache.read(key, ttl=30 * 24 * 3600)
+    if hit is not None:
+        return _point_value(_unpack(hit.payload), ds, day, _status("cached", hit.fetched_at, ds))
+
+    sel: dict[str, object] = {"time": day, "latitude": lat, "longitude": lon}
+    if ds.depth_dim is not None:
+        sel["depth"] = depth if depth is not None else 0.0
+    try:
+        picked = _arco_handle(ds)[names].sel(**sel, method="nearest").load()
+    except CopernicusUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise CopernicusUnavailable(f"Copernicus Marine request failed: {exc}") from exc
+
+    arrays = {
+        "values": np.asarray([float(picked[n].values) for n in names], dtype=np.float64),
+        "cell": np.asarray([
+            float(picked["latitude"].values),
+            float(picked["longitude"].values),
+            float(picked["depth"].values) if "depth" in picked.coords else np.nan,
+        ]),
+    }
+    at = cache.write(key, _pack(arrays))
+    return _point_value(arrays, ds, day, _status("live", at, ds))
+
+
+def warm_in_background(datasets) -> threading.Thread | None:
+    """Open the ARCO handles off the request path, so a first question skips ~8 s."""
+    unique = list({d.dataset_id: d for d in datasets if d.protocol == "cmems"}.values())
+    if not unique or not COPERNICUS_AVAILABLE:
+        return None
+
+    def run() -> None:
+        for d in unique:
+            try:
+                _arco_handle(d)
+            except Exception as exc:  # noqa: BLE001 - a failed warm-up only costs time
+                log.warning("Copernicus warm-up for %s failed: %s", d.dataset_id, exc)
+
+    thread = threading.Thread(target=run, name="cmems-warm", daemon=True)
+    thread.start()
+    return thread

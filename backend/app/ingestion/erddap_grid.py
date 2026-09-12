@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 
-import netCDF4
 import numpy as np
 import xarray as xr
 
@@ -19,6 +18,7 @@ from .. import erddap_client as client
 from ..config import GRID_DATASET
 from ..models.schemas import SourceStatus
 from .base import VolumeResult
+from .netcdf_memory import open_in_memory
 
 
 def _open(payload: bytes) -> xr.Dataset:
@@ -27,8 +27,7 @@ def _open(payload: bytes) -> xr.Dataset:
     netCDF4 can read from a memory buffer, and xarray can wrap that store, so
     nothing touches the filesystem.
     """
-    nc = netCDF4.Dataset("inmemory.nc", mode="r", memory=payload)
-    return xr.open_dataset(xr.backends.NetCDF4DataStore(nc))
+    return open_in_memory(payload)
 
 
 def available_times(dataset_id: str = GRID_DATASET) -> tuple[list[str], SourceStatus]:

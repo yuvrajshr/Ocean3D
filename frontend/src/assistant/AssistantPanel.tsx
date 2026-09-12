@@ -20,14 +20,30 @@ import { ArrowUp, Loader2, Sparkles, X } from "lucide-react";
 
 import type { AppSnapshot, AssistantAction, Citation } from "./actions";
 import { useAssistant, type ScreenStatePayload } from "./useAssistant";
+import type { AssistantScopeLabel } from "./useAssistantBridge";
 import "../styles/assistant.css";
 
-const EXAMPLES = [
-  "Add the chlorophyll layer and hide temperature",
-  "What is the sea surface temperature at 15°N 88°E?",
-  "Which floats are reporting right now?",
-  "Take me to the Bay of Bengal",
-];
+/** What each view can do, said the way a reader would ask for it. */
+const EXAMPLES: Record<Props["view"], string[]> = {
+  map: [
+    "What is the sea surface temperature at 15°N 88°E?",
+    "Add the chlorophyll layer and hide temperature",
+    "Show 100 m",
+    "Take me to the Bay of Bengal",
+  ],
+  globe: [
+    "Compare float 2901335 against the model",
+    "Which floats are reporting?",
+    "Go to 11 October 2013",
+    "Open the chunk over the Bay of Bengal",
+  ],
+  chunk: [
+    "Show salinity",
+    "Switch to the isosurface",
+    "What is the temperature at 100 m here?",
+    "Where is the thermocline in this chunk?",
+  ],
+};
 
 interface Props {
   open: boolean;
@@ -35,6 +51,10 @@ interface Props {
   onActions: (actions: AssistantAction[]) => AppSnapshot | undefined;
   onUndo: (snapshot: AppSnapshot) => void;
   getState: () => ScreenStatePayload;
+  /** The view on screen: what the assistant's actions apply to. */
+  view: "map" | "globe" | "chunk";
+  /** Its name and the extent or date it shows, for the header's scope line. */
+  scope: AssistantScopeLabel;
 }
 
 const describe = (c: Citation) =>
@@ -82,7 +102,7 @@ function CitationLine({ citations }: { citations: Citation[] }) {
   );
 }
 
-export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: Props) {
+export function AssistantPanel({ open, onClose, onActions, onUndo, getState, view, scope }: Props) {
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -126,13 +146,23 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
       }}
     >
       <header className="assistant-panel__head">
-        <span className="assistant-panel__title">
-          <Sparkles
-            style={{ width: 15, height: 15, color: "var(--rt-copper, #e59858)" }}
-            aria-hidden
-          />
-          Ocean assistant
-        </span>
+        <div className="assistant-panel__heading">
+          <span className="assistant-panel__title">
+            <Sparkles
+              style={{ width: 15, height: 15, color: "var(--rt-copper, #e59858)" }}
+              aria-hidden
+            />
+            Ocean assistant
+          </span>
+          {/* Which view the assistant's changes land on. A label, then a
+              readout — two jobs, two elements, no separator glyph (§5.2). */}
+          <span className="assistant-panel__scope">
+            <span className="assistant-panel__scope-view">{scope.view}</span>
+            {scope.detail ? (
+              <span className="assistant-panel__scope-detail">{scope.detail}</span>
+            ) : null}
+          </span>
+        </div>
         <button
           type="button"
           className="assistant-panel__close"
@@ -155,11 +185,12 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState }: P
               <div className="assistant-panel__empty">
                 <strong>Ask about the water, or tell me what to show.</strong>
                 <p style={{ margin: "6px 0 0" }}>
-                  Every measurement I give you is fetched from the data on screen and cited.
-                  I will say so when something is general knowledge instead.
+                  Every measurement I give you is read from the data this view draws, and
+                  cited. Changes apply to the view you are on. I will say so when something
+                  is general knowledge instead.
                 </p>
                 <ul className="assistant-panel__examples">
-                  {EXAMPLES.map((ex) => (
+                  {EXAMPLES[view].map((ex) => (
                     <li key={ex}>
                       <button
                         type="button"

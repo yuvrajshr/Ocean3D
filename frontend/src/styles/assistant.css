@@ -140,6 +140,35 @@
   color: var(--rt-ink, #f4efe6);
 }
 
+.assistant-panel__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Which view the assistant's changes land on (context.md §5.1 Principle 13,
+   amended 2026-09-10). The view's name is a label, in the UI face; the extent
+   or date it shows is a literal readout, in Plex Mono. Two jobs, two elements,
+   and no middle dot between them (§5.2). Indented to sit under the title text,
+   past the 15px mark and its 8px gap. */
+.assistant-panel__scope {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rt-space-2, 8px);
+  min-width: 0;
+  padding-left: 23px;
+  font-size: var(--rt-text-sm, 10.7px);
+  color: var(--rt-ink-muted, #9698a3);
+}
+
+.assistant-panel__scope-detail {
+  font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .assistant-panel__close {
   border: 0;
   background: transparent;
@@ -162,6 +191,9 @@
 
 .assistant-panel__log {
   flex: 1;
+  /* Without this a column-flex child will not shrink below its content, and a
+     panel with a fixed height clips the log instead of scrolling it. */
+  min-height: 0;
   overflow-y: auto;
   padding: var(--rt-space-4, 16px);
   display: flex;
@@ -577,8 +609,32 @@
   bottom: 96px;
   top: auto;
 }
+/* The panel sits in the clear band between the chunk's layer rail
+   (.chunk-layers: left 84px + 252px wide) and its variable panel
+   (.chunk-inspector: right 20px + 276px wide), bottom-anchored above the time
+   bar (.chunk-time: bottom 20px, ~56px tall). It covers part of the box — the
+   viewport exception §5.1 Principle 13 already admits — but none of the chunk's
+   own controls, so a change the assistant makes can be watched as it lands.
+   It used to open at the top left, over the layer rail and the back control. */
 .assistant-layer--chunk .assistant-panel {
   right: auto;
-  left: var(--rt-space-4, 16px);
-  bottom: 140px;
+  left: 348px;
+  top: auto;
+  /* Level with the Ask dock's lower edge, and clear of the chunk's inline
+     "Loading …" chip, which sits just above the time bar. */
+  bottom: 96px;
+  width: min(420px, calc(100vw - 348px - 296px - 24px));
+  height: min(560px, calc(100vh - 200px));
+}
+
+/* After the rule above, and at its specificity: the plain narrow rule earlier
+   in this file is 0,1,0 and would lose to it, pinning the panel at 348px on a
+   phone. */
+@media (max-width: 900px) {
+  .assistant-layer--chunk .assistant-panel {
+    left: var(--rt-space-4, 16px);
+    right: var(--rt-space-4, 16px);
+    width: auto;
+    max-width: none;
+  }
 }

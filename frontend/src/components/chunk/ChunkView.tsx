@@ -23,7 +23,12 @@ import { resolveRegionName } from "../../viz/chunk/oceanRegions";
 import { VARIABLES, dateLabel, type VariableKey } from "../../viz/chunk/model";
 import { buildProfile } from "../../viz/chunk/profile";
 import type { ChunkPlatform, ChunkSource } from "../../viz/chunk/source";
-import { DEFAULT_SPEC, type PresetName } from "../../viz/chunk/spec";
+import { CHUNK_FOCUS_DATE, CHUNK_WINDOW_STEPS, DEFAULT_SPEC, type PresetName } from "../../viz/chunk/spec";
+import {
+  applyChunkAction,
+  describeChunkSpec,
+  type ChunkController,
+} from "../../assistant/chunkActions";
 import { FieldPanel } from "./FieldPanel";
 import { LayerStackPanel } from "./LayerStackPanel";
 import { ProfileCard, type ProfileView } from "./ProfileCard";
@@ -45,8 +50,8 @@ const SPEC_HINT = "Edit and press Apply. Layer types resolve through the registr
  * HYCOM is daily and runs 1994-2015, so this is inside its coverage, and it is
  * where the Argo floats the comparison needs actually are.
  */
-const FOCUS_DATE = "2013-10-10";
-const WINDOW_STEPS = 30;
+const FOCUS_DATE = CHUNK_FOCUS_DATE;
+const WINDOW_STEPS = CHUNK_WINDOW_STEPS;
 
 interface Props {
   /** Renders the breadcrumb's back control. Omitted, the crumb is read-only. */
@@ -55,9 +60,23 @@ interface Props {
   bbox?: Bbox;
   /** Set when the click's own tile had no coverage and we stepped outward. */
   movedFrom?: string | null;
+  /**
+   * Receives the assistant's handle on this view once the engine is ready, and
+   * null on unmount. Through it the assistant reads and changes THIS view's
+   * scene, by the same rules the panels use (assistant/chunkActions.ts).
+   */
+  onAssistantController?: (controller: ChunkController | null) => void;
+  /** Open the tile containing a point: the assistant's "move north" and friends. */
+  onMove?: (lat: number, lon: number) => void;
 }
 
-export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) {
+export function ChunkView({
+  onBack,
+  bbox: requested,
+  movedFrom = null,
+  onAssistantController,
+  onMove,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<ChunkEngine | null>(null);
@@ -449,6 +468,58 @@ export function ChunkView({ onBack, bbox: requested, movedFrom = null }: Props) 
   /* ---------------- derived ---------------- */
 
   const hist = useMemo(() => source?.histogram() ?? null, [source]);
+
+  /* ---------------- the assistant's handle ---------------- */
+
+  // Latest values, read by the controller rather than captured: it is created
+  // once per engine and called seconds after the render that made it.
+  const profRef = useRef(prof);
+  const histRef = useRef(hist);
+  const onMoveRef = useRef(onMove);
+  useEffect(() => {
+    profRef.current = prof;
+    histRef.current = hist;
+    onMoveRef.current = onMove;
+  });
+
+  useEffect(() => {
+    if (!ready || !onAssistantController) return;
+    const controller: ChunkController = {
+      getState: () =>
+        describeChunkSpec(engineRef.current?.spec ?? DEFAULT_SPEC, times, bbox, true),
+      apply: (action) => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        const h = histRef.current;
+        const effect = applyChunkAction(engine.spec, action, {
+          times,
+          hist: h ? { lo: h.lo, hi: h.hi } : null,
+        });
+        engine.spec = effect.spec;
+        if (effect.exaggeration) engine.applyExaggeration();
+        if (effect.preset) engine.goPreset(effect.preset);
+        commit();
+        if (effect.variableChanged) {
+          // Re-pair an open cast against the new field, as the panel does.
+          const open = profRef.current;
+          setProf((p) => (p ? { ...p, variable: effect.variableChanged! } : null));
+          if (open) openProfileRef.current(open.id);
+        }
+        if (effect.move) onMoveRef.current?.(effect.move.lat, effect.move.lon);
+      },
+      snapshot: () => ({ spec: structuredClone(engineRef.current?.spec ?? DEFAULT_SPEC) }),
+      restore: ({ spec: saved }) => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        engine.spec = structuredClone(saved);
+        engine.applyExaggeration();
+        engine.goPreset(engine.spec.view.preset);
+        commit(true);
+      },
+    };
+    onAssistantController(controller);
+    return () => onAssistantController(null);
+  }, [ready, times, bbox, onAssistantController, commit]);
 
   const extent = `${bbox[1]}°N–${bbox[3]}°N, ${bbox[0]}°E–${bbox[2]}°E`;
   const regionName = resolveRegionName(bbox);

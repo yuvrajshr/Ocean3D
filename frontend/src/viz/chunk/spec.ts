@@ -102,6 +102,15 @@ export const DEFAULT_SPEC: SceneSpec = {
   field: { variable: "temperature" },
 };
 
+/**
+ * The window the chunk opens on: thirty daily steps centred on Cyclone Phailin.
+ * HYCOM is daily and runs 1994-2015, so this is inside its coverage, and it is
+ * where the Argo floats the comparison needs actually are. Exported because the
+ * assistant must describe the chunk as it would open before it has mounted.
+ */
+export const CHUNK_FOCUS_DATE = "2013-10-10";
+export const CHUNK_WINDOW_STEPS = 30;
+
 /** Depths that get a tick on the box frame and a label on the CSS ruler. */
 export const RULER: number[] = [0, 50, 100, 200, 500, 1000, 2000];
 

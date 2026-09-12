@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from typing import Any, Iterator
 
 from fastapi import APIRouter, HTTPException
@@ -30,7 +31,7 @@ from pydantic import BaseModel, Field
 from ..assistant import gemini_client
 from ..assistant.store import SqliteConversationStore
 from ..assistant.tools import ScreenState
-from ..config import ASSISTANT_DB, GEMINI_MODEL, MAP_DATASETS
+from ..config import ASSISTANT_DB, ASSISTANT_HISTORY_MESSAGES, GEMINI_MODEL, MAP_DATASETS
 
 router = APIRouter()
 
@@ -41,24 +42,14 @@ def _catalogue_keys() -> list[str]:
     return sorted({d.variable_key for d in MAP_DATASETS if d.variable_key})
 
 
-class ScreenStatePayload(BaseModel):
-    """What the client says is on screen. Actions are validated against this."""
-
-    view: str = "map"
-    layers: list[dict[str, Any]] = Field(default_factory=list)
-    time: str = ""
-    depth_index: int = 0
-    depth_m: float = 0.0
-    # (lon_min, lat_min, lon_max, lat_max) when the chunk view is open, else
-    # None. The assistant is told which block of ocean is on screen so it does
-    # not answer about the map's layers while the reader is inside a chunk.
-    chunk_bbox: list[float] | None = None
-
-
 class MessageRequest(BaseModel):
     message: str
     conversation_id: str | None = None
-    state: ScreenStatePayload = Field(default_factory=ScreenStatePayload)
+    # Every view's state, every turn: { view, map, globe, chunk }. Parsed
+    # tolerantly by ScreenState.from_payload, so a client one field behind still
+    # gets an answer rather than a 422. The loop can switch views mid-turn and
+    # validate against the new one without asking the browser again.
+    state: dict[str, Any] = Field(default_factory=dict)
 
 
 class StatusResponse(BaseModel):
@@ -80,6 +71,9 @@ def status() -> StatusResponse:
             available=False,
             reason="No Gemini API key configured. Add GEMINI_API_KEY to backend/.env.",
         )
+    # The dock asks this when the app opens, which is the moment to learn whether
+    # the key can use Google Search — off the path of the reader's first question.
+    gemini_client.start_search_probe()
     return StatusResponse(available=True, model=GEMINI_MODEL)
 
 
@@ -121,6 +115,7 @@ def _sse(event: str, payload: dict[str, Any]) -> str:
 @router.post("/assistant/message")
 def message(req: MessageRequest) -> StreamingResponse:
     """Ask the assistant something, streaming progress back as it works."""
+    started = time.perf_counter()
     if not gemini_client.is_available():
         raise HTTPException(
             503,
@@ -141,10 +136,12 @@ def message(req: MessageRequest) -> StreamingResponse:
             "type": "user_input" if m.role == "user" else "model_output",
             "content": [{"type": "text", "text": m.content}],
         }
-        for m in _store.get_messages(conversation_id)
+        # The recent turns only: every one is resent on every round, and older
+        # ones cost latency far more often than they change an answer.
+        for m in _store.get_messages(conversation_id)[-ASSISTANT_HISTORY_MESSAGES:]
     ]
 
-    state = ScreenState(**req.state.model_dump())
+    state = ScreenState.from_payload(req.state)
     catalogue = _catalogue_keys()
 
     def stream() -> Iterator[str]:
@@ -202,6 +199,13 @@ def message(req: MessageRequest) -> StreamingResponse:
                 "message_id": message_id,
                 "actions": result.actions,
                 "citations": result.citations,
+                # Measured on the server, request in to answer out, so latency
+                # claims can be checked rather than asserted.
+                "timing": {
+                    "total_ms": round((time.perf_counter() - started) * 1000),
+                    "rounds": result.rounds,
+                    "model": result.model,
+                },
             },
         )
 
