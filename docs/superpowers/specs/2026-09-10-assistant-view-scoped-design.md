@@ -91,11 +91,11 @@ When the chunk is not mounted, the block describes the chunk as it would open
 ### 4. Upstream change folded in (2026-09-10, after this spec was approved)
 
 Parthvats13 removed the chunk's sea-surface and instrument-traces layers on
-`origin/main` (6718bc1, 38db870). The chunk now carries scalar, currents and
-bathymetry only, and with no instrument layer the engine has nothing to pick, so
-the chunk's profile card is unreachable. The assistant follows the team's call:
-no `open_float` and no surface/instruments targets in the chunk. Model-vs-
-observation stays reachable everywhere through `compare_float` (INCOIS).
+`origin/main` (6718bc1, 38db870), then restored the instrument traces with a
+reworked panel (77f5583, merged 2026-09-12). The chunk carries scalar, currents,
+bathymetry and instrument traces; the assistant's chunk tools match, including
+`open_float`. Model-vs-observation against INCOIS stays reachable everywhere
+through `compare_float`.
 
 ## Speed
 

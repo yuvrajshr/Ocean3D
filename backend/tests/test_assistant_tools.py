@@ -69,6 +69,7 @@ def chunk_state(**over) -> ScreenState:
         variable="temperature",
         time="2013-10-07",
         window=["2013-09-25", "2013-10-24"],
+        platforms=["2901335", "2901327"],
     )
     c.update(over)
     return ScreenState(view="chunk", chunk=ChunkState(**c))
@@ -311,13 +312,25 @@ def test_camera_presets_accept_their_labels():
     assert act("set_camera", {"preset": "top-down"}, chunk_state())["preset"] == "top"
 
 
-def test_layers_are_the_three_the_chunk_still_has():
-    assert set(CHUNK_LAYERS) == {"scalar", "currents", "bathy"}
+def test_layers_are_the_ones_the_chunk_has():
+    # The sea surface was removed upstream (6718bc1). The instrument traces were
+    # removed (38db870) and then restored (77f5583) — the registry follows the view.
+    assert set(CHUNK_LAYERS) == {"scalar", "currents", "bathy", "instruments"}
     assert act("set_layer", {"layer": "bathymetry", "visible": False}, chunk_state())["layer"] == "bathy"
+    assert act("set_layer", {"layer": "instrument traces", "visible": False}, chunk_state())["layer"] == "instruments"
     with pytest.raises(ActionError):
-        act("set_layer", {"layer": "instruments", "visible": False}, chunk_state())
+        act("set_layer", {"layer": "sea surface", "visible": False}, chunk_state())
     with pytest.raises(ActionError):
         act("set_layer", {"layer": "currents"}, chunk_state())
+
+
+def test_open_float_only_for_a_float_in_this_chunk():
+    assert act("open_float", {"platform_id": "2901335"}, chunk_state())["platform_id"] == "2901335"
+    with pytest.raises(ActionError) as e:
+        act("open_float", {"platform_id": "9999999"}, chunk_state())
+    assert "2901335" in str(e.value), "the refusal names the floats that are here"
+    with pytest.raises(ActionError):
+        act("open_float", {"platform_id": "2901335"}, chunk_state(platforms=[]))
 
 
 def test_colour_scale_needs_a_real_change():

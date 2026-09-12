@@ -21,7 +21,6 @@ import {
   Check,
   Flame,
   Layers,
-  Lock,
 } from "lucide-react";
 import "../styles/data-catalogue-modal.css";
 
@@ -45,9 +44,12 @@ export const PRIMARY_VARIABLES = [
   { code: "temperature", name: "Sea Water Temperature", units: "°C" },
   { code: "salinity", name: "Practical Salinity", units: "PSU" },
   { code: "currents", name: "Current Velocity", units: "m/s" },
+  { code: "ph", name: "Ocean Acidity (pH)", units: "pH" },
+  { code: "zooplankton", name: "Zooplankton Biomass", units: "g/m²" },
 ];
 
 export const CYCLONE_VARIABLES = [
+  { code: "wave_height", name: "Significant Wave Height (VHM0)", units: "m" },
   { code: "heat_content", name: "Tropical Cyclone Heat Content (TCHP)", units: "kJ/cm²" },
   { code: "mixed_layer_depth", name: "Mixed Layer Depth (MLD)", units: "m" },
   { code: "d26", name: "26°C Isotherm Depth (D26)", units: "m" },
@@ -55,34 +57,105 @@ export const CYCLONE_VARIABLES = [
 ];
 
 export const PRODUCTS: CatalogueProduct[] = [
+  // --- Ocean Variables (3D) ---
   {
-    id: "prod-001",
-    title: "Global & Tropical Indian Ocean Physics Analysis",
-    code: "INCOIS_TIO_PHYSICS_ANALYSIS_001",
+    id: "prod-temp",
+    title: "Sea Water Temperature (3D Analysis)",
+    code: "INCOIS_TIO_TEMP_3D",
     isModel: true,
-    // Read off the live server, not aspirational: incois_argo_10d_VAM is a 1 deg
-    // grid with 24 levels. 0.083 x 50 is Copernicus's spec, which the map uses
-    // but the 3D column does not.
     spatialResolution: "Tropical Indian Ocean, 1.0° × 24 levels (5–2000 m)",
     coverageStart: "10 Jan 2004",
     coverageEnd: "30 Jul 2026",
     temporalFrequency: "10-day variational analysis",
     category: "primary",
-    badge: "INCOIS-HYCOM Analysis",
-    thumbnailGradient: "linear-gradient(135deg, #b45309, #d97706, #f59e0b, #eab308)",
+    badge: "INCOIS-HYCOM",
+    thumbnailGradient: "linear-gradient(135deg, #9a3412, #c2410c, #ea580c, #f97316)",
     primaryVariable: "temperature",
-    variables: [
-      { code: "temperature", name: "Temperature" },
-      { code: "salinity", name: "Salinity" },
-      { code: "currents", name: "Currents" },
-    ],
+    variables: [{ code: "temperature", name: "Temperature" }],
   },
   {
-    id: "prod-002",
-    title: "Bay of Bengal Cyclone Phailin Hazard Model",
+    id: "prod-sal",
+    title: "Practical Salinity (3D Analysis)",
+    code: "INCOIS_TIO_SAL_3D",
+    isModel: true,
+    spatialResolution: "Tropical Indian Ocean, 1.0° × 24 levels (5–2000 m)",
+    coverageStart: "10 Jan 2004",
+    coverageEnd: "30 Jul 2026",
+    temporalFrequency: "10-day variational analysis",
+    category: "primary",
+    badge: "INCOIS-HYCOM",
+    thumbnailGradient: "linear-gradient(135deg, #1e3a8a, #1d4ed8, #2563eb, #60a5fa)",
+    primaryVariable: "salinity",
+    variables: [{ code: "salinity", name: "Salinity" }],
+  },
+  {
+    id: "prod-curr",
+    title: "Ocean Current Velocity & Drift",
+    code: "INCOIS_TIO_CURRENTS",
+    isModel: true,
+    spatialResolution: "Tropical Indian Ocean, 1.0° × surface vector",
+    coverageStart: "10 Jan 2004",
+    coverageEnd: "30 Jul 2026",
+    temporalFrequency: "10-day geostrophic analysis",
+    category: "primary",
+    badge: "INCOIS-HYCOM",
+    thumbnailGradient: "linear-gradient(135deg, #065f46, #047857, #059669, #34d399)",
+    primaryVariable: "currents",
+    variables: [{ code: "currents", name: "Current Velocity" }],
+  },
+  {
+    id: "prod-ph",
+    title: "Global Ocean Acidity (pH)",
+    code: "CMEMS_MOD_GLO_BGC_CAR_DAILY",
+    isModel: true,
+    spatialResolution: "Global, 0.25° × 50 depth levels (0.5–5728 m)",
+    coverageStart: "1 Nov 2021",
+    coverageEnd: "19 Sep 2026",
+    temporalFrequency: "Daily global biogeochemical analysis",
+    category: "primary",
+    badge: "Copernicus BGC",
+    thumbnailGradient: "linear-gradient(135deg, #be123c, #e11d48, #fb7185, #38bdf8)",
+    primaryVariable: "ph",
+    variables: [{ code: "ph", name: "Ocean Acidity (pH)" }],
+  },
+  {
+    id: "prod-zoo",
+    title: "Global Ocean Zooplankton Biomass",
+    code: "CMEMS_MOD_GLO_BGC_MY_LMTL_P1D-I",
+    isModel: true,
+    spatialResolution: "Global, 0.083° × surface biomass",
+    coverageStart: "1 Jan 1998",
+    coverageEnd: "19 Sep 2026",
+    temporalFrequency: "Daily global biomass hindcast & forecast",
+    category: "primary",
+    badge: "Copernicus SEAPODYM",
+    thumbnailGradient: "linear-gradient(135deg, #064e3b, #047857, #10b981, #6ee7b7)",
+    primaryVariable: "zooplankton",
+    variables: [{ code: "zooplankton", name: "Zooplankton Biomass" }],
+  },
+
+  // --- Cyclone Hazard Fields ---
+  {
+    id: "prod-wave",
+    title: "Significant Wave Height (VHM0)",
+    code: "CMEMS_MOD_GLO_WAV_MY_0.2DEG_PT3H-I",
+    isModel: true,
+    spatialResolution: "Global, 0.2° × surface wave spectrum",
+    coverageStart: "1 Jan 1980",
+    coverageEnd: "31 May 2026",
+    temporalFrequency: "3-hourly global wave reanalysis",
+    category: "cyclone",
+    badge: "Copernicus WAVERYS",
+    thumbnailGradient: "linear-gradient(135deg, #0c2340, #004b87, #0284c7, #38bdf8)",
+    primaryVariable: "wave_height",
+    variables: [{ code: "wave_height", name: "Significant Wave Height" }],
+  },
+  {
+    id: "prod-tchp",
+    title: "Tropical Cyclone Heat Content (TCHP)",
     code: "INCOIS_CYCLONE_PHAILIN_OCT2013",
     isModel: true,
-    spatialResolution: "Bay of Bengal (5–23°N, 78–95°E) × 50 levels",
+    spatialResolution: "Bay of Bengal (5–23°N, 78–95°E) × upper ocean",
     coverageStart: "4 Oct 2013",
     coverageEnd: "16 Oct 2013",
     temporalFrequency: "Hourly cold wake & upper thermal structure",
@@ -90,48 +163,52 @@ export const PRODUCTS: CatalogueProduct[] = [
     badge: "WRF-Ocean Model",
     thumbnailGradient: "linear-gradient(135deg, #c2410c, #ea580c, #f97316, #fb923c)",
     primaryVariable: "heat_content",
-    variables: [
-      { code: "heat_content", name: "Heat Content" },
-      { code: "mixed_layer_depth", name: "MLD" },
-      { code: "d26", name: "D26" },
-      { code: "chlorophyll", name: "Chlorophyll" },
-    ],
+    variables: [{ code: "heat_content", name: "Heat Content" }],
   },
   {
-    id: "prod-003",
-    title: "Indian Ocean Biogeochemical Satellite Composite",
+    id: "prod-mld",
+    title: "Global Ocean Mixed Layer Depth (MLD)",
+    code: "CMEMS_MOD_GLO_PHY_MY_0.083DEG_P1D-M",
+    isModel: true,
+    spatialResolution: "Global, 0.083° × surface scalar (depth)",
+    coverageStart: "1 Jan 1993",
+    coverageEnd: "23 Jun 2026",
+    temporalFrequency: "Daily global ocean reanalysis",
+    category: "cyclone",
+    badge: "Copernicus GLORYS12",
+    thumbnailGradient: "linear-gradient(135deg, #0f4c81, #1565c0, #1976d2, #42a5f5)",
+    primaryVariable: "mixed_layer_depth",
+    variables: [{ code: "mixed_layer_depth", name: "Mixed Layer Depth" }],
+  },
+  {
+    id: "prod-d26",
+    title: "26°C Isotherm Depth (D26)",
+    code: "INCOIS_PHAILIN_D26_DAILY",
+    isModel: true,
+    spatialResolution: "North Indian Ocean, 0.083° × 50 depth levels",
+    coverageStart: "1 Oct 2013",
+    coverageEnd: "20 Oct 2013",
+    temporalFrequency: "Daily multi-layer analysis",
+    category: "cyclone",
+    badge: "INCOIS-TIO Model",
+    thumbnailGradient: "linear-gradient(135deg, #4338ca, #4f46e5, #7c3aed, #a855f7)",
+    primaryVariable: "d26",
+    variables: [{ code: "d26", name: "D26 Depth" }],
+  },
+  {
+    id: "prod-chla",
+    title: "Chlorophyll-a Bloom & Cold Wake",
     code: "INCOIS_BIO_OCEAN_COLOR_DAILY",
-    isModel: false,
+    isModel: true,
     spatialResolution: "North Indian Ocean, 4 km optical raster",
     coverageStart: "1 Oct 2013",
     coverageEnd: "20 Oct 2013",
     temporalFrequency: "Daily composite raster",
     category: "cyclone",
     badge: "MODIS-Aqua Satellite",
-    thumbnailGradient: "linear-gradient(135deg, #0f766e, #0d9488, #06b6d4)",
+    thumbnailGradient: "linear-gradient(135deg, #0f766e, #0d9488, #06b6d4, #22d3ee)",
     primaryVariable: "chlorophyll",
-    variables: [
-      { code: "chlorophyll", name: "Chlorophyll-a" },
-      { code: "temperature", name: "SST" },
-    ],
-  },
-  {
-    id: "prod-004",
-    title: "North Indian Ocean Thermal Structure Reanalysis",
-    code: "INCOIS_THERMAL_STRUCTURE_DAILY",
-    isModel: true,
-    spatialResolution: "North Indian Ocean, 0.083° × 50 depth levels",
-    coverageStart: "1 Oct 2013",
-    coverageEnd: "20 Oct 2013",
-    temporalFrequency: "Daily multi-layer analysis",
-    category: "primary",
-    badge: "INCOIS-TIO Simulation",
-    thumbnailGradient: "linear-gradient(135deg, #4338ca, #4f46e5, #7c3aed)",
-    primaryVariable: "d26",
-    variables: [
-      { code: "d26", name: "D26" },
-      { code: "mixed_layer_depth", name: "MLD" },
-    ],
+    variables: [{ code: "chlorophyll", name: "Chlorophyll-a" }],
   },
 ];
 
@@ -158,6 +235,29 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     setSelectedCategory("all");
     setSelectedVariableCode(null);
   };
+
+  // Filter variables based on search input for responsive sidebar options
+  const filteredPrimaryVars = useMemo(() => {
+    if (!searchQuery.trim()) return PRIMARY_VARIABLES;
+    const q = searchQuery.toLowerCase();
+    return PRIMARY_VARIABLES.filter(
+      (v) =>
+        v.name.toLowerCase().includes(q) ||
+        v.code.toLowerCase().includes(q) ||
+        v.units.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  const filteredCycloneVars = useMemo(() => {
+    if (!searchQuery.trim()) return CYCLONE_VARIABLES;
+    const q = searchQuery.toLowerCase();
+    return CYCLONE_VARIABLES.filter(
+      (v) =>
+        v.name.toLowerCase().includes(q) ||
+        v.code.toLowerCase().includes(q) ||
+        v.units.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
 
   // Filter products based on search and category/variable
   const filteredProducts = useMemo(() => {
@@ -186,15 +286,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     });
   }, [searchQuery, selectedCategory, selectedVariableCode]);
 
-  // Determine WHICH single product has the active "+ Add to map..." action
-  // If a cyclone variable or category is chosen, Cyclone Phailin model is the 1 available to add.
-  // Otherwise, the Primary Physics model is the 1 available to add. All others remain view-only.
-  const availableProductId = useMemo(() => {
-    const isCycloneSelected =
-      selectedCategory === "cyclone" ||
-      (selectedVariableCode && CYCLONE_VARIABLES.some((v) => v.code === selectedVariableCode));
-    return isCycloneSelected ? "prod-002" : "prod-001";
-  }, [selectedCategory, selectedVariableCode]);
+
 
   const [isClosing, setIsClosing] = useState(false);
   const [shouldRender, setShouldRender] = useState(isOpen);
@@ -221,7 +313,10 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
   };
 
   const handleAddProduct = (product: CatalogueProduct) => {
-    const targetVar = selectedVariableCode || product.primaryVariable;
+    const targetVar =
+      selectedVariableCode && product.variables.some((v) => v.code === selectedVariableCode)
+        ? selectedVariableCode
+        : product.primaryVariable;
     onAddLayer(targetVar);
 
     setToastMessage(`Added layer to map`);
@@ -310,6 +405,16 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="catalogue-search-input"
                 />
+                {searchQuery.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="catalogue-search-clear-btn"
+                    title="Clear search"
+                  >
+                    <X style={{ width: 12, height: 12 }} />
+                  </button>
+                )}
               </div>
 
               {/* 1. Primary Ocean Variables */}
@@ -320,34 +425,45 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                     setSelectedVariableCode(null);
                   }}
                   className={`catalogue-section-header-btn ${selectedCategory === "primary" ? "catalogue-section-header-btn--active" : ""}`}
+                  title="Filter by Ocean Variables (3D)"
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <Layers className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#38bdf8" }} />
                     Ocean Variables (3D)
                   </span>
-                  <span className="catalogue-count-badge">3</span>
+                  <span className="catalogue-count-badge">{filteredPrimaryVars.length}</span>
                 </div>
 
                 <div className="catalogue-options-list">
-                  {PRIMARY_VARIABLES.map((v) => {
-                    const isSelected = selectedVariableCode === v.code;
-                    return (
-                      <button
-                        type="button"
-                        key={v.code}
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          setSelectedCategory("primary");
-                          setSelectedVariableCode((prev) => (prev === v.code ? null : v.code));
-                        }}
-                        className={`catalogue-option-item ${isSelected ? "catalogue-option-item--selected" : ""}`}
+                  {filteredPrimaryVars.length === 0 ? (
+                    <div className="catalogue-option-empty">No matching variables</div>
+                  ) : (
+                    filteredPrimaryVars.map((v) => {
+                      const isSelected = selectedVariableCode === v.code;
+                      return (
+                        <button
+                          type="button"
+                          key={v.code}
+                          aria-pressed={isSelected}
+                          title={`${v.name} (${v.units})`}
+                          onClick={() => {
+                            setSelectedCategory("primary");
+                            setSelectedVariableCode((prev) => (prev === v.code ? null : v.code));
+                          }}
+                          className={`catalogue-option-item ${isSelected ? "catalogue-option-item--selected" : ""}`}
                         >
-                        <span className="catalogue-option-label">{v.name}</span>
-                        <span className="catalogue-option-unit">{v.units}</span>
-                        {isSelected && <Check className="w-3 h-3" style={{ width: 12, height: 12, color: "#22d3ee" }} />}
-                      </button>
-                    );
-                  })}
+                          <span className="catalogue-option-label">{v.name}</span>
+                          <span className="catalogue-option-unit">{v.units}</span>
+                          {isSelected && (
+                            <Check
+                              className="w-3.5 h-3.5"
+                              style={{ width: 13, height: 13, color: "var(--rt-copper, #e59858)", strokeWidth: 3 }}
+                            />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -359,34 +475,45 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                     setSelectedVariableCode(null);
                   }}
                   className={`catalogue-section-header-btn ${selectedCategory === "cyclone" ? "catalogue-section-header-btn--active" : ""}`}
+                  title="Filter by Cyclone Hazard Fields"
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <Flame className="w-3.5 h-3.5" style={{ width: 14, height: 14, color: "#f97316" }} />
                     Cyclone Hazard Fields
                   </span>
-                  <span className="catalogue-count-badge">4</span>
+                  <span className="catalogue-count-badge">{filteredCycloneVars.length}</span>
                 </div>
 
                 <div className="catalogue-options-list">
-                  {CYCLONE_VARIABLES.map((v) => {
-                    const isSelected = selectedVariableCode === v.code;
-                    return (
-                      <button
-                        type="button"
-                        key={v.code}
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          setSelectedCategory("cyclone");
-                          setSelectedVariableCode((prev) => (prev === v.code ? null : v.code));
-                        }}
-                        className={`catalogue-option-item ${isSelected ? "catalogue-option-item--selected" : ""}`}
+                  {filteredCycloneVars.length === 0 ? (
+                    <div className="catalogue-option-empty">No matching variables</div>
+                  ) : (
+                    filteredCycloneVars.map((v) => {
+                      const isSelected = selectedVariableCode === v.code;
+                      return (
+                        <button
+                          type="button"
+                          key={v.code}
+                          aria-pressed={isSelected}
+                          title={`${v.name} (${v.units})`}
+                          onClick={() => {
+                            setSelectedCategory("cyclone");
+                            setSelectedVariableCode((prev) => (prev === v.code ? null : v.code));
+                          }}
+                          className={`catalogue-option-item ${isSelected ? "catalogue-option-item--selected" : ""}`}
                         >
-                        <span className="catalogue-option-label">{v.name}</span>
-                        <span className="catalogue-option-unit">{v.units}</span>
-                        {isSelected && <Check className="w-3 h-3" style={{ width: 12, height: 12, color: "#22d3ee" }} />}
-                      </button>
-                    );
-                  })}
+                          <span className="catalogue-option-label">{v.name}</span>
+                          <span className="catalogue-option-unit">{v.units}</span>
+                          {isSelected && (
+                            <Check
+                              className="w-3.5 h-3.5"
+                              style={{ width: 13, height: 13, color: "var(--rt-copper, #e59858)", strokeWidth: 3 }}
+                            />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -407,7 +534,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                 <span className="catalogue-products-count">{filteredProducts.length}</span>
               </div>
               <div className="catalogue-products-subtitle">
-                1 operational layer available to map · reference models for inspection
+                {filteredProducts.length} operational layer{filteredProducts.length !== 1 ? "s" : ""} available to add to map
               </div>
             </div>
 
@@ -425,13 +552,12 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
             ) : (
               <div className="catalogue-products-grid">
                 {filteredProducts.map((product) => {
-                  const isAvailableToAdd = product.id === availableProductId;
                   const isAnyVarActive = product.variables.some((v) => activeLayers.includes(v.code));
 
                   return (
                     <div
                       key={product.id}
-                      className={`catalogue-card ${isAvailableToAdd ? "catalogue-card--available" : "catalogue-card--readonly"}`}
+                      className="catalogue-card catalogue-card--available"
                     >
                       {/* Compact Card Thumbnail */}
                       <div className="catalogue-card-thumb">
@@ -449,25 +575,19 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                           {isAnyVarActive && " · Active"}
                         </div>
 
-                        {/* ONLY the single available product displays "Add to map" */}
-                        {isAvailableToAdd ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAddProduct(product)}
-                            className="catalogue-add-to-map-btn"
-                            title={`Add ${product.title} to 3D map`}
-                          >
-                            <span className="catalogue-add-btn__icon">
-                              <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, strokeWidth: 2.5 }} />
-                            </span>
-                            <span className="catalogue-add-btn__label">Add to map</span>
-                          </button>
-                        ) : (
-                          <div className="catalogue-readonly-badge">
-                            <Lock className="w-3 h-3" style={{ width: 11, height: 11 }} />
-                            <span>Reference Dataset</span>
-                          </div>
-                        )}
+                        {/* Every operational product can be added to the map. Sentence case
+                            and no appended arrow (context.md §5.2, §5.3). */}
+                        <button
+                          type="button"
+                          onClick={() => handleAddProduct(product)}
+                          className="catalogue-add-to-map-btn"
+                          title={`Add ${product.title} to 3D map`}
+                        >
+                          <span className="catalogue-add-btn__icon">
+                            <Plus className="w-3.5 h-3.5" style={{ width: 14, height: 14, strokeWidth: 2.5 }} />
+                          </span>
+                          <span className="catalogue-add-btn__label">Add to map</span>
+                        </button>
                       </div>
 
                       {/* Card Details Body */}
@@ -496,6 +616,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                               );
                             })}
                           </div>
+                          <div className="catalogue-card-temporal">{product.temporalFrequency}</div>
                         </div>
                       </div>
                     </div>

@@ -37,6 +37,9 @@ export interface CommandPillProps {
   pointsCount?: number;
   isPointsOpen?: boolean;
   onTogglePoints?: () => void;
+  /** True when at least one map layer exists — distinguishes "waiting for first
+   *  slice" (loading) from "genuinely unreachable" (offline). */
+  hasLayers?: boolean;
 }
 
 export function CommandPill({
@@ -50,9 +53,13 @@ export function CommandPill({
   pointsCount,
   isPointsOpen,
   onTogglePoints,
+  hasLayers = false,
 }: CommandPillProps) {
-  // Status dot configuration
-  const statusType = mapLoadingLabel
+  // Status dot: "loading" wins when data is in flight OR when we have layers
+  // but the first slice hasn't returned yet (Copernicus takes ~10-15s on cold
+  // start). Without this, a freshly-added Copernicus layer reads as OFFLINE
+  // for 15 s while it's actually just fetching.
+  const statusType = mapLoadingLabel || (!source && hasLayers)
     ? "loading"
     : !source
       ? "offline"
@@ -106,7 +113,7 @@ export function CommandPill({
             <span className="command-pill__status-beacon-core" />
           </span>
           <span className="command-pill__status-label">
-            {statusType === "live" ? "STREAM" : statusType === "cached" ? "CACHED" : statusType.toUpperCase()}
+            {statusType === "live" ? "STREAM" : statusType === "cached" ? "CACHED" : statusType === "loading" ? "FETCHING" : "OFFLINE"}
           </span>
           <div className="command-pill__status-tooltip" role="tooltip">
             {fullStatusText}

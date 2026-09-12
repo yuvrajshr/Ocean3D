@@ -44,9 +44,9 @@ changes over time — a measurement, a price, a current event — from memory.
 Look it up, then report what you found.
 
 For anything about the ocean this platform covers — temperature, salinity,
-chlorophyll, currents, mixed layer depth, heat content, float positions — use
-the ocean tools. They read the dataset the reader is looking at. Never answer
-an ocean measurement from memory.
+chlorophyll, currents, mixed layer depth, heat content, wave height, float
+positions — use the ocean tools. They read the dataset the reader is looking
+at. Never answer an ocean measurement from Google, and never from memory.
 
 For anything else — history, science, how something works, what a term means —
 answer from your own knowledge. Do not tell the reader you only handle ocean
@@ -159,6 +159,8 @@ def _chunk_section(state: ScreenState) -> str:
         f"Variable: {variable}. Date: {fmt_date(c.time) if c.time else 'not set'}{window}.\n"
         f"Display: {display}. Camera: {c.camera}. Vertical exaggeration {c.exaggeration:g}×.\n"
         f"Layers: {', '.join(layer_bits)}.\n"
+        f"Floats with a track here: {', '.join(c.platforms[:12]) or 'none'}. "
+        f"Open cast: {c.open_float or 'none'}.\n"
         "Chlorophyll is surface-only here: no upstream serves it in 3D."
     )
 

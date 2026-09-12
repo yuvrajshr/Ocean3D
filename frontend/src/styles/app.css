@@ -643,9 +643,9 @@
 .profile-panel {
   position: absolute;
   top: var(--space-4);
-  right: var(--space-4);
+  right: 80px;
   width: 380px;
-  max-width: calc(100% - var(--space-6));
+  max-width: calc(100% - 96px);
   max-height: calc(100% - var(--space-6));
   display: flex;
   flex-direction: column;
@@ -656,6 +656,13 @@
   z-index: 1000;
   overflow: hidden;
   font-family: var(--rt-font-ui, "Inter", sans-serif);
+  transition: right 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 1080px) {
+  .profile-panel--shifted {
+    right: 476px !important;
+  }
 }
 
 .profile-panel__header {
@@ -693,15 +700,19 @@
   font-family: var(--rt-font-ui, "Inter", sans-serif);
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 5px 10px;
   cursor: pointer;
   flex: none;
-  transition: background 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.12s ease;
 }
 
 .profile-panel__close:hover {
   background: var(--rt-surface-hover, #262830) !important;
   border-color: var(--rt-copper, #e59858) !important;
+  color: var(--rt-copper, #e59858) !important;
 }
 
 .profile-panel__body {
@@ -1231,7 +1242,7 @@
 .point-panel {
   position: absolute;
   top: var(--space-4);
-  right: var(--space-4);
+  right: 80px;
   width: 360px;
   max-height: calc(100% - var(--space-6));
   overflow-y: auto;

@@ -30,6 +30,7 @@ export type ChunkAssistantAction =
   | { type: "set_camera"; preset: PresetName }
   | { type: "set_layer"; layer: string; visible?: boolean; opacity?: number }
   | { type: "set_colour_scale"; auto?: boolean; min?: number; max?: number; scale?: "linear" | "log" }
+  | { type: "open_float"; platform_id: string }
   | { type: "move_chunk"; direction: string; lat: number; lon: number };
 
 export interface ChunkEffect {
@@ -42,6 +43,8 @@ export interface ChunkEffect {
   exaggeration?: boolean;
   /** Open the tile containing this point, through the same resolver a click uses. */
   move?: { lat: number; lon: number };
+  /** Open this float's cast against the model, as clicking its track does. */
+  openFloat?: string;
 }
 
 /** What the chunk tells the assistant about itself. Mirrors ChunkState in tools.py. */
@@ -58,6 +61,10 @@ export interface ChunkStatePayload {
   camera: PresetName;
   layers: Record<string, { visible: boolean; opacity: number }>;
   colour: { min: number; max: number; scale: "linear" | "log" };
+  /** Floats with a track in this chunk and window. */
+  platforms: string[];
+  /** The float whose cast is open against the model. */
+  open_float: string | null;
 }
 
 export interface ChunkSnapshot {
@@ -187,6 +194,8 @@ export function applyChunkAction(
       if (action.scale) range.scale = action.scale;
       return { spec: next };
     }
+    case "open_float":
+      return { spec: next, openFloat: action.platform_id };
     case "move_chunk":
       return { spec: next, move: { lat: action.lat, lon: action.lon } };
   }
@@ -198,6 +207,8 @@ export function describeChunkSpec(
   times: string[],
   bbox: Bbox,
   mounted: boolean,
+  platforms: string[] = [],
+  openFloat: string | null = null,
 ): ChunkStatePayload {
   const props = spec.layers.find((l) => l.id === "scalar")?.props ?? {};
   const axis: CutAxis = props.activeAxis ?? "depth";
@@ -218,6 +229,8 @@ export function describeChunkSpec(
     camera: spec.view.preset,
     layers,
     colour: { min: spec.colorRange.min, max: spec.colorRange.max, scale: spec.colorRange.scale },
+    platforms,
+    open_float: openFloat,
   };
 }
 

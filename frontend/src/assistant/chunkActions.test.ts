@@ -99,6 +99,9 @@ describe("applyChunkAction", () => {
       ctx,
     );
     expect(moved.move).toEqual({ lat: 17.5, lon: 87.5 });
+    expect(
+      applyChunkAction(DEFAULT_SPEC, { type: "open_float", platform_id: "2901335" }, ctx).openFloat,
+    ).toBe("2901335");
   });
 });
 
@@ -115,7 +118,16 @@ describe("describeChunkSpec", () => {
       cut: { axis: "depth", value: 80 },
       camera: "corner",
     });
-    expect(Object.keys(state.layers).sort()).toEqual(["bathy", "currents", "scalar"]);
+    // The instrument traces were restored upstream (77f5583); the sea surface was not.
+    expect(Object.keys(state.layers).sort()).toEqual(["bathy", "currents", "instruments", "scalar"]);
+    expect(state.platforms).toEqual([]);
+    expect(state.open_float).toBeNull();
+  });
+
+  it("reports the floats with a track here and the open cast", () => {
+    const state = describeChunkSpec(DEFAULT_SPEC, times, [85, 10, 90, 15], true, ["2901335"], "2901335");
+    expect(state.platforms).toEqual(["2901335"]);
+    expect(state.open_float).toBe("2901335");
   });
 });
 

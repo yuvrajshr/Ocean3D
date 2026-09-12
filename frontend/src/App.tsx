@@ -721,13 +721,13 @@ export default function App() {
     : source.provenance === "live"
       ? `Live · ${upstreamName}`
       : `Cached ${new Date(source.fetched_at).toLocaleDateString("en-GB", {
-          day: "numeric", month: "short", timeZone: "UTC",
-        })} · ${upstreamName}`;
+        day: "numeric", month: "short", timeZone: "UTC",
+      })} · ${upstreamName}`;
 
   const isLayerActiveInColumn = Boolean(
     variableKey &&
-      (layerStack.keys.length === 0 ||
-        (layerStack.keys.includes(variableKey) && layerStack.visibility[variableKey] !== false)),
+    (layerStack.keys.length === 0 ||
+      (layerStack.keys.includes(variableKey) && layerStack.visibility[variableKey] !== false)),
   );
 
   const columnActiveColormap = useMemo<ColormapName>(() => {
@@ -758,6 +758,8 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener("resize", sync);
     };
+    // Re-measured on every view switch as well as on resize: cheap, and it does
+    // not rely on the observer catching a row that changes height between views.
   }, [view]);
 
   const handleZoomIn = useCallback(() => {
@@ -822,7 +824,14 @@ export default function App() {
         entryDone={entryDone}
         pointsCount={toolPoints.length}
         isPointsOpen={isPointsOpen}
-        onTogglePoints={() => setIsPointsOpen((prev) => !prev)}
+        onTogglePoints={() => {
+          setIsPointsOpen((prev) => {
+            const next = !prev;
+            if (next) setAssistantOpen(false);
+            return next;
+          });
+        }}
+        hasLayers={view === "map" ? map.layers.length > 0 : false}
       />
 
       <div
@@ -942,13 +951,14 @@ export default function App() {
             />
           ) : null}
 
-          {view !== "map" && selected ? (
+          {selected ? (
             <ProfilePanel
               platform={selected}
               comparison={comparison}
               loading={compareLoading}
               error={compareError}
               onClose={closePanel}
+              shifted={isPointsOpen}
             />
           ) : null}
 
@@ -1036,7 +1046,13 @@ export default function App() {
 
         <AssistantDock
           open={assistantOpen}
-          onToggle={() => setAssistantOpen((open) => !open)}
+          onToggle={() => {
+            setAssistantOpen((open) => {
+              const next = !open;
+              if (next) setIsPointsOpen(false);
+              return next;
+            });
+          }}
         />
 
         <AssistantPanel

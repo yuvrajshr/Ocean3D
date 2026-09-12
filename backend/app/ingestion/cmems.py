@@ -119,10 +119,25 @@ def _subset(ds: MapDataset, variables: list[str], **kw) -> xr.Dataset:
     _ensure_login()
     import copernicusmarine as cm
 
+    dataset_id = ds.dataset_id
+    if ds.id == "cmems_wave_height" and str(kw.get("start_datetime", ""))[:10] > "2026-05-31":
+        dataset_id = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
+    if ds.id == "cmems_ph" and str(kw.get("start_datetime", ""))[:10] < "2021-11-01":
+        dataset_id = "cmems_mod_glo_bgc_my_0.25deg_P1M-m"
+    if ds.id == "cmems_zooplankton":
+        if str(kw.get("start_datetime", ""))[:10] > "2025-06-30":
+            dataset_id = "cmems_mod_glo_bgc-plankton_anfc_0.25deg_P1D-m"
+            if "minimum_depth" not in kw:
+                kw.update(_depth_window(0.0))
+        else:
+            dataset_id = "cmems_mod_glo_bgc_my_0.083deg-lmtl_P1D-i"
+            kw.pop("minimum_depth", None)
+            kw.pop("maximum_depth", None)
+
     tmp = Path(tempfile.mkdtemp(prefix="cmems-"))
     try:
         cm.subset(
-            dataset_id=ds.dataset_id,
+            dataset_id=dataset_id,
             variables=variables,
             output_directory=str(tmp),
             overwrite=True,
@@ -209,7 +224,9 @@ def fetch_slice(
             stride=used, source=_status("cached", hit.fetched_at, ds),
         )
 
-    kw: dict[str, object] = dict(start_datetime=day, end_datetime=day, **_depth_window(depth))
+    kw: dict[str, object] = dict(start_datetime=day, end_datetime=day)
+    if ds.depth_dim is not None:
+        kw.update(_depth_window(depth))
     if lat_range and lon_range:
         kw.update(
             minimum_latitude=min(lat_range), maximum_latitude=max(lat_range),
@@ -226,7 +243,12 @@ def fetch_slice(
 
 def _thin(opened: xr.Dataset, variable: str, stride: int):
     """Squeeze to (lat, lon), subsample, and normalise to ascending latitude."""
-    da = opened[variable].squeeze()
+    da = opened[variable]
+    if "depth" in da.dims and len(da.dims) > 2:
+        da = da.isel(depth=0)
+    elif "LEV" in da.dims and len(da.dims) > 2:
+        da = da.isel(LEV=0)
+    da = da.squeeze()
     values = np.asarray(da.values, dtype=np.float32)
     lats = np.asarray(opened["latitude"].values, dtype=np.float32)
     lons = np.asarray(opened["longitude"].values, dtype=np.float32)

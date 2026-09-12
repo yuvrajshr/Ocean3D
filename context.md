@@ -1777,9 +1777,10 @@ chosen client-side by the same snap a click uses, so it cannot open a chunk a re
   The read now carries provenance (the INCOIS analysis) and hands the model the profiles at
   standard depths plus a residual summary rather than ~150 levels. On the globe, "compare
   float X" both opens the comparison panel and states the numbers._
-- _The chunk's layers are scalar, currents and bathymetry only: the sea surface and the
-  instrument traces were removed upstream (6718bc1, 38db870). The assistant follows that
-  call and offers no `open_float`._
+- _The assistant's chunk controls follow the chunk's own layers. The sea surface was removed
+  upstream (6718bc1); the instrument traces were removed (38db870) and then restored
+  (77f5583), so the chunk tools include the traces and `open_float`, which opens a float's
+  cast against the model exactly as clicking its track does._
 
 ---
 

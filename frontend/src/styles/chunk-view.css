@@ -607,6 +607,18 @@
   color: var(--cv-accent);
 }
 
+/* The scalar field is the layer a forecaster reaches for first, so it gets
+   its own fixed panel above the general layer stack rather than a row
+   inside it. Always shown in full — never shrinks or scrolls; the layer
+   stack below absorbs whatever height is left. */
+.chunk-scalar {
+  flex-shrink: 0;
+}
+
+.chunk-layer--solo {
+  border-bottom: none;
+}
+
 .chunk-region {
   position: absolute;
   top: 20px;
@@ -640,15 +652,36 @@
 
 /* -------------------------------------------------------------- layer stack */
 
-.chunk-layers {
+/* Holds the scalar field panel above the layer stack — separate panels,
+   stacked in one column, rather than rows of one combined panel. */
+.chunk-stack {
   position: absolute;
   left: 84px;
   top: 92px;
   width: 252px;
   max-height: calc(100% - 218px);
-  overflow-y: auto;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   animation: chunk-rise 0.7s 0.08s ease-out both;
+}
+
+.chunk-layers {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chunk-panel__title--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+}
+
+.chunk-panel__title--toggle:hover {
+  color: var(--cv-accent);
 }
 
 .chunk-layer {
@@ -803,14 +836,9 @@
 /* ------------------------------------------------------ variable + colorbar */
 
 .chunk-inspector {
-  position: absolute;
-  right: 20px;
-  top: 262px;
   width: 276px;
-  max-height: calc(100% - 352px);
+  max-height: calc(100vh - 100px);
   overflow-y: auto;
-  z-index: 5;
-  animation: chunk-rise 0.7s 0.16s ease-out both;
 }
 
 .chunk-vars {
@@ -1337,7 +1365,7 @@
   .chunk-crumb,
   .chunk-corner,
   .chunk-region,
-  .chunk-layers,
+  .chunk-stack,
   .chunk-inspector,
   .chunk-time {
     animation: none;

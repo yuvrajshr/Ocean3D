@@ -63,9 +63,16 @@ SURFACE_ONLY_CHUNK_VARIABLES = frozenset({"chlorophyll"})
 CHUNK_MODES = ("slices", "volume", "isosurface")
 CHUNK_CUT_AXES = ("depth", "lon", "lat")
 CHUNK_CAMERAS = ("corner", "top", "section")
-#: The chunk's layers as of 2026-09-10. The sea surface and the instrument
-#: traces were removed upstream (6718bc1, 38db870); do not re-add them here.
-CHUNK_LAYERS = {"scalar": "the scalar field", "currents": "the currents", "bathy": "the bathymetry"}
+#: The chunk's layers, as its spec declares them. The sea surface was removed
+#: upstream (6718bc1); the instrument traces were removed (38db870) and restored
+#: (77f5583). This table follows the view — when a layer comes or goes there,
+#: it comes or goes here, or the assistant offers a control the reader cannot see.
+CHUNK_LAYERS = {
+    "scalar": "the scalar field",
+    "currents": "the currents",
+    "bathy": "the bathymetry",
+    "instruments": "the instrument traces",
+}
 #: The chunk's own exaggeration slider.
 EXAGGERATION_RANGE = (10.0, 200.0)
 CHUNK_UNITS = {"temperature": "°C", "salinity": "PSU", "speed": "m/s", "chlorophyll": "mg/m³"}
@@ -96,8 +103,9 @@ _ALIASES: dict[str, dict[str, str]] = {
     },
     "layer": {
         "scalar field": "scalar", "field": "scalar", "current": "currents", "flow": "currents",
-        "traces": "currents", "bathymetry": "bathy", "seabed": "bathy", "seafloor": "bathy",
-        "relief": "bathy",
+        "bathymetry": "bathy", "seabed": "bathy", "seafloor": "bathy", "relief": "bathy",
+        "instrument traces": "instruments", "traces": "instruments", "instrument": "instruments",
+        "floats": "instruments", "argo": "instruments", "tracks": "instruments",
     },
 }
 
@@ -167,6 +175,10 @@ class ChunkState:
     camera: str = "corner"
     layers: dict[str, dict[str, Any]] = field(default_factory=dict)
     colour: dict[str, Any] = field(default_factory=dict)
+    #: Platform ids of the floats with a track in this chunk and window.
+    platforms: list[str] = field(default_factory=list)
+    #: The float whose cast is open against the model, if any.
+    open_float: str | None = None
 
 
 @dataclass
@@ -551,6 +563,18 @@ def _v_set_colour_scale(args, _state, _cat):
     return action
 
 
+def _v_open_float(args, state, _cat):
+    pid = str(args.get("platform_id") or "").strip()
+    if not pid:
+        raise ActionError("Which float? Give its platform id.")
+    here = state.chunk.platforms
+    if not here:
+        raise ActionError("No Argo float has a track in this chunk and window. Try a neighbouring chunk.")
+    if pid not in here:
+        raise ActionError(f"Float {pid} has no track in this chunk. Floats here: {', '.join(here[:12])}.")
+    return {"type": "open_float", "platform_id": pid}
+
+
 _STEPS = {"north": (1, 0), "south": (-1, 0), "east": (0, 1), "west": (0, -1)}
 
 
@@ -576,7 +600,8 @@ VIEW_ACTIONS: dict[str, tuple[str, ...]] = {
     "globe": ("set_time", "select_float", "clear_selection"),
     "chunk": (
         "show_variable", "set_time", "set_display", "set_cut", "set_iso_value",
-        "set_exaggeration", "set_camera", "set_layer", "set_colour_scale", "move_chunk",
+        "set_exaggeration", "set_camera", "set_layer", "set_colour_scale", "open_float",
+        "move_chunk",
     ),
 }
 COMMON_READS = ("query_point", "list_floats", "compare_float")
@@ -607,6 +632,7 @@ _VALIDATORS: dict[tuple[str, str], Validator] = {
     ("chunk", "set_camera"): _v_set_camera,
     ("chunk", "set_layer"): _v_set_layer,
     ("chunk", "set_colour_scale"): _v_set_colour_scale,
+    ("chunk", "open_float"): _v_open_float,
     ("chunk", "move_chunk"): _v_move_chunk,
 }
 
@@ -701,6 +727,8 @@ def advance_state(state: ScreenState, action: dict[str, Any]) -> bool:
         current = dict(chunk.layers.get(action["layer"], {}))
         current.update({k: action[k] for k in ("visible", "opacity") if k in action})
         chunk.layers = {**chunk.layers, action["layer"]: current}
+    elif kind == "open_float":
+        chunk.open_float = action["platform_id"]
     elif kind == "set_colour_scale":
         chunk.colour = {**chunk.colour, **{k: action[k] for k in ("min", "max", "scale", "auto") if k in action}}
     return state.view != before
@@ -780,6 +808,8 @@ def _describe(action: dict[str, Any]) -> str:
         if "scale" in action:
             parts.append(f"{action['scale'].capitalize()} colour scale.")
         return " ".join(parts)
+    if kind == "open_float":
+        return f"Opened float {action['platform_id']}'s cast against the model."
     if kind == "move_chunk":
         return f"Moved one chunk {action['direction']}."
     return ""
@@ -973,8 +1003,8 @@ _VIEW_DECLS: dict[str, dict[str, dict]] = {
         ),
         "set_layer": _fn(
             "set_layer",
-            "Show, hide or fade one of the chunk's layers: scalar (the field), currents or "
-            "bathy (the seabed).",
+            "Show, hide or fade one of the chunk's layers: scalar (the field), currents, "
+            "bathy (the seabed) or instruments (the Argo float tracks).",
             {
                 "layer": {**_STR, "enum": list(CHUNK_LAYERS)},
                 "visible": {"type": "boolean"},
@@ -988,6 +1018,13 @@ _VIEW_DECLS: dict[str, dict[str, dict]] = {
             "or linear/log.",
             {"auto": {"type": "boolean"}, "min": _NUM, "max": _NUM, "scale": {**_STR, "enum": ["linear", "log"]}},
             [],
+        ),
+        "open_float": _fn(
+            "open_float",
+            "Open one float's measured cast against the model column in this chunk, as "
+            "clicking its track does. Only floats with a track in this chunk.",
+            {"platform_id": _STR},
+            ["platform_id"],
         ),
         "move_chunk": _fn(
             "move_chunk",

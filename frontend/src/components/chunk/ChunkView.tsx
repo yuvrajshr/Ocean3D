@@ -32,6 +32,7 @@ import {
 import { FieldPanel } from "./FieldPanel";
 import { LayerStackPanel } from "./LayerStackPanel";
 import { ProfileCard, type ProfileView } from "./ProfileCard";
+import { ScalarFieldPanel } from "./ScalarFieldPanel";
 import { SpecInspector } from "./SpecInspector";
 import { TimeBar } from "./TimeBar";
 import { fmt } from "./util";
@@ -91,6 +92,7 @@ export function ChunkView({
   const [hover, setHover] = useState<HoverReadout | null>(null);
   const [prof, setProf] = useState<ProfileView | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ scalar: true });
+  const [layersOpen, setLayersOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(1);
   const [specOpen, setSpecOpen] = useState(false);
@@ -486,7 +488,14 @@ export function ChunkView({
     if (!ready || !onAssistantController) return;
     const controller: ChunkController = {
       getState: () =>
-        describeChunkSpec(engineRef.current?.spec ?? DEFAULT_SPEC, times, bbox, true),
+        describeChunkSpec(
+          engineRef.current?.spec ?? DEFAULT_SPEC,
+          times,
+          bbox,
+          true,
+          platformsRef.current.map((p) => p.id),
+          profRef.current?.id ?? null,
+        ),
       apply: (action) => {
         const engine = engineRef.current;
         if (!engine) return;
@@ -505,6 +514,8 @@ export function ChunkView({
           setProf((p) => (p ? { ...p, variable: effect.variableChanged! } : null));
           if (open) openProfileRef.current(open.id);
         }
+        // The same path a click on a float's track takes.
+        if (effect.openFloat) openProfileRef.current(effect.openFloat);
         if (effect.move) onMoveRef.current?.(effect.move.lat, effect.move.lon);
       },
       snapshot: () => ({ spec: structuredClone(engineRef.current?.spec ?? DEFAULT_SPEC) }),
@@ -575,6 +586,9 @@ export function ChunkView({
             );
           })}
         </div>
+        {ready && source && hist ? (
+          <FieldPanel spec={spec} hist={hist} onCommit={commit} onVariable={setVariable} />
+        ) : null}
       </div>
 
       {/* --------------------------------------------------- region label */}
@@ -583,35 +597,51 @@ export function ChunkView({
         <div className="chunk-region__coords">{extent}</div>
       </div>
 
-      {ready && source && hist ? (
-        <>
+      {/* --------------------------------------------- scalar field + layers */}
+      <div className="chunk-stack">
+        {ready && source ? (
+          <ScalarFieldPanel
+            spec={spec}
+            source={source}
+            expanded={!!expanded.scalar}
+            onToggleExpand={() => setExpanded((e) => ({ ...e, scalar: !e.scalar }))}
+            onCommit={commit}
+          />
+        ) : null}
+
+        {ready && source && hist ? (
           <LayerStackPanel
             spec={spec}
             source={source}
+            platforms={platforms}
             expanded={expanded}
+            open={layersOpen}
+            selectedPlatform={prof?.id ?? null}
+            onToggleOpen={() => setLayersOpen((o) => !o)}
             onToggleExpand={(id) => setExpanded((e) => ({ ...e, [id]: !e[id] }))}
             onCommit={commit}
             onExaggeration={setExaggeration}
+            onOpenProfile={openProfile}
           />
+        ) : null}
+      </div>
 
-          <FieldPanel spec={spec} hist={hist} onCommit={commit} onVariable={setVariable} />
-
-          <TimeBar
-            spec={spec}
-            times={times}
-            playing={playing}
-            speed={playSpeed}
-            specOpen={specOpen}
-            onTogglePlay={() => setPlaying((p) => !p)}
-            onSeek={setTime}
-            onSpeed={setPlaySpeed}
-            onToggleSpec={() => {
-              const engine = engineRef.current;
-              if (engine && !specOpen) setSpecText(JSON.stringify(engine.spec, null, 2));
-              setSpecOpen((o) => !o);
-            }}
-          />
-        </>
+      {ready && source && hist ? (
+        <TimeBar
+          spec={spec}
+          times={times}
+          playing={playing}
+          speed={playSpeed}
+          specOpen={specOpen}
+          onTogglePlay={() => setPlaying((p) => !p)}
+          onSeek={setTime}
+          onSpeed={setPlaySpeed}
+          onToggleSpec={() => {
+            const engine = engineRef.current;
+            if (engine && !specOpen) setSpecText(JSON.stringify(engine.spec, null, 2));
+            setSpecOpen((o) => !o);
+          }}
+        />
       ) : null}
 
       {hover && hoverInfo ? (
