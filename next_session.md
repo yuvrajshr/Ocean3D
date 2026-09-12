@@ -50,7 +50,9 @@ Map → Globe → Chunk → Map round trip with zero console errors.
 
 **The assistant needs a key.** `GEMINI_API_KEY` in `backend/.env` (gitignored; see
 `.env.example`). Without one the dock button states the reason and everything else works.
-Free-tier generation is **20 requests/minute per model** and one answer costs two.
+Free-tier generation is **20 requests/minute per model**. Since 2026-09-12 it runs on
+`gemini-3.5-flash-lite` with two fallback models, so a spent model is skipped rather than
+waited on; a command costs one request and a question two.
 
 ### What to work on next, in the order I would do it
 0. **One assistant check left.** ~~"what is the sea surface temperature at 15 N, 88 E"~~
@@ -269,6 +271,24 @@ told the truth ("that would need more than 3 layers") instead of assuming succes
    `client.interactions.create(...)` → `Interaction` with `steps`/`output_text`, a
    `function_call` step answered by a `function_result` entry. Not `generate_content`.
    Verified against `google-genai` 2.22 and the live docs; do not "fix" it back.
+
+6. **A read resolves its source by preference AND coverage** — `config.map_dataset_for(variable,
+   date)`. Taking the first matching dataset is how "HYCOM is unreachable" reached a reader on
+   2026-09-12: `MAP_DATASETS` is not in preference order.
+7. **Every action belongs to a view; route on `scope`.** Adding a control means a line in
+   `VIEW_ACTIONS`, a validator, a case in `advance_state` and `describe_actions` (all in
+   `assistant/tools.py`), and its applier — `assistant/chunkActions.ts` for the chunk,
+   `assistant/useAssistantBridge.ts` for the map and globe. Miss one and the model is told a
+   change happened that never reaches the screen.
+8. **The one-round shortcut must not swallow a question.** A turn of only accepted actions ends
+   after one round unless `_asks_a_question` says the reader asked for information. Without that
+   check "What is the temperature at 100 m here?" ended at "Showing temperature."
+9. **Bump `reads.RESULT_VERSION` whenever a read's output changes.** The analysis cache is keyed
+   on it; without it the server serves the old shape for a day, and a fix looks like it did
+   nothing.
+10. **Never `netCDF4.Dataset(memory=...)` an ERDDAP payload directly** — use
+    `ingestion/netcdf_memory.open_in_memory`, which pads classic files so netCDF-C can read their
+    header. The failure only shows for some payload lengths, which is why it looked intermittent.
 
 ## 1d. The Theme C merge (2026-09-08)
 

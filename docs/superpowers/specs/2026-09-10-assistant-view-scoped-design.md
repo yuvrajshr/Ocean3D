@@ -49,7 +49,7 @@ control"). Every validated action carries `"view"` so the client can route it.
 | Common | `set_view`, `open_chunk` (named region, or lat/lon only when the reader gave them) | `query_point`, `list_floats`, `compare_float` |
 | Map | `set_layers`, `set_time` (≥1 visible layer covers it), `set_depth` (nearest real level of the active layer; refused for a surface layer), `zoom_to_region`, `set_pin`, `set_area` | — |
 | Globe | `set_time` (nearest scenario step, inside the scenario window), `select_float` (opens the INCOIS comparison panel), `clear_selection` | — |
-| Chunk | `show_variable`, `set_time` (inside the 30-day window), `set_display` (slices/volume/isosurface; surface-only variables allow slices only), `set_cut` (axis + value in m/°), `set_iso_value`, `set_exaggeration` (10–200×), `set_camera` (corner/top/section), `set_layer` (visible/opacity for surface, scalar, currents, instruments, bathymetry), `set_colour_scale` (min/max, auto, linear/log), `open_float`, `move_chunk` (N/S/E/W) | `describe_chunk` |
+| Chunk | `show_variable`, `set_time` (inside the 30-day window), `set_display` (slices/volume/isosurface; surface-only variables allow slices only), `set_cut` (axis + value in m/°), `set_iso_value`, `set_exaggeration` (10–200×), `set_camera` (corner/top/section), `set_layer` (visible/opacity for scalar, currents, bathymetry), `set_colour_scale` (min/max, auto, linear/log), `move_chunk` (N/S/E/W) | `describe_chunk` |
 
 **View switch mid-turn.** After a round in which `set_view` / `open_chunk`
 succeeded, the loop sets `state.view` to the new view; the next round declares
@@ -67,7 +67,7 @@ view's, and the loop can switch to another without a round trip.
         globe: { time, window[start,end], selected, floats[] },
         chunk: { mounted, bbox, variable, time, window[start,end], mode, cut{axis,value},
                  iso_value, exaggeration, camera, layers{id:{visible,opacity}},
-                 colour{min,max,scale}, platforms[], open_float } }
+                 colour{min,max,scale} } }
 ```
 
 When the chunk is not mounted, the block describes the chunk as it would open
@@ -83,10 +83,19 @@ When the chunk is not mounted, the block describes the chunk as it would open
   `open_chunk`) queue and drain on registration.
 - The chunk's `apply` is a pure spec transform (`assistant/chunkActions.ts`)
   followed by the same `commit` / `setVariable` / `setTime` / `goPreset` /
-  `applyExaggeration` / `openProfile` paths the panels already use.
+  `applyExaggeration` paths the panels already use.
 - **Undo** snapshots `{ view, map:{stack,time,active depth,pin}, globe:{timeIndex,
   selected}, chunk:{bbox, spec} }` before applying; one click restores all of it.
   A chunk restore queues if the chunk must remount.
+
+### 4. Upstream change folded in (2026-09-10, after this spec was approved)
+
+Parthvats13 removed the chunk's sea-surface and instrument-traces layers on
+`origin/main` (6718bc1, 38db870). The chunk now carries scalar, currents and
+bathymetry only, and with no instrument layer the engine has nothing to pick, so
+the chunk's profile card is unreachable. The assistant follows the team's call:
+no `open_float` and no surface/instruments targets in the chunk. Model-vs-
+observation stays reachable everywhere through `compare_float` (INCOIS).
 
 ## Speed
 

@@ -416,6 +416,17 @@ only.
     knowingly: analysis prose with citations cannot be read in a tool-dock drawer. It
     closes when dismissed, and the viewport is never obscured while it is shut.
 
+    **It acts on the view you are looking at** *(amended 2026-09-12)*. The map, the globe
+    and the chunk each declare their own controls, and a turn is offered only the controls
+    of the view on screen, plus the two that move between views. "Show salinity" in the
+    chunk changes the chunk's variable and cannot reach the map's layer stack, because no
+    map control is declared there. Asked for something only another view does, it switches
+    first, and the rest of the same message applies to the view it switched to. The panel's
+    header names that view — a label, then the extent or date it shows, in mono — so the
+    reader can see where a change will land. In the chunk view the panel opens between the
+    layer rail and the variable panel rather than over them, so a change can be watched as
+    it lands.
+
 14. **The page states which build it is, and says when that is out of date.** *(Added
     2026-09-08.)* A deleted control stayed on a teammate's screen for two days after it left
     `main`, because their dev server predated their pull — and nothing on screen could tell a
@@ -1716,6 +1727,59 @@ chosen client-side by the same snap a click uses, so it cannot open a chunk a re
   that box outside the chunk view. Measured, not hardcoded, because the command bar and the
   timeline are content-sized rows. Verified 12/12 in all three views, including the alert
   forced stale in the chunk view, with zero console errors._
+
+### 2026-09-12 — The assistant acts on the view on screen, reads what that view draws, and answers in seconds
+
+- _**Root cause of "HYCOM is unreachable".** `reads._dataset_for` took the first dataset
+  serving a variable, ignoring `preference` — and `MAP_DATASETS` is not in preference order —
+  so temperature resolved to HYCOM while the map drew Copernicus, and chlorophyll to VIIRS
+  near-real-time, never INCOIS. It then asked HYCOM (1994–2015) for the map clock,
+  2026-06-23; APDRC answered HTTP 500, and `erddap_client` reported every HTTP error as "did
+  not answer … not cached". Fixed with one resolver, `map_dataset_for(variable, date)`, which
+  honours preference and coverage: a date no source covers is refused, naming what does
+  cover it, before any request. `UpstreamRefused` now separates "refused (HTTP 500)" from
+  "unreachable", in the assistant and in the map and chunk routers._
+- _**A point value is the source's native cell, never the strided on-screen slice** (team
+  decision): it must agree with the pin readout. Reads fetch one level at one cell, not the
+  40-level × month block the point panel uses, and currents return speed and bearing rather
+  than `u` alone. Copernicus point reads go through an ARCO handle
+  (`copernicusmarine.open_dataset`) held for the process and opened in the background at
+  startup: ~8 s once, then 4–6 s per cell, against ~11 s for every `subset`._
+- _**Actions are per view, validated on the server.** `assistant/tools.py` holds the
+  registry: each view declares its own controls, a turn declares only the current view's
+  plus `set_view` and `open_chunk`, and every validated action carries `scope`, which the
+  client routes on (`assistant/useAssistantBridge.ts`). After a switch mid-turn the next
+  round is given the new view's controls, so "open the chunk over the Arabian Sea and show
+  salinity" is one message. The chunk is reached through a controller `ChunkView` registers
+  once its engine is ready; chunk actions are pure spec transforms
+  (`assistant/chunkActions.ts`) that apply the same rules its panels apply, and they queue
+  when the chunk has not mounted yet. Map depth now drives the active layer's own levels —
+  it used to drive the hidden water column's ruler, and the assistant was told the map sat
+  at 2000 m._
+- _**Speed.** `gemini-3.5-flash-lite` at `thinking_level: minimal` — measured 1.86 s per
+  round against 8–13 s for `gemini-3.5-flash`, choosing the same tool — with
+  `gemini-3.1-flash-lite` and then `gemini-3.5-flash` as fallbacks. A 429 moves to the next
+  model rather than sleeping, because free-tier quota is per model. A turn made only of
+  accepted actions ends after one round with a composed sentence — unless the reader asked a
+  question, which was found live when "What is the temperature at 100 m here?" was cut off
+  after a stray view change. Reads in a round run in parallel inside a 10 s budget. Measured
+  on the running server: commands 1.8–2.6 s, the chunk thermocline question 4.5 s, a cached
+  Copernicus point 4.1 s, a cold one 11.6 s._
+- _**Two latent bugs found on the way.** netCDF-C's in-memory reader fails with EPERM
+  ("Operation not permitted") on a classic file whose header ends within a read chunk of the
+  buffer's end — 206 of 1937 generated files, and a current's u at one HYCOM cell. Every
+  in-memory ERDDAP payload now gets 8 KB of trailing zeros (`ingestion/netcdf_memory.py`),
+  which a classic header never reads as data. Separately, the assistant's analysis cache kept
+  serving rows written by older code after a read's output changed; its key now carries
+  `reads.RESULT_VERSION`._
+- _**The model-vs-observation comparison is cited.** `compare_float`'s numbers reached the
+  reader with no citation line, on the feature `README.md` calls the point of the project.
+  The read now carries provenance (the INCOIS analysis) and hands the model the profiles at
+  standard depths plus a residual summary rather than ~150 levels. On the globe, "compare
+  float X" both opens the comparison panel and states the numbers._
+- _The chunk's layers are scalar, currents and bathymetry only: the sea surface and the
+  instrument traces were removed upstream (6718bc1, 38db870). The assistant follows that
+  call and offers no `open_float`._
 
 ---
 
