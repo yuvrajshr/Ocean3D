@@ -1,16 +1,12 @@
 /**
- * The scene spec — the chunk view's single source of truth.
+ * The scene spec: the single source of truth for the chunk view.
  *
- * Everything the viewport draws is derived from this object: the chunk's
- * extent, the camera preset, the colour range, the time index and an ordered
- * list of layer descriptors. Nothing in the view holds scene state of its own,
- * which is why the spec inspector can round-trip the whole scene through JSON
- * and why adding a sensor or a model variable is a descriptor plus a module in
- * the registry, with no change to the view.
+ * Everything drawn comes from this object (extent, camera preset, colour range,
+ * time index and an ordered list of layers). The view keeps no scene state of its
+ * own, so the inspector can round-trip the whole scene as JSON.
  *
- * A descriptor's `type` is intentionally a plain string: a spec may name a
- * layer type this build has no module for, and the right response is to render
- * the rest and say so, not to fail to parse.
+ * ``type`` is a plain string on purpose: a spec may name a layer this build
+ * doesn't have, and we render the rest instead of failing to parse.
  */
 
 import type { CmapName, VariableKey } from "./model";
@@ -33,7 +29,7 @@ export interface LayerProps {
   trail?: number;
   platforms?: string[];
   palette?: CmapName;
-  /** Pre-active-axis specs carried three booleans; applySpec migrates them. */
+  /** Old specs had three booleans; applySpec migrates them. */
   showDepth?: boolean;
   showLon?: boolean;
   showLat?: boolean;
@@ -111,21 +107,19 @@ export const DEFAULT_SPEC: SceneSpec = {
 };
 
 /**
- * The window the chunk opens on: thirty daily steps centred on Cyclone Phailin.
- * HYCOM is daily and runs 1994-2015, so this is inside its coverage, and it is
- * where the Argo floats the comparison needs actually are. Exported because the
- * assistant must describe the chunk as it would open before it has mounted.
+ * The chunk opens on thirty daily steps around Cyclone Phailin (inside HYCOM's
+ * 1994-2015 range, and where the Argo floats are). Exported so the assistant
+ * can describe the chunk before it's opened.
  */
 export const CHUNK_FOCUS_DATE = "2013-10-10";
 export const CHUNK_WINDOW_STEPS = 30;
 
-/** Depths that get a tick on the box frame and a label on the CSS ruler. */
+/** Depths with a tick on the box frame and a label on the ruler. */
 export const RULER: number[] = [0, 50, 100, 200, 500, 1000, 2000];
 
 /**
- * Camera presets. `corner` reads the box as a volume, `top` as a map, and
- * `section` flattens to a near-orthographic slice through the column — the
- * three questions this view actually gets asked.
+ * Camera presets: ``corner`` shows the box as a volume, ``top`` as a map,
+ * ``section`` as a near-flat slice through the column.
  */
 export const PRESETS: Record<PresetName, { theta: number; phi: number; radius: number }> = {
   corner: { theta: 0.82, phi: 1.1, radius: 26 },
@@ -134,13 +128,10 @@ export const PRESETS: Record<PresetName, { theta: number; phi: number; radius: n
 };
 
 /**
- * Depth in metres to a normalized 0 (surface) .. 1 (2000 m) position.
+ * Depth in metres to 0 (surface) .. 1 (2000 m).
  *
- * `stretched` gives the upper 200 m half the vertical extent, because that is
- * where the mixed layer and thermocline live and a linear axis compresses them
- * into a tenth of the column. `linear` is kept because a section read against
- * true proportions is sometimes the honest picture. Ticks always carry real
- * metres either way, so position is never the only thing carrying the value.
+ * ``stretched`` gives the top 200 m half the height, where the mixed layer and
+ * thermocline are. ``linear`` shows true proportions. Ticks always show real metres.
  */
 export function depthNorm(d: number, axis: DepthAxis): number {
   const D = 2000;
@@ -164,11 +155,8 @@ export function depthNormInv(y: number, axis: DepthAxis): number {
 }
 
 /**
- * World height of the column for a given vertical exaggeration.
- *
- * The box is 10 world units across, which is 5° ≈ 550 km; 2000 m of water at
- * true scale would be 0.036 units. The factor below makes the exaggeration
- * readout literal: at 150× the column is 150 times taller than the ocean is.
+ * World height of the column for a given exaggeration. The box is 10 units
+ * across (5° ≈ 550 km), so at 150× the column is 150 times taller than reality.
  */
 export function columnHeight(exaggeration: number): number {
   return 10 * (2 / 550) * exaggeration;

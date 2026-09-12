@@ -1,9 +1,8 @@
 /// <reference types="vite/client" />
 
 /**
- * The commit this bundle was built from, injected by the build-identity plugin
- * in vite.config.ts. Fixed at dev-server start or at `vite build`; `sha` is null
- * when the source had no git history.
+ * Commit this bundle was built from, set by the build-identity plugin in
+ * vite.config.ts. ``sha`` is null when there's no git history.
  */
 declare const __BUILD__: {
   sha: string | null;

@@ -1,10 +1,8 @@
-"""Which dataset answers a variable on a date — the root cause of "HYCOM unreachable".
+"""Which dataset answers a variable on a given date.
 
-The assistant took the FIRST dataset serving a variable. MAP_DATASETS is not in
-preference order (Copernicus and INCOIS are appended after HYCOM and VIIRS), so
-temperature went to HYCOM — which ends in 2015 — for a 2026 date the map was
-drawing from Copernicus. These pin the resolver to preference AND coverage.
-No network.
+MAP_DATASETS isn't in preference order, so picking the first match sent 2026
+temperature questions to HYCOM (which ends in 2015). The resolver has to use
+both preference and coverage. No network.
 """
 import pytest
 

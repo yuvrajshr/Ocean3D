@@ -1,29 +1,16 @@
 /**
- * The chunk view's data seam.
+ * The chunk view's data interface.
  *
- * Everything the viewport draws reads through a `ChunkSource`. Until now that
- * was `model.ts`, a pure analytic ocean; this is the same surface backed by the
- * real thing — one HYCOM sub-volume, one ETOPO relief tile, one set of Argo
- * casts, all fetched by `loader.ts` and frozen into the object below.
+ * Everything the viewport draws goes through a ChunkSource: one HYCOM sub-volume,
+ * one ETOPO seabed tile and the Argo profiles, loaded by loader.ts.
  *
- * Two properties are deliberate and load-bearing:
+ * - A source is one variable at one time. A different time or variable is a new
+ *   source object, so two layers can't show different moments.
+ * - The field's own NaN is the water mask. ETOPO only draws the seabed; it never
+ *   clips the field, since the two datasets don't agree exactly on coastlines.
  *
- * **A source is one variable at one instant.** There is no `t` parameter and no
- * `name` parameter anywhere in it. A different timestep or a different variable
- * is a different fetch and therefore a different source object, so the question
- * "which moment am I looking at" has exactly one answer at any time and cannot
- * be answered differently by two layers in the same frame.
- *
- * **The field's own NaN is the water mask.** Sub-seabed and land cells arrive
- * absent from the upstream, and that absence is what the shader discards on.
- * The ETOPO relief is used only to *draw* the seabed — never to decide where the
- * field stops. Letting relief clip the field would carve one dataset's coastline
- * out of another's, which context.md §10 (2026-09-01) already settled the other
- * way for the water column.
- *
- * Sampling is nearest-neighbour, matching the convention in `erddap_grid.py`,
- * `map/raster.ts` and `map/state.ts`. The grid is 0.08 degrees; interpolating it
- * would imply a precision the analysis does not have.
+ * Sampling is nearest-neighbour, like the rest of the app, since interpolating
+ * the 0.08 degree grid would suggest more precision than it has.
  */
 
 import type { ChunkMeta, ChunkVectorField } from "../../api/client";
@@ -34,15 +21,15 @@ export interface ChunkGrid {
   nx: number;
   /** Latitude cells. */
   ny: number;
-  /** Depth levels. 1 for a surface variable. */
+  /** Depth levels (1 for surface variables). */
   nz: number;
   lon0: number;
   lon1: number;
   lat0: number;
   lat1: number;
-  /** Deepest level actually present, in metres. */
+  /** Deepest level present, in metres. */
   maxDepth: number;
-  /** The upstream's real levels, ascending. Never a computed curve. */
+  /** The upstream's actual levels, ascending. */
   levels: number[];
 }
 
@@ -59,7 +46,7 @@ export interface Histogram {
   max: number;
 }
 
-/** ETOPO relief for one tile. Positive elevation is land. */
+/** ETOPO elevation for one tile. Positive is land. */
 export interface ChunkRelief {
   elevation: Float32Array;
   nLat: number;
@@ -73,21 +60,17 @@ export interface ChunkRelief {
 }
 
 /**
- * One surfacing of one platform.
- *
- * An Argo float reports its position when it comes up, roughly every ten days.
- * What it did in between is not measured, so nothing here describes it — the
- * dive path the synthetic model used to draw was invented, and CONTRIBUTING §8
- * rules that out.
+ * One surfacing of one float. Argo floats report a position roughly every ten
+ * days; nothing in between is known, so nothing is stored.
  */
 export interface ChunkFix {
   cycle: number | null;
   time: string;
-  /** Nearest step in the loaded window. Resolved once, where the times are known. */
+  /** Nearest step in the loaded window. */
   step: number;
   lon: number;
   lat: number;
-  /** How deep this cast actually reached. */
+  /** How deep this profile went. */
   maxDepth: number | null;
   nLevels: number;
   surfaceTemperature: number | null;
@@ -95,9 +78,9 @@ export interface ChunkFix {
 
 export interface ChunkPlatform {
   id: string;
-  /** "argo_float" today. The seam is here for the gliders §2 still owes. */
+  /** "argo_float" for now; gliders can plug in here later. */
   type: string;
-  /** Ordered in time. Two or more of these make a track. */
+  /** In time order. Two or more make a track. */
   fixes: ChunkFix[];
 }
 
@@ -107,24 +90,24 @@ export interface ChunkSource {
   readonly meta: ChunkMeta;
   readonly relief: ChunkRelief | null;
   readonly hasVector: boolean;
-  /** How much of the chunk the upstream actually covered, for the readout. */
+  /** How much of the chunk has data, for the readout. */
   readonly coverage: { finite: number; total: number };
 
   lonAt(i: number): number;
   latAt(j: number): number;
-  /** Nearest real level to a depth in metres, as an index into `grid.levels`. */
+  /** Index of the nearest real level to a depth in metres. */
   levelIndex(depth: number): number;
-  /** Seabed depth in metres, from the relief. NaN when no relief is loaded. */
+  /** Seabed depth in metres. NaN if no relief is loaded. */
   bathymetry(lon: number, lat: number): number;
-  /** NaN where the analysis has no value here. */
+  /** NaN where there's no data. */
   value(lon: number, lat: number, depth: number): number;
-  /** RGBA payload for a constant-depth slice: R = value, G = 1 inside the data. */
+  /** RGBA data for a constant-depth slice: R = value, G = 1 inside the data. */
   levelTexture(depth: number): Float32Array;
   sectionTexture(axis: "lon" | "lat", f: number): SectionPayload;
-  /** Depth of an iso-value per column; -1 where it does not occur. */
+  /** Depth of an isovalue per column; -1 where it doesn't occur. */
   isoDepthField(target: number): Float32Array;
   histogram(bins?: number): Histogram;
-  /** Horizontal velocity in m/s. [0, 0] where there is no vector field. */
+  /** Horizontal velocity in m/s. [0, 0] where there's no vector field. */
   velocity(lon: number, lat: number, depth: number): [number, number];
 }
 
@@ -135,7 +118,7 @@ export interface ChunkPayload {
   relief: ChunkRelief | null;
 }
 
-/** Nearest index on an evenly-spaced axis, clamped to its ends. */
+/** Nearest index on an evenly spaced axis, clamped. */
 function nearest(v: number, v0: number, v1: number, n: number): number {
   if (n <= 1) return 0;
   const f = ((v - v0) / (v1 - v0)) * (n - 1);
@@ -150,9 +133,8 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
   const lats = meta.grid.lat;
   const lons = meta.grid.lon;
 
-  // The axes the upstream returned, not the tile we asked for: HYCOM's cells are
-  // centred, so a 85-90 request comes back spanning 85.04-90.0. Drawing against
-  // the requested box instead would shift the whole chunk by half a cell.
+  // Use the axes the upstream returned, not the requested tile: HYCOM cells are
+  // centred, so an 85-90 request comes back as 85.04-90.0.
   const lat0 = lats[0] ?? meta.bbox[1];
   const lat1 = lats[lats.length - 1] ?? meta.bbox[3];
   const lon0 = lons[0] ?? meta.bbox[0];
@@ -167,8 +149,7 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
   const iOf = (lon: number) => nearest(lon, lon0, lon1, nx);
   const jOf = (lat: number) => nearest(lat, lat0, lat1, ny);
   const kOf = (depth: number) => {
-    // Levels are non-uniform (0, 2, 4 ... 1500, 2000), so this is a real search
-    // rather than the arithmetic the evenly-spaced lat/lon axes allow.
+    // Levels are uneven (0, 2, 4 ... 1500, 2000), so search instead of computing.
     let best = 0;
     let bestGap = Infinity;
     for (let k = 0; k < levels.length; k++) {
@@ -192,7 +173,7 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
     const j = nearest(lat, relief.lat0, relief.lat1, relief.nLat);
     const e = relief.elevation[j * relief.nLon + i];
     if (e === undefined || !Number.isFinite(e)) return NaN;
-    // Positive elevation is land; the seabed is the depth below sea level.
+    // Positive elevation is land; seabed depth is below sea level.
     return e >= 0 ? 0 : -e;
   };
 
@@ -221,8 +202,8 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
           const v = at(k, j, i);
           const o = (j * nx + i) * 4;
           const ok = Number.isFinite(v);
-          // R is only read where G passes, but a NaN in a float texture is not
-          // safely ignorable on every driver — write a real number regardless.
+          // R is only read where G is set, but NaN in a float texture isn't safe on every
+          // driver, so write 0.
           out[o] = ok ? v : 0;
           out[o + 1] = ok ? 1 : 0;
         }
@@ -233,7 +214,7 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
     sectionTexture(axis, f) {
       const n = axis === "lon" ? ny : nx;
       const out = new Float32Array(n * nz * 4);
-      // The plane is fixed on one axis and swept along the other.
+      // The plane is fixed on one axis and sweeps along the other.
       const fixed = axis === "lon" ? iOf(lon0 + (lon1 - lon0) * f) : jOf(lat0 + (lat1 - lat0) * f);
       for (let k = 0; k < nz; k++) {
         for (let s = 0; s < n; s++) {
@@ -259,8 +240,7 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
             const d = levels[k]!;
             if (!Number.isFinite(v)) break; // the column ends at the seabed
             if (Number.isFinite(prevV) && (prevV - target) * (v - target) <= 0 && prevV !== v) {
-              // The shallowest crossing wins: below it the same value may recur,
-              // and the surface a forecaster means is the first one.
+              // Take the shallowest crossing; the value can occur again further down.
               found = prevD + ((target - prevV) / (v - prevV)) * (d - prevD);
               break;
             }
@@ -299,8 +279,8 @@ export function createChunkSource(payload: ChunkPayload): ChunkSource {
       const n = kOf(depth) * plane + jOf(lat) * nx + iOf(lon);
       const u = vector.u[n];
       const v = vector.v[n];
-      // A missing component is masked to NaN upstream for both, so one check
-      // covers the pair. Still water is the honest answer where there is none.
+      // Both components are NaN when either is missing, so one check is enough.
+      // No data means still water.
       return u !== undefined && Number.isFinite(u) && v !== undefined && Number.isFinite(v)
         ? [u, v]
         : [0, 0];

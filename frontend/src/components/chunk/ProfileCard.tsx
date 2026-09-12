@@ -1,24 +1,16 @@
 /**
- * Observation against model for one platform, at the platform's own position
- * and the timeline's own date.
+ * Observation vs model for one platform, at its position and the timeline's date.
  *
- * This is the comparison the whole view exists for, so it is the only floating
- * element on the screen and it deliberately does not move the camera: the
- * reader keeps the 3D context they clicked from. Depth runs down the y axis in
- * true metres — the chart never inherits the viewport's stretched axis, because
- * two different depth scales on one screen is how a reader misreads a
- * thermocline.
+ * It doesn't move the camera, so you keep the 3D view you clicked from. Depth is
+ * in true metres on the y axis (not the viewport's stretched axis), so there's
+ * only one depth scale to read.
  */
 
 import { VARIABLES, dateLabel, type Profile, type VariableKey } from "../../viz/chunk/model";
 
 /**
- * Either a real pair of curves, or the reason there is not one.
- *
- * "This float does not measure chlorophyll" is an answer worth showing, and a
- * different one from "the request failed" — both land here rather than leaving
- * the card empty or, worse, drawing one curve and letting the missing one read
- * as a gap in the data.
+ * Either a pair of curves, or the reason there isn't one ("this float doesn't
+ * measure chlorophyll" is different from "the request failed").
  */
 export type ProfileView =
   | (Profile & { variable: VariableKey; unavailable?: undefined })
@@ -26,7 +18,7 @@ export type ProfileView =
 
 interface Props {
   profile: ProfileView;
-  /** The model step the cast is being compared against, as a real stamp. */
+  /** The model step the profile is compared against. */
   modelTime: string;
   onClose: () => void;
 }
@@ -70,8 +62,7 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
   const points = (arr: [number, number][]): string =>
     arr.map((p) => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ");
 
-  // A glider stops at 700 m, so its axis gets its own ticks rather than a
-  // 2000 m ruler with everything crammed into the top third.
+  // Gliders stop at 700 m, so use ticks for their range instead of 2000 m.
   const tickDepths =
     profile.top < 900 ? [0, 100, 200, 300, 500, 700] : [0, 200, 500, 1000, 1500, 2000];
   const yTicks = tickDepths
@@ -89,9 +80,8 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
   }
   const rmsd = Math.sqrt(sum / profile.obs.length).toFixed(3) + " " + info.unit;
 
-  // The cast's own time, not the model step it is being compared against. They
-  // are usually a few hours apart and occasionally a day, and saying which is
-  // which is the whole point of putting the two curves on one axis.
+  // Show the profile's own time, not the model step; they're usually a few hours
+  // apart, sometimes a day.
   const platformLabel = profile.type === "argo_float" ? "Argo float" : profile.type;
   const cycle = profile.cycle === null ? "" : ` · cycle ${profile.cycle}`;
   const meta =
@@ -130,9 +120,7 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
           <div className="chunk-profile__key-label">Observed</div>
         </div>
         <div className="chunk-profile__key">
-          {/* Striped, because the trace it stands for is dashed. Copper and
-              advisory amber are near neighbours (context.md §10, 2026-09-08),
-              so the legend carries the same non-colour cue the chart does. */}
+          {/* Striped to match the dashed model line; copper and amber are hard to tell apart */}
           <div className="chunk-profile__swatch chunk-profile__swatch--model" />
           <div className="chunk-profile__key-label">Model</div>
         </div>
@@ -194,11 +182,7 @@ export function ProfileCard({ profile, modelTime, onClose }: Props) {
               </text>
             </g>
           ))}
-          {/* The model is DASHED and the observation is solid. The two hues
-              chosen for them — copper and advisory amber — are close enough
-              that §10 (2026-09-08) records mistaking one for the other, so the
-              dash carries the distinction and colour only reinforces it. This
-              is §5.4's "never colour alone" applied to a chart. */}
+          {/* Model is dashed, observation solid; the colours are too close to rely on alone */}
           <polyline
             points={points(profile.model)}
             fill="none"

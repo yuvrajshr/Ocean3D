@@ -1,13 +1,8 @@
-"""Endpoints for the 2D map view.
+"""Endpoints for the 2D map.
 
-A separate router from `field.py` on purpose. That one serves whole volumes from
-INCOIS for the 3D column and builds its `data_url` around that contract; this one
-serves a single depth level from a global upstream, with a stride, and must not
-change what the 3D view already depends on. What the two DO share is the colour
-scale rule, which lives in `scaling.py` so a legend cannot disagree with pixels.
-
-Response models are declared here rather than in `models/schemas.py` because
-nothing outside this feature uses them, and `schemas.py` is edited by everyone.
+Separate from field.py, which serves whole INCOIS volumes. This one serves one
+depth level of a global dataset with a stride. Both use scaling.py for the
+colour range. The response models live here since nothing else uses them.
 """
 
 from __future__ import annotations
@@ -26,18 +21,12 @@ from ..scaling import percentile_range
 
 router = APIRouter()
 
-# Depth axes never change for a given product, so probe once per process. The
-# disk cache already makes the second call cheap; this makes it free.
+# Depth axes don't change, so we look them up once per process.
 _DEPTH_CACHE: dict[str, list[float]] = {}
 
 
 def _source(ds: MapDataset):
-    """Pick the ingestion module for a layer.
-
-    Both modules expose the same four functions and return the same result
-    objects, so everything downstream is protocol-agnostic. Adding a fourth
-    upstream means adding a module and a line here.
-    """
+    """Pick the ingestion module for a layer. Both return the same result types."""
     return cmems if ds.protocol == "cmems" else erddap_map
 
 
@@ -56,8 +45,7 @@ def _levels(ds: MapDataset) -> list[float]:
         try:
             _DEPTH_CACHE[ds.id] = _source(ds).depth_levels(ds)[0]
         except Exception:
-            # A catalogue that fails because one axis probe timed out is worse
-            # than a catalogue that reports no depth for one layer.
+            # Don't fail the whole catalogue because one depth lookup timed out.
             _DEPTH_CACHE[ds.id] = []
     return _DEPTH_CACHE[ds.id]
 
@@ -81,7 +69,6 @@ def _guard(ds: MapDataset, call):
         raise HTTPException(502, f"{ds.provider} returned an unexpected shape: {exc}") from exc
 
 
-# --------------------------------------------------------------------- models
 
 
 class MapLayerInfo(BaseModel):
@@ -94,9 +81,7 @@ class MapLayerInfo(BaseModel):
     kind: str
     colormap: str
     caption: str
-    # Empty for a surface field, and that emptiness is what removes the depth
-    # ruler. A surface field reporting a depth would assert a measurement that
-    # does not exist (context.md §10).
+    # Empty for surface fields, which hides the depth ruler.
     depth_levels: list[float]
     lat_range: tuple[float, float]
     lon_range: tuple[float, float]
@@ -112,11 +97,7 @@ class MapLayerInfo(BaseModel):
 
 
 class GridDescriptor(BaseModel):
-    """A regular lat/lon grid, described rather than enumerated.
-
-    Sending the axes as two arrays costs ~9 KB per slice and invites off-by-one
-    handling at both ends; four numbers and a count cannot drift.
-    """
+    """Regular lat/lon grid as start/step/count instead of full arrays."""
 
     lat0: float
     dlat: float
@@ -158,14 +139,13 @@ class MapPointBlock(BaseModel):
     offset_km: float
     depths: list[float]
     times: list[str]
-    values: list[float | None]  # flat, C order (depth, time)
+    values: list[float | None]  # flat, (depth, time)
     value_range: tuple[float, float]
     full_range: tuple[float, float]
     clipped: bool
     source: SourceStatus
 
 
-# ------------------------------------------------------------------ endpoints
 
 
 @router.get("/map/catalogue", response_model=list[MapLayerInfo])
@@ -200,11 +180,8 @@ def catalogue() -> list[MapLayerInfo]:
 
 @router.get("/map/times")
 def times(dataset: str = Query(...)) -> dict[str, object]:
-    """The layer's real time axis.
-
-    Truncated past MAX_TIME_ENTRIES rather than sent whole: HYCOM has 8034 daily
-    steps and VIIRS 4833, which is ~200 KB of ISO strings the timeline does not
-    need to draw a rail.
+    """The layer's time axis. Sampled if it's longer than MAX_TIME_ENTRIES
+    (HYCOM has 8034 daily steps, too much JSON for a timeline).
     """
     ds = _dataset(dataset)
     stamps, source = _guard(ds, lambda: _source(ds).available_times(ds))
@@ -305,7 +282,7 @@ def slice_data(
     lon_max: float | None = None,
     stride: int | None = None,
 ) -> Response:
-    """Raw little-endian Float32, C order (lat, lon). NaN = land or no data."""
+    """Raw little-endian Float32, (lat, lon). NaN = land or no data."""
     ds = _dataset(dataset)
     lat, lon = _bounds(lat_min, lat_max, lon_min, lon_max)
     result = _guard(ds, lambda: _source(ds).fetch_slice(
@@ -333,10 +310,7 @@ def vector_data(
     lon_max: float | None = None,
     stride: int | None = None,
 ) -> Response:
-    """Two Float32 planes, u then v, each C order (lat, lon).
-
-    Direction is the payload. Magnitude alone cannot drive a streamline.
-    """
+    """Two Float32 planes, u then v, each (lat, lon). Streamlines need the direction."""
     ds = _dataset(dataset)
     if ds.vector_components is None:
         raise HTTPException(400, f"{ds.label} has no direction to draw — it is a scalar field.")
@@ -369,12 +343,10 @@ def point(
     time_end: str = Query(...),
     surface_only: bool = Query(False),
 ) -> MapPointBlock:
-    """A depth x time block at one grid cell — all four point readouts at once.
+    """Depth x time block at one grid cell, for all four point readouts.
 
-    `surface_only` exists because the full block is genuinely expensive: 40
-    levels x 60 days measured at ~50 s against HYCOM, where the surface series
-    alone is ~8 s. The panel asks for the cheap parts first and the section on
-    demand, so a click feels immediate.
+    The full block is slow (40 levels x 60 days took ~50 s on HYCOM vs ~8 s for
+    just the surface), so ``surface_only`` lets the panel load the quick part first.
     """
     ds = _dataset(dataset)
     block = _guard(ds, lambda: _source(ds).fetch_point_block(
@@ -392,8 +364,7 @@ def point(
             "this point may be on land.",
         )
 
-    # Nearest cell centre, stated rather than implied. Same convention as
-    # /api/compare's grid_point: a readout is a cell, not an interpolation.
+    # Nearest cell centre, no interpolation (same as /api/compare).
     dlat = block.lat - lat
     dlon = (block.lon - lon) * float(np.cos(np.radians(lat)))
     offset_km = float(np.hypot(dlat, dlon) * 111.32)

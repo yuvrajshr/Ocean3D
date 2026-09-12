@@ -1,12 +1,7 @@
-"""Which commit this API process was started from.
+"""The git commit this API process started from.
 
-Read once, at import. That is the point: uvicorn runs without --reload, so
-after a `git pull` the process keeps serving the code it started with. Reporting
-the start commit lets the frontend show "api <sha>" beside its own, and a
-mismatch is the whole diagnosis — no one has to guess which half is stale.
-
-Returns None for the sha when git is unavailable (a zip download, a container
-without .git); the UI then shows nothing rather than a made-up identity.
+Read once at import. uvicorn doesn't reload, so after a pull the frontend can
+show that the API is behind. None when git isn't available.
 """
 
 from __future__ import annotations

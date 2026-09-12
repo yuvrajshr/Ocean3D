@@ -1,21 +1,14 @@
-"""Read tools: the only way the assistant is allowed to learn a number.
+"""Read tools: the only way the assistant gets numbers.
 
-Each one calls the same code the HTTP API calls — not over HTTP, just the
-function — so the assistant and the UI can never disagree about what a dataset
-says. Every result carries a `provenance` block naming the dataset, the time,
-the depth and the units, because the panel builds its citation line from these
-and not from the prose (context.md §5.1 Principle 13).
+They call the same functions as the HTTP API, so the assistant and the UI always
+agree. Each result has a provenance block (dataset, time, depth, units) that the
+citation line is built from.
 
-**A read answers for the view on screen** (2026-09-10). On the map and the globe
-a variable resolves to the most-preferred source that *covers the date* — the
-same rule the map uses to draw — and one native cell is read at one level. In
-the chunk view "here" is the tile on screen, sampled from the HYCOM volume the
-view already loaded, so the answer costs no request and cannot disagree with the
-box around it.
+On the map and globe a variable resolves to the preferred source that covers the
+date (same as the map) and we read one native cell at one level. In the chunk
+view we sample the HYCOM volume that's already loaded.
 
-Results are deliberately small. The model does not need 40 levels by 60 days to
-answer "is the water warm here"; sending it would spend the free-tier token
-budget on numbers nobody reads.
+Results are kept small so we don't waste tokens.
 """
 
 from __future__ import annotations
@@ -32,15 +25,13 @@ from ..erddap_client import UpstreamRefused, UpstreamUnavailable
 from .tools import CHUNK_MAX_DEPTH, CHUNK_VARIABLES, ScreenState, choose, fmt_date, fmt_point
 
 
-#: The shape of what these reads return. Part of the analysis-cache key, so a
-#: row cached by older code is never served after a read's output changes —
-#: bump it whenever one does. It was missing once: compare_float gained its
-#: provenance block and the server kept answering, uncited, from day-old rows.
+# Version of the read output format. It's part of the cache key, so bump it
+# whenever a read's output changes or old cached rows keep getting served.
 RESULT_VERSION = 2
 
 
 class ReadError(Exception):
-    """A read that could not be served, with a reason fit to show a reader."""
+    """A read that failed, with a reason that can be shown to the user."""
 
 
 def _catalogue_keys() -> list[str]:
@@ -48,7 +39,7 @@ def _catalogue_keys() -> list[str]:
 
 
 def _provenance(ds: Any, *, time: str | None, depth: float | None, units: str | None) -> dict[str, Any]:
-    """The citation block. Never omitted — it is what makes an answer checkable."""
+    """The citation block. Always included."""
     return {
         "dataset": ds.id,
         "label": ds.label,
@@ -89,7 +80,7 @@ def _depth_arg(args: dict[str, Any]) -> float | None:
 
 
 def _read_point_value(ds: Any, **kw: Any):
-    """One native cell from whichever upstream serves `ds`, with honest failures."""
+    """One native cell from whichever upstream serves ``ds``, with clear error messages."""
     from ..ingestion import cmems, erddap_map
 
     source = cmems if ds.protocol == "cmems" else erddap_map
@@ -121,12 +112,10 @@ def _point_result(ds: Any, pv: Any, lat: float, lon: float, day: str) -> dict[st
     return out
 
 
-# --------------------------------------------------------------------------
-# query_point
-# --------------------------------------------------------------------------
+# --- query_point ---
 
 def query_point(state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
-    """A real value at one place, from the dataset the view on screen draws."""
+    """A value at one place, from the dataset the current view shows."""
     lat, lon = _lat_lon(args)
     if state.view == "chunk":
         return _chunk_point(state, args, lat, lon)
@@ -177,7 +166,7 @@ def _chunk_source(variable: str):
 
 
 def _chunk_volume(ds: Any, variable: str, day: str, bbox: list[float]):
-    """The chunk as the view loaded it: the same function, the same disk cache."""
+    """Chunk data as the view loaded it (same function, same cache)."""
     from ..routers import chunk as chunk_router
 
     tile = chunk_router._tile(bbox[0], bbox[1])
@@ -207,8 +196,7 @@ def _chunk_point(state: ScreenState, args: dict[str, Any], lat: float, lon: floa
 
     lon0, lat0, lon1, lat1 = state.chunk.bbox
     if not (lon0 <= lon <= lon1 and lat0 <= lat <= lat1):
-        # Outside the open tile: one native level from the same product, rather
-        # than fetching a whole neighbouring chunk for one number.
+        # Outside the open tile: read one level instead of fetching a whole neighbouring chunk.
         pv = _read_point_value(
             ds, lat=lat, lon=lon, time=day, depth=depth if ds.depth_dim is not None else None
         )
@@ -235,12 +223,10 @@ def _chunk_point(state: ScreenState, args: dict[str, Any], lat: float, lon: floa
     }
 
 
-# --------------------------------------------------------------------------
-# describe_chunk
-# --------------------------------------------------------------------------
+# --- describe_chunk ---
 
 def describe_chunk(state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
-    """The chunk on screen, summarised per level — enough to find a thermocline."""
+    """Summary of the chunk per depth level, enough to find the thermocline."""
     variable = _chunk_variable(state, args)
     day = str(state.chunk.time)[:10]
     ds = _chunk_source(variable)
@@ -299,12 +285,10 @@ def describe_chunk(state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-# --------------------------------------------------------------------------
-# Floats, and the model-vs-observation comparison
-# --------------------------------------------------------------------------
+# --- Floats and the model comparison ---
 
 def _float_defaults(state: ScreenState) -> dict[str, Any]:
-    """The window and box a "which floats are reporting" question means, per view."""
+    """Default time window and box for "which floats are reporting", per view."""
     if state.view == "chunk":
         lon0, lat0, lon1, lat1 = state.chunk.bbox
         out: dict[str, Any] = {"lat_min": lat0, "lat_max": lat1, "lon_min": lon0, "lon_max": lon1}
@@ -327,7 +311,7 @@ def _float_defaults(state: ScreenState) -> dict[str, Any]:
 
 
 def list_floats(state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
-    """Which in-situ platforms are reporting — the observation half of the brief."""
+    """Which floats are reporting."""
     from ..routers.instruments import list_instruments
 
     defaults = _float_defaults(state)
@@ -360,9 +344,7 @@ def list_floats(state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-#: The depths a forecaster reads a cast at. A comparison is handed to the model
-#: at these, not at all ~150 measured levels: the answer needs the shape and the
-#: largest disagreement, and every extra level is latency on the second round.
+# Standard depths we send to the model instead of all ~150 measured levels.
 _STANDARD_DEPTHS = (0, 10, 20, 50, 75, 100, 150, 200, 300, 500, 1000, 2000)
 
 
@@ -382,12 +364,7 @@ def _at_standard_depths(levels: list[dict[str, float]]) -> list[dict[str, float]
 
 
 def compare_float(_state: ScreenState, args: dict[str, Any]) -> dict[str, Any]:
-    """Model against measurement at the same place and time — the point of the tool.
-
-    Cited, and compact. The comparison's numbers once reached a reader with no
-    citation line (2026-09-12) because the result carried no provenance block,
-    on the one feature the project calls its money shot.
-    """
+    """Float vs model at the same place and time, with a citation, kept compact."""
     from ..routers.instruments import compare
 
     platform_id = str(args.get("platform_id", "")).strip()
@@ -445,11 +422,8 @@ READ_TOOLS: dict[str, Callable[[ScreenState, dict[str, Any]], Any]] = {
 
 
 def cache_context(name: str, state: ScreenState) -> dict[str, Any]:
-    """The screen facts a read's answer depends on beyond its own arguments.
-
-    Part of the analysis-cache key. Without it "what is the temperature here" was
-    keyed on its arguments alone, so a cached answer for one date could be served
-    after the reader moved the clock to another.
+    """Screen facts a read depends on besides its arguments (e.g. the date). Part of
+    the cache key so changing the date doesn't return an old answer.
     """
     if name == "compare_float":
         return {}
@@ -465,7 +439,7 @@ def cache_context(name: str, state: ScreenState) -> dict[str, Any]:
 
 
 def status_for(name: str, args: dict[str, Any], state: ScreenState) -> str:
-    """What the panel shows while a tool runs. §5.3: name what is loading."""
+    """Status text shown in the panel while a tool runs."""
     if name == "query_point":
         try:
             where = fmt_point(float(args.get("lat")), float(args.get("lon")))

@@ -1,11 +1,7 @@
 /**
- * Timeline scrubber console over INCOIS scenario model timesteps.
- *
- * Designed with a precision glassmorphic instrument console aesthetic:
- * - Direct Year/Month/Day readouts with interactive micro-step adjustments
- * - Play/pause transport with step backward, forward, jump-to-latest and 4K animation export
- * - 48-tick precision ruler with glowing position line and pentagon grip handle
- * - Interactive pointer scrubbing and full keyboard accessibility
+ * Timeline scrubber for the scenario's model time steps: date readout with
+ * year/month/day steppers, play/step controls, and a draggable ruler.
+ * Keyboard accessible.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
@@ -75,16 +71,14 @@ export function Timeline({
     return last ? new Date(last) : new Date("2013-10-25T00:00:00Z");
   }, [timesteps, count]);
 
-  // Position percentage along the timeline
+  // Position along the timeline, in percent.
   const discretePercent = count > 1 ? (index / (count - 1)) * 100 : 0;
   const currentPercent = isScrubbing && scrubPercent !== null ? scrubPercent : discretePercent;
 
-  // Formatted date values
   const year = currentDate.getUTCFullYear();
   const month = MONTH_NAMES[currentDate.getUTCMonth()] ?? "OCT";
   const day = String(currentDate.getUTCDate()).padStart(2, "0");
 
-  // Step calculations
   const stepBy = (direction: 1 | -1) => {
     if (disabled || count === 0) return;
     const nextIndex = Math.max(0, Math.min(count - 1, index + direction));
@@ -96,7 +90,7 @@ export function Timeline({
     onSeek(count - 1);
   };
 
-  // Micro adjustments on Year / Month / Day
+  // Step year / month / day.
   const adjustDate = (field: "year" | "month" | "day", delta: number) => {
     if (disabled || count === 0) return;
     const target = new Date(currentDate);
@@ -118,7 +112,7 @@ export function Timeline({
     onSeek(bestIdx);
   };
 
-  // Scrubber drag logic
+  // Drag to scrub.
   const updateScrubberPosition = useCallback(
     (clientX: number, commit = false) => {
       const ruler = rulerRef.current;
@@ -164,7 +158,7 @@ export function Timeline({
     };
   }, [isScrubbing, updateScrubberPosition]);
 
-  // Keyboard navigation for accessibility
+  // Keyboard controls.
   const handleKey = (event: React.KeyboardEvent) => {
     if (disabled || count === 0) return;
     let next = index;
@@ -182,7 +176,7 @@ export function Timeline({
     onSeek(Math.max(0, Math.min(count - 1, next)));
   };
 
-  // Cycle step granularity unit
+  // Cycle the step unit.
   const cycleStepUnit = () => {
     const units: TimeGranularity[] = ["DAY", "RUN", "MONTH", "YEAR"];
     const nextUnit = units[(units.indexOf(stepUnit) + 1) % units.length] ?? "DAY";
@@ -193,7 +187,7 @@ export function Timeline({
     }
   };
 
-  // Dynamic ruler bottom labels with clean non-overlapping positioning
+  // Ruler labels (start, maybe middle, end) without overlaps.
   const rulerLabels = useMemo(() => {
     if (count === 0) return [];
 
@@ -207,17 +201,17 @@ export function Timeline({
     const startStr = formatFull(minDate);
     const endStr = formatFull(maxDate);
 
-    // If start and end represent the exact same day
+    // Start and end are the same day.
     if (startStr === endStr) {
       return [{ label: startStr, highlight: true, pos: "center" as const }];
     }
 
-    // Include middle landmark if 3 or more distinct timesteps
+    // Add a middle label if there are 3+ steps.
     if (count >= 3) {
       const midDate = new Date(timesteps[Math.floor(count / 2)]!);
       const midStr = formatFull(midDate);
 
-      // Only show mid label if distinct from both start and end
+      // Only if it's different from both ends.
       if (midStr !== startStr && midStr !== endStr) {
         return [
           { label: startStr, highlight: false, pos: "left" as const },
@@ -238,13 +232,10 @@ export function Timeline({
       id="ocean3d-timeline-scrubber"
       className={`timeline-scrubber-wrapper ${isCollapsed ? "timeline-scrubber-wrapper--collapsed" : ""}`}
     >
-      {/* Main Scrubber Bar */}
       <div className="timeline-scrubber__bar">
-        {/* Left Block: Date Readout + Controls */}
+        {/* date readout and controls */}
         <div className="timeline-scrubber__left">
-          {/* Micro Date Adjustments */}
           <div className="timeline-scrubber__date-group">
-            {/* Year */}
             <div className="timeline-scrubber__date-col">
               <button
                 type="button"
@@ -269,7 +260,6 @@ export function Timeline({
               </button>
             </div>
 
-            {/* Month */}
             <div className="timeline-scrubber__date-col">
               <button
                 type="button"
@@ -296,7 +286,6 @@ export function Timeline({
               </button>
             </div>
 
-            {/* Day */}
             <div className="timeline-scrubber__date-col">
               <button
                 type="button"
@@ -322,13 +311,13 @@ export function Timeline({
             </div>
           </div>
 
-          {/* Step Size indicator */}
+          {/* step size */}
           <div className="timeline-scrubber__step-indicator">
             <span className="timeline-scrubber__step-label">STEP</span>
             <span className="timeline-scrubber__step-val">1 {stepUnit}</span>
           </div>
 
-          {/* Transport playback controls */}
+          {/* playback controls */}
           <div className="timeline-scrubber__transport">
             <button
               type="button"
@@ -381,7 +370,7 @@ export function Timeline({
           </div>
         </div>
 
-        {/* Center Ruler Block */}
+        {/* ruler */}
         <div
           ref={rulerRef}
           onPointerDown={handlePointerDown}
@@ -395,7 +384,6 @@ export function Timeline({
           aria-valuenow={index}
           aria-valuetext={currentIso ? `${year} ${month} ${day}` : "No model runs"}
         >
-          {/* Top colored progress bar */}
           <div className="timeline-scrubber__top-bar">
             <div
               className="timeline-scrubber__progress-fill"
@@ -403,7 +391,7 @@ export function Timeline({
             />
           </div>
 
-          {/* Tick Marks Layer */}
+          {/* ticks */}
           <div className="timeline-scrubber__ticks-layer">
             {Array.from({ length: 48 }).map((_, i) => {
               const isMajor = i % 6 === 0;
@@ -418,13 +406,12 @@ export function Timeline({
             })}
           </div>
 
-          {/* Vertical position line */}
           <div
             className="timeline-scrubber__cursor-line"
             style={{ left: `${currentPercent}%` }}
           />
 
-          {/* Date range labels beneath ruler */}
+          {/* date labels */}
           <div className="timeline-scrubber__labels">
             {rulerLabels.map((lbl, idx) => (
               <span
@@ -440,7 +427,7 @@ export function Timeline({
           </div>
         </div>
 
-        {/* Right Section: Cadence Selector + Expand/Shrink Toggle */}
+        {/* cadence and expand/collapse */}
         <div className="timeline-scrubber__right">
           <button
             type="button"
@@ -478,5 +465,5 @@ export function Timeline({
   );
 }
 
-// Named alias for convenience
+// Alias export.
 export const TimelineScrubber = Timeline;

@@ -1,10 +1,7 @@
 """Pydantic schemas.
 
-These mirror context.md §6 exactly. Every ingestion source normalizes into one
-of these two shapes, so the frontend never learns whether a point came from an
-Argo float, a glider or a CTD — only ``platform_type``, for the icon and label.
-That is what makes "add a new sensor with minimal code change" true rather than
-aspirational.
+Every source is converted into one of these shapes, so the frontend only ever
+sees ``platform_type`` (for the icon and label), never the original format.
 """
 
 from __future__ import annotations
@@ -17,12 +14,7 @@ Provenance = Literal["live", "cached", "fixture"]
 
 
 class SourceStatus(BaseModel):
-    """Where this response actually came from.
-
-    Surfaced in the UI as a readout rather than hidden, because a demo that
-    silently falls back to cached data while claiming to be live is worse than
-    one that says so.
-    """
+    """Where a response came from (live or cache). Shown in the UI."""
 
     provenance: Provenance
     fetched_at: str
@@ -36,11 +28,7 @@ class GridAxes(BaseModel):
 
 
 class ModelFieldMeta(BaseModel):
-    """context.md §6.1 — a gridded model/analysis field.
-
-    The payload itself is NOT in here. Values travel as a separate binary
-    Float32Array response (~259 KB) instead of JSON (~8 MB) — see /volume.
-    """
+    """A gridded model field. The values themselves are a separate binary response."""
 
     variable: str
     label: str
@@ -75,11 +63,8 @@ class ModelFieldMeta(BaseModel):
 
 
 class ProfileLevel(BaseModel):
-    """One measurement level of an in-situ cast.
-
-    ``depth`` is metres, always. Argo reports pressure in decibar; the
-    conversion happens once, at ingestion, because the whole point of this app
-    is comparing a float against a gridded field whose vertical axis is metres.
+    """One level of a profile. ``depth`` is always metres (Argo pressure is converted
+    at ingestion).
     """
 
     depth: float
@@ -89,7 +74,7 @@ class ProfileLevel(BaseModel):
 
 
 class InstrumentProfile(BaseModel):
-    """context.md §6.2 — one point-profile from any in-situ platform."""
+    """One profile from any in-situ platform."""
 
     platform_id: str
     platform_type: str
@@ -103,8 +88,7 @@ class InstrumentProfile(BaseModel):
 
 
 class PlatformSummary(BaseModel):
-    """A marker in the 3D scene. Deliberately light — the full profile is
-    fetched only when someone clicks."""
+    """A float marker. The full profile is only fetched on click."""
 
     platform_id: str
     platform_type: str

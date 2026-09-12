@@ -1,10 +1,8 @@
-"""FastAPI application.
+"""FastAPI app.
 
-Deliberately thin. Three jobs only:
-  1. Cross the CORS/TLS boundary to erddap.incois.gov.in, which the browser
-     cannot cross itself.
-  2. Normalize every source into the two schemas in context.md §6.
-  3. Cache, so a demo never depends on venue wifi.
+Kept thin on purpose: it proxies ERDDAP (the browser can't, no CORS), converts
+everything into our two shapes (gridded field / point profile), and caches
+responses so the demo works offline.
 """
 
 from __future__ import annotations
@@ -37,8 +35,8 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # The first Copernicus point read otherwise pays ~8 s to open the store.
-    # OCEANVIZ_WARM=off skips it (tests, or a machine with no network).
+    # Opening the Copernicus store takes ~8 s, so do it at startup.
+    # Set OCEANVIZ_WARM=off to skip (tests, offline machines).
     if os.environ.get("OCEANVIZ_WARM", "on").lower() != "off":
         cmems.warm_in_background(MAP_DATASETS)
     yield
@@ -54,15 +52,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Vite proxies /api in development, so this is belt-and-braces for the case
-# where the frontend is served from a different origin during a demo.
+# Vite proxies /api in dev; this covers serving the frontend from another origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET"],
     allow_headers=["*"],
-    # X-Terrain-Shape and the X-Map-* headers must be listed too: a header the
-    # browser cannot read is the same as one that was never sent.
+    # Custom headers have to be exposed or the browser can't read them.
     expose_headers=[
         "X-Field-Shape",
         "X-Field-Provenance",

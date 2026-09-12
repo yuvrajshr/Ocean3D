@@ -1,15 +1,7 @@
-"""The one place that talks to erddap.incois.gov.in.
+"""All ERDDAP requests go through here.
 
-Two upstream quirks are contained here so they cannot leak into the rest of the
-app:
-
-1. **No CORS headers.** The browser cannot call ERDDAP directly at all. This is
-   why the backend exists (context.md §10).
-2. **Incomplete TLS chain.** INCOIS serves its leaf certificate without the
-   intermediate, so strict clients raise UNABLE_TO_VERIFY_LEAF_SIGNATURE.
-   Browsers usually recover by fetching the missing intermediate via the AIA
-   extension; httpx does not. Verification is therefore disabled *for this host
-   only*, and loudly, rather than silently across the process.
+ERDDAP sends no CORS headers, so the browser can't call it directly. INCOIS also
+serves an incomplete TLS chain, so verification is turned off for that host only.
 """
 
 from __future__ import annotations
@@ -36,9 +28,7 @@ if not ERDDAP_VERIFY_TLS:
 _HEADERS = {"User-Agent": "INCOIS-OceanViz/0.1 (SIH 2026 PS 26067)"}
 _TIMEOUT = httpx.Timeout(120.0, connect=20.0)
 
-# INCOIS gets the relaxed client because of its incomplete chain. Every other
-# host — NOAA CoastWatch, which serves the ETOPO relief — is verified normally.
-# Keeping these separate means the workaround cannot silently spread.
+# Relaxed TLS for INCOIS only; every other host is verified.
 _incois_client = httpx.Client(
     verify=ERDDAP_VERIFY_TLS, timeout=_TIMEOUT, follow_redirects=True, headers=_HEADERS
 )
@@ -52,22 +42,14 @@ def _client_for(url: str) -> httpx.Client:
 
 
 class UpstreamUnavailable(RuntimeError):
-    """The upstream did not answer usefully and nothing was cached.
-
-    Deliberately not only "unreachable": this also covers a server that answers
-    a 500 for one particular query, which APDRC does for some HYCOM steps when
-    a depth *range* is requested even though the same step's surface is fine.
-    Callers that can say something more specific should.
+    """The upstream failed and there's nothing cached. Also covers a server returning
+    500 for one specific query (APDRC does this for some HYCOM depth ranges).
     """
 
 
 class UpstreamRefused(UpstreamUnavailable):
-    """The upstream answered, with an error status, for this request.
-
-    Split from "unreachable" because the two send a reader to different places:
-    a refused request usually means the query is outside what the dataset holds
-    (a date past its end, a depth range APDRC chokes on), not that the network is
-    down. Subclassing keeps every existing `except UpstreamUnavailable` working.
+    """The server answered with an error for this request, usually because the query is
+    outside what the dataset has. Subclass so existing handlers still catch it.
     """
 
     def __init__(self, host: str, status: int) -> None:
@@ -77,11 +59,7 @@ class UpstreamRefused(UpstreamUnavailable):
 
 
 def _host(url: str) -> str:
-    """The server actually being talked to.
-
-    This module serves four upstreams now. Naming INCOIS in every failure — as
-    it used to — sent people to check the wrong server.
-    """
+    """Host name, used in error messages."""
     try:
         return urllib.parse.urlsplit(url).netloc or "The upstream"
     except ValueError:
@@ -93,10 +71,8 @@ def _iso(ts: float) -> str:
 
 
 def fetch(url: str, *, allow_cache: bool = True) -> tuple[bytes, SourceStatus]:
-    """GET a URL, preferring the network but never depending on it.
-
-    Order: fresh cache -> network -> stale cache. The returned SourceStatus
-    records which of those actually happened, and the UI shows it.
+    """GET a URL: fresh cache, then network, then stale cache. The SourceStatus says
+    which one we used.
     """
     cached = cache.read(url) if allow_cache else None
     if cached and not cached.stale:
@@ -133,17 +109,13 @@ def fetch(url: str, *, allow_cache: bool = True) -> tuple[bytes, SourceStatus]:
         ) from exc
 
 
-# ERDDAP's own query syntax uses characters that RFC 3986 reserves: square
-# brackets for griddap subsetting, and < > " in tabledap constraints. Tomcat,
-# which ERDDAP runs on, rejects those raw with a bare HTTP 400 — verified
-# against the live server, where every raw-bracket request failed and every
-# percent-encoded one succeeded. These characters are ERDDAP's grammar and must
-# stay literal, so they are the safe set:
+# ERDDAP uses [ ] < > " in its query syntax and Tomcat rejects them unencoded
+# (HTTP 400). These characters have to stay literal:
 _QUERY_SAFE = "=&,():/.-~*"
 
 
 def _encode_query(query: str) -> str:
-    """Percent-encode a query while preserving ERDDAP's own syntax characters."""
+    """Percent-encode a query but keep ERDDAP's syntax characters."""
     return urllib.parse.quote(query, safe=_QUERY_SAFE)
 
 

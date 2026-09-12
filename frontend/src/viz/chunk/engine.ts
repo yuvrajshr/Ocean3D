@@ -1,16 +1,13 @@
 /**
  * The chunk viewport.
  *
- * Owns the renderer, the camera orbit, the box chrome and the layer handles,
- * and nothing else: every question about *what* to draw is answered by the
- * scene spec, and every answer about *how* comes from the registry. React holds
- * the spec, mutates it, and calls `commit()`; the engine reconciles the scene
- * against it the way a renderer reconciles a tree, creating, updating and
- * disposing handles by descriptor id.
+ * Owns the renderer, camera orbit, box frame and layer handles. What to draw comes
+ * from the scene spec, how to draw it comes from the registry. React owns the
+ * spec and calls commit(); the engine then creates, updates or disposes layer
+ * handles by descriptor id.
  *
- * Two things are deliberately not React's business: the render loop, which must
- * not re-render a component 60 times a second, and hover picking, which is
- * raycast against the live scene and throttled to one test per frame.
+ * The render loop and hover picking stay out of React so we don't re-render
+ * 60 times a second. Hover raycasts are limited to one per frame.
  */
 
 import * as THREE from "three";
@@ -36,7 +33,7 @@ import {
   type SceneSpec,
 } from "./spec";
 
-/** What the cursor is over, in canvas pixels plus real units. */
+/** What's under the cursor, in canvas pixels and real units. */
 export interface HoverReadout {
   x: number;
   y: number;
@@ -63,9 +60,8 @@ interface Tween {
   to: Orbit;
 }
 
-// `_grid` is the third rebuild trigger, alongside type and depth axis: layer
-// geometry is sized from the chunk's real grid, so a new tile — or a switch
-// between a volume variable and a surface one — has to re-bake it.
+// ``_grid`` also triggers a rebuild, since layer geometry is sized from the grid
+// (a new tile, or switching between volume and surface variables).
 type MountedHandle = LayerHandle & { _type?: string; _ax?: number; _grid?: string };
 
 const prefersReducedMotion = (): boolean =>
@@ -77,20 +73,17 @@ export class ChunkEngine {
   spec: SceneSpec = structuredClone(DEFAULT_SPEC);
 
   /**
-   * The chunk as fetched. Null before the first step lands.
-   *
-   * The engine draws nothing at all until this is set, rather than drawing an
-   * empty box: an empty box looks like an ocean with no water in it, and this
-   * view has no synthetic field to fall back on by design.
+   * The loaded chunk, null until the first step arrives. Nothing is drawn before
+   * then (an empty box would look like an ocean with no water).
    */
   private data: ChunkSource | null = null;
   private platforms: ChunkPlatform[] = [];
 
-  /** Fired when the measured frame rate changes, not every frame. */
+  /** Fires when the measured frame rate changes. */
   onFps: ((fps: number) => void) | null = null;
   /** Null when the cursor leaves the field. */
   onHover: ((hover: HoverReadout | null) => void) | null = null;
-  /** A platform id on click, or null when the click hit nothing. */
+  /** Platform id on click, or null if nothing was hit. */
   onPickInstrument: ((id: string | null) => void) | null = null;
 
   private readonly registry: Registry = createRegistry();
@@ -119,7 +112,7 @@ export class ChunkEngine {
   private hovering = false;
   private raycaster: THREE.Raycaster | null = null;
 
-  /** Grid fraction to world. The box is 10 units across, centred on origin. */
+  /** Grid fraction to world. The box is 10 units across, centred on the origin. */
   private readonly geo: GeoMap = {
     x: (f: number) => -5 + 10 * f,
     z: (f: number) => 5 - 10 * f,
@@ -131,14 +124,13 @@ export class ChunkEngine {
     private readonly rulerHost: HTMLElement,
   ) {}
 
-  /* ---------------- lifecycle ---------------- */
+  /* --- lifecycle --- */
 
   start(): void {
     this.initThree();
-    // The colour range opens on the variable's published range, not on the
-    // chunk's own extremes: a forecaster reads this against the same scale
-    // every day, and auto-ranging on load would move it under them. The
-    // chunk's own 2nd-98th percentile is what the panel's "Auto" applies.
+    // Start on the variable's fixed range rather than this chunk's min/max, so the
+    // scale stays the same between chunks and days. "Auto" in the panel switches to
+    // the chunk's own 2-98th percentile.
     const range = VARIABLES[this.spec.field.variable].range;
     this.spec.colorRange.min = range[0];
     this.spec.colorRange.max = range[1];
@@ -147,20 +139,15 @@ export class ChunkEngine {
   }
 
   /**
-   * Hand the engine a freshly loaded chunk.
-   *
-   * A source is one variable at one instant, so this is called on every step
-   * and every variable change. Platforms move less often — they are per tile
-   * and window — but travel together so the scene can never be reconciled
-   * against a field from one tile and floats from another.
+   * Give the engine a newly loaded chunk. Called on every time step and variable
+   * change. Platforms come along with it so the field and the floats always belong
+   * to the same tile.
    */
   setData(data: ChunkSource, platforms: ChunkPlatform[]): void {
     this.data = data;
     this.platforms = platforms;
-    // The spec describes the chunk, so it has to describe the one that arrived
-    // rather than the one that was asked for. The inspector shows this object
-    // verbatim; leaving the requested extent in it would put a number on screen
-    // that nothing on screen was drawn from.
+    // Update the spec to the chunk that actually arrived, since the inspector shows
+    // the spec as-is.
     const G = data.grid;
     this.spec.chunk.bbox = [...data.meta.bbox];
     this.spec.chunk.resolution = [G.nx, G.ny, G.nz];
@@ -204,7 +191,7 @@ export class ChunkEngine {
     return tex;
   }
 
-  /* ---------------- three.js ---------------- */
+  /* --- three.js --- */
 
   private initThree(): void {
     const renderer = new THREE.WebGLRenderer({
@@ -212,7 +199,7 @@ export class ChunkEngine {
       alpha: true,
       powerPreference: "high-performance",
     });
-    // The CSS behind the canvas paints the water; the renderer only adds to it.
+    // The CSS behind the canvas draws the water background.
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.domElement.style.display = "block";
@@ -235,9 +222,7 @@ export class ChunkEngine {
       ty: -this.height() * 0.45,
       tz: 0,
     };
-    // The one orchestrated motion in this view: a descent into the chunk from
-    // above and behind. Anyone who asked for reduced motion starts at the end
-    // of it instead.
+    // Intro camera move down into the chunk. With reduced motion we start at the end.
     if (prefersReducedMotion()) {
       this.orbit = { ...home };
     } else {
@@ -289,10 +274,7 @@ export class ChunkEngine {
     }
   }
 
-  /**
-   * The box frame and its depth hairlines. Rebuilt whenever the depth axis
-   * changes, because the tick heights are baked into the geometry.
-   */
+  /** Box frame and depth lines. Rebuilt when the depth axis changes. */
   private buildChrome(): void {
     this.disposeChrome();
     const yb = -this.geo.yn(2000);
@@ -367,7 +349,7 @@ export class ChunkEngine {
           const o = this.orbit;
           if (mode === "orbit") {
             o.theta -= dx * 0.006;
-            // Never quite top-down or quite edge-on: both degenerate the view.
+            // Never fully top-down or edge-on.
             o.phi = Math.max(0.04, Math.min(1.55, o.phi - dy * 0.005));
           } else {
             const k = o.radius * 0.0016;
@@ -393,7 +375,7 @@ export class ChunkEngine {
     el.addEventListener(
       "pointerup",
       (e) => {
-        // A drag that barely moved is a click, and clicks pick instruments.
+        // A drag that barely moved counts as a click.
         if (mode && moved < 6) this.pickInstrument(e);
         mode = null;
       },
@@ -456,9 +438,8 @@ export class ChunkEngine {
   }
 
   /**
-   * One raycast per frame against the active scalar plane. The uv of the hit
-   * carries the grid position directly, which is why the quads are built by
-   * hand rather than with PlaneGeometry.
+   * One raycast per frame against the active scalar plane. The hit's uv is the grid
+   * position, which is why the quads are built by hand.
    */
   private updateHover(): void {
     if (!this.pointer) return;
@@ -514,9 +495,7 @@ export class ChunkEngine {
             : 0;
     }
     const v = this.spec.field.variable;
-    // Read at the depth actually under the cursor, not at a relief-clamped one.
-    // Where the analysis has nothing the value is NaN, and the readout says so
-    // rather than reporting the last valid cell above it.
+    // Read at the depth under the cursor. NaN means no data, and the readout says so.
     const val = data.value(lon, lat, depth);
     const r = this.renderer.domElement.getBoundingClientRect();
     this.hovering = true;
@@ -531,7 +510,7 @@ export class ChunkEngine {
     });
   }
 
-  /* ---------------- spec to scene ---------------- */
+  /* --- spec to scene --- */
 
   private ctx(): LayerContext | null {
     const sc = this.spec.layers.find((l) => l.type === "scalar-field");
@@ -557,9 +536,8 @@ export class ChunkEngine {
   }
 
   /**
-   * Reconcile the scene against the spec: create handles for new descriptors,
-   * rebuild those whose type or depth axis changed, update the rest, and drop
-   * any whose descriptor has gone.
+   * Sync the scene with the spec: add new layers, rebuild ones whose type or depth
+   * axis changed, update the rest, remove deleted ones.
    */
   syncScene(): void {
     const ctx = this.ctx();
@@ -600,7 +578,7 @@ export class ChunkEngine {
     this.root.scale.y = this.height();
   }
 
-  /** Push spec changes into the scene. `rebuildAxis` re-bakes depth geometry. */
+  /** Push spec changes into the scene. ``rebuildAxis`` rebuilds depth geometry. */
   commit(rebuildAxis = false): void {
     if (rebuildAxis) {
       this.axisVersion++;
@@ -609,17 +587,14 @@ export class ChunkEngine {
     this.syncScene();
   }
 
-  /** Exaggeration is a group scale, so it needs no geometry rebuild. */
+  /** Exaggeration is just a group scale, no rebuild needed. */
   applyExaggeration(): void {
     this.root.scale.y = this.height();
   }
 
   /**
-   * Replace the whole spec from edited JSON.
-   *
-   * Unknown layer types are reported rather than rejected: a spec written for a
-   * build with more modules than this one should still render everything this
-   * build understands.
+   * Replace the whole spec from edited JSON. Unknown layer types are reported
+   * but don't stop the rest from rendering.
    */
   applySpec(text: string): { ok: boolean; message: string } {
     let next: SceneSpec;
@@ -633,8 +608,7 @@ export class ChunkEngine {
     }
     const unknown = next.layers.filter((l) => !this.registry[l.type]).map((l) => l.type);
     for (const l of next.layers) {
-      // Migrate pre-active-axis specs, which carried three visibility booleans
-      // where there is now one active axis plus context walls.
+      // Upgrade old specs that had three visibility flags instead of one active axis.
       const q = l.props;
       if (l.type !== "scalar-field" || !q || q.activeAxis) continue;
       q.activeAxis = q.showLon ? "lon" : q.showLat ? "lat" : "depth";
@@ -677,7 +651,7 @@ export class ChunkEngine {
     this.tween = { t0: performance.now(), dur: 950, from: { ...this.orbit }, to };
   }
 
-  /* ---------------- loop ---------------- */
+  /* --- loop --- */
 
   private loop = (): void => {
     this.raf = requestAnimationFrame(this.loop);
@@ -724,9 +698,7 @@ export class ChunkEngine {
 
     const cur = this.handles.get("currents");
     if (cur?.tick && cur.group.visible) {
-      // Rebuilt each frame rather than cached: the advection reads the current
-      // step's velocities through it, and a stale context would keep advecting
-      // yesterday's field after the timeline moved.
+      // Built each frame so advection always uses the current step's velocities.
       const ctx = this.ctx();
       if (ctx) cur.tick(dt, ctx);
     }
@@ -740,9 +712,8 @@ export class ChunkEngine {
   };
 
   /**
-   * The depth ruler is CSS, tracked to the box's near-left edge every frame.
-   * It hides itself when the column is too short on screen for the labels to
-   * be honest about which depth they mark.
+   * The depth ruler is CSS, positioned on the box's near-left edge each frame.
+   * Hidden when the box is too short on screen for the labels to line up.
    */
   private positionRuler(): void {
     if (!this.rulerEls.length) return;

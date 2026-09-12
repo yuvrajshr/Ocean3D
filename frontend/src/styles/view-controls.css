@@ -1,7 +1,4 @@
-/* ============================================================================
-   view-controls.css — Ratio Design System Viewport Navigation Controls
-   Theme C: Warm Maritime Chronometer & Copper
-   ========================================================================== */
+/* view-controls.css: zoom and reset buttons. */
 
 .view-controls {
   position: absolute;
@@ -66,7 +63,7 @@
   color: var(--rt-copper, #e59858);
 }
 
-/* Responsive adjustment for small screens */
+/* Small screens */
 @media (max-width: 900px) {
   .view-controls {
     right: 14px;

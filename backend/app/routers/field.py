@@ -1,9 +1,7 @@
 """Gridded field endpoints.
 
-Metadata and values are split on purpose. The metadata is small JSON matching
-context.md §6.1 and carries a ``data_url``; the values travel as a raw
-Float32Array (~259 KB for a full volume) rather than JSON (~8 MB). The browser
-uploads that buffer straight into a 3D texture with no parsing step.
+Metadata is small JSON with a data_url; the values come separately as raw
+Float32 (~259 KB instead of ~8 MB of JSON) and go straight into a 3D texture.
 """
 
 from __future__ import annotations
@@ -97,8 +95,7 @@ def field_meta(
     lat, lon = _bounds(lat_min, lat_max, lon_min, lon_max)
     result = _load(spec, time, lat, lon)
 
-    # The scale rule lives in scaling.py so the 2D map cannot compute a
-    # different range for the same field than this endpoint reports.
+    # Shared with the map so both report the same range.
     scale = percentile_range(result.values)
     if scale is None:
         raise HTTPException(
@@ -145,7 +142,7 @@ def field_data(
     lon_min: float | None = None,
     lon_max: float | None = None,
 ) -> Response:
-    """Raw little-endian Float32, C order (depth, lat, lon). NaN = no data."""
+    """Raw little-endian Float32, (depth, lat, lon). NaN = no data."""
     spec = _spec(variable)
     lat, lon = _bounds(lat_min, lat_max, lon_min, lon_max)
     result = _load(spec, time, lat, lon)

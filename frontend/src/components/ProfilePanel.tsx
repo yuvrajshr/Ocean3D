@@ -1,19 +1,11 @@
 /**
- * The floating profile panel — the product's reason to exist.
+ * Profile panel: a float's measured profile next to the INCOIS analysis at the
+ * same place and time, on one depth axis.
  *
- * It puts the INCOIS gridded analysis and a real Argo cast on one depth axis so
- * "where does the model disagree with the ocean?" is answered by looking.
- *
- * Two plots share a single depth axis, the Ocean Data View convention. The
- * left panel carries both curves; the right panel carries their difference on
- * its own scale. That second panel is not decoration: a 1.2 °C disagreement is
- * about 4% of a 2-31 °C axis and simply cannot be seen in the left plot, which
- * would leave the headline feature illegible.
- *
- * The chart is hand-drawn SVG rather than a chart library so the depth axis can
- * use the exact transform in viz/depth.ts — the same one the 3D column and the
- * depth ruler use. A library's own linear axis would put 100 m at a different
- * height than the ruler does.
+ * Left plot has both curves, right plot has the difference on its own scale (a
+ * 1.2 °C difference is invisible on a 2-31 °C axis). Plain SVG instead of a chart
+ * library so the depth axis uses the same transform as the 3D column and ruler
+ * (viz/depth.ts).
  */
 
 import { useEffect, useMemo } from "react";
@@ -80,8 +72,7 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose, sh
         .map((p, i) => `${i === 0 ? "M" : "L"}${x(p.value).toFixed(2)},${y(p.depth).toFixed(2)}`)
         .join(" ");
 
-    // Residual panel, scaled to the residual itself and centred on zero so the
-    // sign is readable at a glance.
+    // Residual plot, scaled to the residual and centred on zero.
     const rValues = residual.map((r) => r.value);
     const rExtent = rValues.length ? Math.max(...rValues.map(Math.abs)) * 1.15 || 0.5 : 0.5;
     const rx = (v: number) => RESIDUAL_X0 + RESIDUAL_W / 2 + (v / rExtent) * (RESIDUAL_W / 2);
@@ -199,7 +190,7 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose, sh
                   : "")
               }
             >
-              {/* Shared depth grid */}
+              {/* depth grid */}
               {chart.ticks.map((tick) => (
                 <g key={tick.depth}>
                   <line
@@ -221,13 +212,7 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose, sh
                 m
               </text>
 
-              {/* --- Left: both curves ---
-                  The analysis is drawn ON TOP of the float, dashed. Where the
-                  two agree — which, at 0.1 °C on a 30 °C axis, is most of the
-                  column — they are within a pixel of each other, so a line
-                  drawn underneath would be completely hidden and the legend
-                  would promise something invisible. Dashed-over-solid reads as
-                  agreement, and separates visibly wherever they diverge. */}
+              {/* Left: both curves. The model is drawn dashed on top of the float, since where they agree they overlap */}
               <path
                 d={chart.observedPath} fill="none" stroke="var(--bioluminescence)"
                 strokeWidth="2" strokeLinejoin="round"
@@ -253,7 +238,7 @@ export function ProfilePanel({ platform, comparison, loading, error, onClose, sh
                 {comparison.units}
               </text>
 
-              {/* --- Right: the difference, on its own scale --- */}
+              {/* Right: the difference, on its own scale */}
               <line
                 x1={chart.zeroX} x2={chart.zeroX} y1={PAD.top} y2={PAD.top + PLOT_H}
                 stroke="var(--text-faint)" strokeWidth="1"

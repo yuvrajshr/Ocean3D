@@ -1,15 +1,9 @@
 /**
- * The relief surface: land and seafloor as one mesh.
+ * Land and seafloor as one mesh from ETOPO elevation (positive land, negative sea).
  *
- * ETOPO gives a single elevation field that is positive on land and negative at
- * sea, so the Eastern Ghats, the Indian coastline and the floor of the Bay of
- * Bengal are one continuous surface here — which is what they are. Building
- * them as separate objects would be both more code and less true.
- *
- * Geometry is assembled by hand rather than from PlaneGeometry: ERDDAP returns
- * latitude ascending (south first) while a plane's rows run north-first, and
- * quietly rendering the Bay of Bengal upside down is exactly the class of bug
- * that survives review because it still looks plausible.
+ * The geometry is built by hand instead of from PlaneGeometry because ERDDAP gives
+ * latitude south-first while a plane's rows go north-first; getting that wrong
+ * flips the Bay of Bengal.
  */
 
 import * as THREE from "three";
@@ -67,19 +61,11 @@ const FRAGMENT = /* glsl */ `
     vec3 normal = normalize(vNormal);
     float lambert = max(dot(normal, normalize(uSunDirection)), 0.0);
 
-    // Dissolve the relief radially, measured in the analysis box's own
-    // half-widths.
+    // Fade the terrain out radially, in units of the analysis box's half-size.
     //
-    // The terrain is requested 25 x 25 degrees against an analysis of 18 x 17,
-    // so the ground overhangs the data by ~1.4x on every side and used to end
-    // in a hard lit rectangle. A lit rectangle floating in dark water does not
-    // read as a seabed; it reads as a torn sheet of paper. Fading before the
-    // mesh reaches its own border means the reader never sees where the grid
-    // stops -- it simply runs out into the water.
-    //
-    // Superellipse rather than a circle, which would clip the corners of the
-    // box itself, and rather than a max(), which reproduces the very rectangle
-    // it is trying to hide.
+    // The terrain covers more area than the analysis, and a hard edge looked like a
+    // torn sheet of paper. A superellipse (not a circle, which would clip the box's
+    // corners, or max(), which gives back the rectangle).
     vec2 q = abs(vWorld.xz) / uBoxHalf;
     vec2 q2 = q * q;
     float reach = sqrt(sqrt(q2.x * q2.x + q2.y * q2.y));
@@ -87,32 +73,26 @@ const FRAGMENT = /* glsl */ `
     if (edgeFade <= 0.002) discard;
 
     if (vElevation > 0.0) {
-      // --- Land -------------------------------------------------------
-      // Deliberately desaturated and dark. Land is context; the moment it
-      // competes with the data for attention it has failed its job.
+      // --- Land ---
+      // Dark and desaturated so it doesn't compete with the data.
       float h = clamp(vElevation / uMaxLandElevation, 0.0, 1.0);
       vec3 base = mix(uLandLow, uLandHigh, pow(h, 0.6));
       vec3 lit = base * (0.35 + 0.65 * lambert);
 
-      // Land goes through the water too. It never did, so it drew at full
-      // contrast however much sea lay between it and the eye — which is why
-      // the coast read as hard cardboard slabs pasted over the scene once the
-      // camera went under. Depth is 0 because land is at or above the
-      // waterline; the fog term is the whole point.
+      // Land is fogged by the water too (at depth 0), otherwise the coast looks like
+      // cardboard cut-outs from underwater.
       float landFog = 1.0 - exp(-uWaterDensity * waterPath(uCameraPos, vWorld));
       lit = applyWater(lit, 0.0, landFog);
 
-      // Land takes the same edge fade. It used to return alpha 1.0 and so kept
-      // its torn border; the western land at lon 75 was the worst offender.
+      // Land uses the same edge fade.
       fragColor = vec4(lit, edgeFade);
       return;
     }
 
-    // --- Seafloor -----------------------------------------------------
+    // --- Seafloor ---
     float depthMetres = -vElevation;
 
-    // The continental shelf reads lighter than the abyssal plain, as it does
-    // in every bathymetric chart a forecaster has ever used.
+    // The continental shelf is lighter than the deep plain, like on a bathymetric chart.
     float shelfness = 1.0 - smoothstep(0.0, 900.0, depthMetres);
     vec3 base = mix(uSeabed, uShelf, shelfness);
     vec3 lit = base * (0.30 + 0.70 * lambert);
@@ -123,19 +103,9 @@ const FRAGMENT = /* glsl */ `
     float fogAmount = 1.0 - exp(-uWaterDensity * waterPath(uCameraPos, vWorld));
     vec3 shaded = applyWater(lit, depthMetres, fogAmount);
 
-    // Dissolve the seafloor away below the photic zone.
-    //
-    // Fog alone was not enough: the deep slope still showed as a silhouette,
-    // because shading varied across it and betrayed its shape — and that shape
-    // is a wall, an artifact of exaggerating the vertical axis a couple of
-    // hundred times, not something anyone should be reading.
-    //
-    // Below roughly 700 m there is no light to see the bottom by, so it simply
-    // is not drawn. The fade is gradual, so there is no cut line: the shelf and
-    // upper slope stay legible and the abyssal plain becomes open water, which
-    // is exactly what a diver, a camera or an echo of daylight would find.
-    // Tightened from 250/900 now the water behind it is dark: less of the
-    // abyssal plain needs to show for the basin to read.
+    // Fade the seafloor out below the photic zone. Below ~700 m there's no light, and
+    // the exaggerated deep slope would look like a wall, so it gradually disappears
+    // while the shelf and upper slope stay visible.
     float visibility = (1.0 - smoothstep(200.0, 700.0, depthMetres)) * edgeFade;
     if (visibility <= 0.002) discard;
 
@@ -144,16 +114,8 @@ const FRAGMENT = /* glsl */ `
 `;
 
 /**
- * Low-pass the heightfield before it becomes geometry.
- *
- * At several hundred times vertical exaggeration, genuine 7 km-resolution
- * relief renders as a field of vertical shards: every seamount and canyon wall
- * becomes a spike taller than it is wide. Smoothing trades detail the viewer
- * could not read anyway for a surface that reads as a basin.
- *
- * This affects only the *rendered* relief. No depth reported anywhere in the UI
- * comes from this array — the depth ruler, the profile panel and the analysis
- * all carry their own untouched numbers.
+ * Smooth the heightfield before building geometry. At this exaggeration the raw
+ * relief becomes spikes. This only affects the rendered mesh, not any reported depth.
  */
 function smooth(elevation: Float32Array, nLat: number, nLon: number, passes: number): Float32Array {
   let current = Float32Array.from(elevation);
@@ -202,7 +164,7 @@ export function buildTerrainMesh(field: TerrainField, geo: GeoFrame): THREE.Mesh
     }
   }
 
-  // 32-bit indices are required: 141,376 vertices overflows Uint16.
+  // Needs 32-bit indices (141,376 vertices is too many for Uint16).
   const quads = (nLat - 1) * (nLon - 1);
   const indices = new Uint32Array(quads * 6);
   let w = 0;
@@ -238,12 +200,10 @@ export function buildTerrainMesh(field: TerrainField, geo: GeoFrame): THREE.Mesh
       uCameraPos: { value: new THREE.Vector3() },
       uTime: { value: 0 },
       uMaxLandElevation: { value: Math.max(field.maxElevation, 1) },
-      // Lowered from 0.5: caustics were competing with a bright background.
-      // Against a dark one they shout.
+      // Kept low so caustics don't overpower the scene.
       uCausticStrength: { value: 0.35 },
-      // Half-extent of the analysis box, so the relief can dissolve in the
-      // box's own units. Set by the scene, which owns the extent — see
-      // applyTerrainBounds(). Placeholder until then.
+      // Half-size of the analysis box, so the terrain can fade out relative to it.
+      // Set later by applyTerrainBounds() in the scene.
       uBoxHalf: { value: new THREE.Vector2(1, 1) },
     },
     side: THREE.FrontSide,
@@ -252,7 +212,7 @@ export function buildTerrainMesh(field: TerrainField, geo: GeoFrame): THREE.Mesh
   });
 
   const mesh = new THREE.Mesh(geometry, material);
-  // Behind the data, and behind the sea surface (RENDER_ORDER in viz/lattice.ts).
+  // Behind the data and the sea surface (RENDER_ORDER in viz/lattice.ts).
   mesh.renderOrder = -8;
   mesh.frustumCulled = true;
   return mesh;

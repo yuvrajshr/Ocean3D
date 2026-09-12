@@ -1,25 +1,13 @@
-"""The system prompt.
+"""System prompt.
 
-Three things this file is careful about.
+- Numbers must come from tools. Otherwise the model will happily say "about
+  28 °C" for a tropical sea, which sounds right but isn't data.
+- The model only hears about the current view and its controls, since those are
+  the only tools it gets. Mentioning other controls just leads to refused calls.
+- Short, direct tone. No "I'd be happy to help!".
 
-**The grounding rule is stated as a hard constraint, not a preference**, because
-the model will otherwise happily answer "roughly 28 °C" for a tropical sea
-surface — usually right, authoritative-sounding, and exactly the failure this
-product cannot survive. The panel cites from the tool calls that actually ran,
-so an ungrounded number is visibly marked; the prompt is the cheap defence.
-
-**The model is told about the view on screen, and only that view** (2026-09-10).
-Its tools act on that view alone, so the prompt describes that view's state and
-never names a control the turn does not declare — naming one invites a call that
-will be refused, and a refused call costs a round.
-
-**Voice follows context.md §5.3** — sentence case, active, no apologies. An
-assistant that writes "I'd be happy to help you explore that!" in an INCOIS
-forecasting tool is wrong in the same way a rounded drop-shadow would be.
-
-The screen state is inlined rather than offered as a tool: every round is one
-request against a per-minute quota, and state the model would ask for anyway is
-cheaper sent than fetched.
+Screen state goes straight into the prompt rather than behind a tool, which
+saves a round trip.
 """
 
 from __future__ import annotations
@@ -166,7 +154,7 @@ def _chunk_section(state: ScreenState) -> str:
 
 
 def build_system_prompt(*, state: ScreenState, catalogue: list[str] | None = None) -> str:
-    """The prompt, the register, and the view on screen."""
+    """Build the system prompt for the current view."""
     if state.view == "chunk":
         view = _chunk_section(state)
     elif state.view == "globe":

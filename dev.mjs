@@ -1,32 +1,19 @@
 /**
- * dev.mjs — start the backend and the frontend together.
+ * Start the backend and frontend together.
  *
  *   npm run dev            both, with prefixed output
- *   npm run dev -- --open  ...and open the browser once both answer
+ *   npm run dev -- --open  and open the browser once both are up
  *
- * Why a script rather than `concurrently`: this needs to do three things a
- * generic runner does not, all of which come straight out of next_session.md §2.
+ * A small script instead of concurrently, because it also:
+ *   1. finds the venv python (Scripts/ on Windows, bin/ elsewhere) and says so
+ *      clearly if it's missing
+ *   2. refuses to start if a port is already in use, instead of starting a
+ *      second copy on another port
+ *   3. stops both if either one exits, so you never end up with half the app
+ *      running (the frontend shows nothing without the backend)
  *
- *   1. Resolve the venv python itself (Scripts/ on Windows, bin/ elsewhere) and
- *      say so plainly when it is missing, instead of failing as "ENOENT python".
- *
- *   2. Refuse to start a second instance on a port that already answers.
- *      CLAUDE.md §8 says not to, and a second Vite on :5174 is worse than an
- *      error, because every screenshot afterwards is of the wrong server.
- *
- *   3. **If either process exits, take the other down with it.** This is the
- *      one that matters. Vite dying on its own produced a blank page and a null
- *      canvas that "looked exactly like a rendering bug", and a backend that
- *      quietly died renders an app that draws nothing, because the browser
- *      cannot reach ERDDAP directly. A half-running stack is the single most
- *      expensive failure mode this repo has recorded, so it is now impossible:
- *      you either have both or you have a message saying which one went.
- *
- * Vite is invoked as `node node_modules/vite/bin/vite.js`, not through npm. That
- * sidesteps the npm.cmd shell layer whose exit 127 is the failure §2 describes.
- *
- * Zero dependencies, on purpose — the root package.json carries puppeteer for
- * the screenshot harness and nothing else needs to change to run the app.
+ * Vite is run as node node_modules/vite/bin/vite.js rather than through npm, to
+ * avoid npm.cmd's shell on Windows. No dependencies.
  */
 
 import { spawn } from "node:child_process";
@@ -47,7 +34,7 @@ const FRONTEND_URL = `http://localhost:${FRONTEND_PORT}`;
 const isWindows = process.platform === "win32";
 const wantsOpen = process.argv.includes("--open");
 
-// ── output ────────────────────────────────────────────────────────────────
+// --- output ---
 const useColour = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code, s) => (useColour ? `\x1b[${code}m${s}\x1b[0m` : s);
 const dim = (s) => paint("2", s);
@@ -75,7 +62,7 @@ function fail(message, hint) {
   process.exit(1);
 }
 
-// ── preflight ─────────────────────────────────────────────────────────────
+// --- preflight ---
 const python = isWindows
   ? join(BACKEND, ".venv", "Scripts", "python.exe")
   : join(BACKEND, ".venv", "bin", "python");
@@ -98,14 +85,10 @@ if (!existsSync(viteBin)) {
 }
 
 /**
- * Resolves true when something is already listening on the port.
+ * Resolves true if something is already listening on the port.
  *
- * Both stacks are probed, and this is not defensive padding: Vite binds the
- * hostname `localhost`, which on Windows resolves to `::1` first, so an
- * IPv4-only probe reports a perfectly healthy dev server as down. Uvicorn is
- * bound explicitly to 127.0.0.1 and answers only on v4. Checking one family
- * would therefore either hang the readiness wait or, worse, let the
- * already-running guard pass and start a duplicate on another port.
+ * Checks both IPv4 and IPv6: Vite binds "localhost", which is ::1 first on
+ * Windows, while uvicorn listens on 127.0.0.1 only.
  */
 const portInUse = (port) => {
   const probe = (host) =>
@@ -141,7 +124,7 @@ if (backendBusy || frontendBusy) {
   );
 }
 
-// ── launch ────────────────────────────────────────────────────────────────
+// --- launch ---
 const children = new Map();
 let shuttingDown = false;
 
@@ -162,8 +145,8 @@ function start(name, command, args, cwd) {
     const how = signal ? `signal ${signal}` : `code ${code}`;
     console.error(
       `\n${paint("31", `The ${name} exited (${how}).`)} ` +
-        `Stopping the other half too — a half-running stack renders a blank\n` +
-        dim("  page that looks like a bug in the 3D, not a dead server (next_session.md §2)."),
+        `Stopping the other one too — the app shows a blank page\n` +
+        dim("  without both running."),
     );
     shutdown(typeof code === "number" && code !== 0 ? code : 1);
   });
@@ -179,7 +162,7 @@ function start(name, command, args, cwd) {
 function killTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   if (isWindows) {
-    // uvicorn's reloader and vite both spawn children; /T takes the tree.
+    // uvicorn and vite both spawn children; /T kills the whole tree.
     spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
   } else {
     try {
@@ -208,8 +191,7 @@ console.log(bold("\nOcean3D — starting backend and frontend\n"));
 console.log(dim(`  backend   ${python} -m uvicorn app.main:app --port ${BACKEND_PORT}`));
 console.log(dim(`  frontend  node node_modules/vite/bin/vite.js --port ${FRONTEND_PORT}\n`));
 
-// Backend first: the browser cannot reach ERDDAP directly, so nothing renders
-// without it (CONTRIBUTING §2).
+// Backend first; the frontend can't show anything without it.
 start(
   "backend",
   python,
@@ -218,7 +200,7 @@ start(
 );
 start("frontend", process.execPath, [viteBin, "--port", String(FRONTEND_PORT), "--strictPort"], FRONTEND);
 
-// ── report readiness ──────────────────────────────────────────────────────
+// --- readiness ---
 const waitForPort = async (port, timeoutMs = 90000) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && !shuttingDown) {
@@ -234,7 +216,7 @@ const [backendUp, frontendUp] = await Promise.all([
 ]);
 
 if (shuttingDown) {
-  // One of them already died; its own handler is printing the reason.
+  // One of them already exited; its own handler prints why.
 } else if (backendUp && frontendUp) {
   console.log(
     `\n${paint("32", "Both up.")}  ` +

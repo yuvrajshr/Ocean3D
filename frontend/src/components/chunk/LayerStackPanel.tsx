@@ -1,12 +1,10 @@
 /**
- * The layer stack.
+ * The layer list.
  *
- * Layers are listed top-down — the reverse of the spec's draw order — so the
- * list matches what is in front of what in the viewport. Each row carries its
- * own visibility, opacity and, expanded, the controls that belong to that layer
- * type and no other. Nothing here holds state: every control writes into the
- * scene spec and commits, which is why the spec inspector always agrees with
- * the panel.
+ * Listed top-down (reverse of the spec's draw order) to match what's in front in
+ * the viewport. Each row has visibility, opacity and its own controls when
+ * expanded. No local state: every control writes to the spec and commits, so the
+ * inspector always matches.
  */
 
 import type { CmapName } from "../../viz/chunk/model";
@@ -18,11 +16,11 @@ const BATHY_PALETTES: CmapName[] = ["deep", "thermal", "haline"];
 
 interface Props {
   spec: SceneSpec;
-  /** The loaded chunk. Its grid, not a constant, bounds every control here. */
+  /** The loaded chunk; its grid sets the limits for every control here. */
   source: ChunkSource;
   platforms: ChunkPlatform[];
   expanded: Record<string, boolean>;
-  /** Whether the whole section is open. Closed by default — see ChunkView. */
+  /** Whether the section is expanded. Closed by default. */
   open: boolean;
   selectedPlatform: string | null;
   onToggleOpen: () => void;
@@ -252,9 +250,7 @@ export function LayerStackPanel({
                           <span
                             className="chunk-platform__dot"
                             style={{
-                              // Matches the 3D track colours in
-                              // viz/chunk/registry.ts. Both are measured
-                              // platforms, so neither takes the model's amber.
+                              // Same colours as the 3D tracks in viz/chunk/registry.ts.
                               background:
                                 p.type === "argo_float"
                                   ? "var(--cv-accent)"

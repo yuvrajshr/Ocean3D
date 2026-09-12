@@ -1,10 +1,8 @@
-"""The DataSource plugin interface.
+"""DataSource interface.
 
-This is where the problem statement's extensibility requirement actually lives.
-Adding ADCP, HF-radar, moorings or an ML product means implementing this
-protocol and registering it — nothing elsewhere in the app is special-cased per
-format, because everything is normalized to the two schemas in context.md §6
-before it reaches a router.
+New sources (ADCP, HF radar, moorings, ML products) implement one of these
+protocols. Everything gets converted to a gridded field or a point profile
+before it reaches a router, so nothing else needs to change.
 """
 
 from __future__ import annotations
@@ -17,10 +15,7 @@ from ..models.schemas import InstrumentProfile, PlatformSummary, SourceStatus
 
 
 class VolumeResult:
-    """A gridded field plus the axes needed to interpret it.
-
-    ``values`` is C-ordered (depth, lat, lon) with NaN for land and no-data.
-    """
+    """A gridded field plus its axes. ``values`` is (depth, lat, lon), NaN for land/no data."""
 
     __slots__ = ("values", "depths", "lats", "lons", "time", "units", "source")
 
@@ -45,7 +40,7 @@ class VolumeResult:
 
 @runtime_checkable
 class GriddedSource(Protocol):
-    """A source of gridded model/analysis fields."""
+    """Source of gridded model fields."""
 
     def available_times(self, dataset_id: str) -> tuple[list[str], SourceStatus]:
         ...
@@ -64,7 +59,7 @@ class GriddedSource(Protocol):
 
 @runtime_checkable
 class InSituSource(Protocol):
-    """A source of point-profile observations (Argo, glider, CTD, BGC, ...)."""
+    """Source of point profiles (Argo, glider, CTD, BGC, ...)."""
 
     platform_type: str
 

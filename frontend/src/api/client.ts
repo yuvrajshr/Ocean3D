@@ -1,8 +1,6 @@
 /**
- * Typed client for the ocean-viz backend.
- *
- * The browser never calls erddap.incois.gov.in directly — it sends no CORS
- * headers. Everything here goes through the FastAPI translator on /api.
+ * Typed client for the backend. The browser can't call ERDDAP directly (no
+ * CORS), so everything goes through /api.
  */
 
 import type { ColormapName } from "../viz/colormaps";
@@ -38,9 +36,9 @@ export interface FieldMeta {
   data_url: string;
   units: string;
   units_declared_by_us: boolean;
-  /** Range the colour scale spans — percentile-clipped against outliers. */
+  /** Colour scale range (percentile-clipped). */
   value_range: [number, number];
-  /** True extremes in the data, before clipping. */
+  /** Actual min/max before clipping. */
   full_range: [number, number];
   clipped: boolean;
   colormap: ColormapName;
@@ -96,7 +94,7 @@ export interface Scenario {
   lat_range: [number, number];
   lon_range: [number, number];
   featured_platforms: string[];
-  /** Which bundled Blue Marble month the globe shows — a key of BASEMAPS in viz/globe. */
+  /** Blue Marble month for the globe (a key of BASEMAPS in viz/globe). */
   basemap: string;
   timesteps: string[];
 }
@@ -124,9 +122,9 @@ export interface Comparison {
 }
 
 export interface ChunkMeta {
-  /** The chunk view's own variable key, not the upstream's variable name. */
+  /** The chunk view's variable key, not the upstream's name. */
   variable: string;
-  /** Which product actually served it. Named on screen, never inferred. */
+  /** The dataset that actually served it. Shown on screen. */
   dataset: string;
   label: string;
   time: string;
@@ -134,12 +132,12 @@ export interface ChunkMeta {
   bbox: [number, number, number, number];
   depth_levels: number[];
   grid: { lat: number[]; lon: number[] };
-  /** C order (depth, lat, lon). A surface field reports a depth axis of 1. */
+  /** (depth, lat, lon). Surface fields have a depth axis of 1. */
   shape: [number, number, number];
   stride: number;
   kind: "volume" | "surface" | "vector";
   data_url: string;
-  /** Present only where the upstream carries current direction in 3D. */
+  /** Only set when the upstream has 3D current direction. */
   vector_url: string | null;
   units: string;
   units_declared_by_us: boolean;
@@ -152,7 +150,7 @@ export interface ChunkMeta {
   source: SourceStatus;
 }
 
-/** u and v over the whole chunk, on the same grid as the scalar field. */
+/** u and v over the whole chunk, on the scalar field's grid. */
 export interface ChunkVectorField {
   u: Float32Array;
   v: Float32Array;
@@ -193,8 +191,7 @@ export interface Health {
 
 const BASE = "/api";
 
-/** Errors carry the backend's own message, which is written to be shown to a
- *  person: it says what happened and what to do (context.md §5.3). */
+/** Errors carry the backend's message, which is written to be shown to users. */
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -210,7 +207,7 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
       const body = await response.json();
       if (typeof body?.detail === "string") detail = body.detail;
     } catch {
-      /* non-JSON error body; keep the generic message */
+      /* body wasn't JSON; keep the generic message */
     }
     throw new ApiError(detail, response.status);
   }
@@ -226,10 +223,12 @@ function query(params: Record<string, string | number | boolean | undefined>): s
 }
 
 
-// --------------------------------------------------------------- 2D map view
+// --- 2D map ---
 
-/** A grid described analytically. Four numbers and a count cannot drift out of
- *  step with the payload the way two parallel axis arrays can. */
+/**
+ * Grid as start, step and count, which can't get out of sync with the data
+ * the way two separate axis arrays can.
+ */
 export interface GridDescriptor {
   lat0: number;
   dlat: number;
@@ -249,7 +248,7 @@ export interface MapLayerInfo {
   kind: "volume" | "surface" | "vector";
   colormap: ColormapName;
   caption: string;
-  /** Empty for a surface field. Emptiness is what removes the depth ruler. */
+  /** Empty for surface fields (hides the depth ruler). */
   depth_levels: number[];
   lat_range: [number, number];
   lon_range: [number, number];
@@ -260,10 +259,9 @@ export interface MapLayerInfo {
   cadence_days: number;
   has_vectors: boolean;
   regional: boolean;
-  /** The UI variable this dataset is a source for. A layer is a variable; each
-   *  view resolves it to whichever dataset serves that view best. */
+  /** The UI variable this dataset serves. Each view picks its own best dataset. */
   variable_key: string;
-  /** Lower wins when several datasets satisfy the same variable. */
+  /** Lower wins when several datasets serve the same variable. */
   preference: number;
 }
 
@@ -319,7 +317,7 @@ export interface MapPointBlock {
   offset_km: number;
   depths: number[];
   times: string[];
-  /** Flat, C order (depth, time). null is no data. */
+  /** Flat, (depth, time). null = no data. */
   values: (number | null)[];
   value_range: [number, number];
   full_range: [number, number];
@@ -327,9 +325,10 @@ export interface MapPointBlock {
   source: SourceStatus;
 }
 
-/** Declared as a type alias, not an interface, on purpose: TypeScript only
- *  gives implicit index signatures to aliases, and these are passed to
- *  `query()` which takes a Record. */
+/**
+ * A type alias, not an interface: only aliases get implicit index signatures,
+ * and query() takes a Record.
+ */
 export type MapSliceBounds = {
   lat_min?: number;
   lat_max?: number;
@@ -361,7 +360,7 @@ export const api = {
     signal?: AbortSignal,
   ) => getJson<FieldMeta>(`/field/meta?${query(params)}`, signal),
 
-  /** Raw Float32 values, C order (depth, lat, lon). NaN marks land / no data. */
+  /** Raw Float32, (depth, lat, lon). NaN = land / no data. */
   async fieldData(meta: FieldMeta, signal?: AbortSignal): Promise<Float32Array> {
     const response = await fetch(meta.data_url, { signal });
     if (!response.ok) {
@@ -371,13 +370,13 @@ export const api = {
     return new Float32Array(buffer);
   },
 
-  /** Bounds are all-or-nothing; omitting them gives the default Bay of Bengal box. */
+  /** All four bounds or none; none gives the default Bay of Bengal box. */
   terrainMeta: (
     params?: { lat_min: number; lat_max: number; lon_min: number; lon_max: number; stride?: number },
     signal?: AbortSignal,
   ) => getJson<TerrainMeta>(params ? `/terrain/meta?${query(params)}` : "/terrain/meta", signal),
 
-  /** Raw Float32 elevation in metres, C order (lat, lon); positive is land. */
+  /** Raw Float32 elevation in metres, (lat, lon); positive is land. */
   async terrainData(meta: TerrainMeta, signal?: AbortSignal): Promise<Float32Array> {
     const response = await fetch(meta.data_url, { signal });
     if (!response.ok) {
@@ -409,7 +408,7 @@ export const api = {
     params: { platform_id: string; variable?: string; cycle?: number },
     signal?: AbortSignal,
   ) => getJson<Comparison>(`/compare?${query(params)}`, signal),
-  // ------------------------------------------------------------- 2D map view
+  // --- 2D map ---
 
   mapCatalogue: (signal?: AbortSignal) => getJson<MapLayerInfo[]>("/map/catalogue", signal),
 
@@ -421,7 +420,7 @@ export const api = {
     signal?: AbortSignal,
   ) => getJson<MapSliceMeta>(`/map/slice/meta?${query(params)}`, signal),
 
-  /** Raw Float32, C order (lat, lon), latitude ascending. NaN is land or no data. */
+  /** Raw Float32, (lat, lon), latitude ascending. NaN = land or no data. */
   async mapSliceData(meta: MapSliceMeta, signal?: AbortSignal): Promise<Float32Array> {
     const response = await fetch(meta.data_url, { signal });
     if (!response.ok) {
@@ -430,8 +429,8 @@ export const api = {
     const values = new Float32Array(await response.arrayBuffer());
     const expected = meta.shape[0] * meta.shape[1];
     if (values.length !== expected) {
-      // Worth failing loudly: a mismatch here draws a plausible-looking map of
-      // the wrong shape rather than an obvious error.
+      // Fail loudly: a size mismatch would otherwise draw a wrong-shaped map that
+      // looks fine.
       throw new ApiError(
         `${meta.label} returned ${values.length} values, expected ${expected}.`,
         502,
@@ -440,7 +439,7 @@ export const api = {
     return values;
   },
 
-  /** u then v, two Float32 planes on one grid. Direction is the payload. */
+  /** u then v, two Float32 planes on the same grid. */
   async mapVectorData(
     params: MapSliceParams,
     signal?: AbortSignal,
@@ -466,11 +465,8 @@ export const api = {
     getJson<ChunkMeta>(`/chunk/meta?${query(params)}`, signal),
 
   /**
-   * Raw Float32, C order (depth, lat, lon). NaN marks land, seabed or no data.
-   *
-   * Length is checked against the metadata for the reason `mapSliceData` gives:
-   * a mismatch here would reshape into a plausible-looking chunk of the wrong
-   * shape rather than fail, and nothing downstream could tell.
+   * Raw Float32, (depth, lat, lon). NaN = land, seabed or no data. Length is checked
+   * against the metadata for the same reason as mapSliceData.
    */
   async chunkData(meta: ChunkMeta, signal?: AbortSignal): Promise<Float32Array> {
     const response = await fetch(meta.data_url, { signal });
@@ -488,7 +484,7 @@ export const api = {
     return values;
   },
 
-  /** Two Float32 volumes, u then v. Direction is the payload — speed is not. */
+  /** Two Float32 volumes, u then v. */
   async chunkVector(meta: ChunkMeta, signal?: AbortSignal): Promise<ChunkVectorField> {
     if (!meta.vector_url) {
       throw new ApiError(`${meta.label} carries no current direction.`, 400);

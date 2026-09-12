@@ -1,17 +1,11 @@
-"""Argo float profiles from INCOIS ERDDAP.
+"""Argo profiles from INCOIS ERDDAP.
 
-Two things in here are correctness requirements rather than polish:
-
-**Quality control.** Argo ships raw and adjusted values with a QC flag per
-level. Only flags 1 (good) and 2 (probably good) are usable. Float 2900757, for
-instance, appears to show a dramatic -4 C cold wake during Cyclone Phailin, but
-every one of its levels is QC=4 with a salinity of 0.014 PSU — an instrument
-failure, not an ocean signal. Skipping this filter produces confident nonsense.
-
-**Pressure is not depth.** Argo measures pressure in decibar; the gridded
-analysis is indexed by depth in metres. They differ by roughly 2% and the
-difference grows with depth. Since the headline feature of this app is
-overlaying the two, the conversion happens here, once.
+Two things matter here:
+- QC: only flags 1 and 2 are used. Float 2900757 looks like a -4 C cold wake
+  during Phailin, but every level is flag 4 (salinity 0.014 PSU). It's a broken
+  sensor.
+- Argo reports pressure (dbar), the model uses depth (m). They differ by ~2%,
+  more at depth, so we convert here once.
 """
 
 from __future__ import annotations
@@ -51,13 +45,10 @@ _COLUMNS = [
 
 
 def pressure_to_depth(pressure_db: np.ndarray, latitude: float) -> np.ndarray:
-    """Convert pressure (decibar) to depth (metres).
+    """Pressure (dbar) to depth (m), UNESCO / Fofonoff & Millard (1983).
 
-    UNESCO / Fofonoff & Millard (1983) formula, which accounts for the
-    latitude dependence of gravity. At 2000 db this differs from the naive
-    ``p / 1.02`` shortcut by several metres — small, but this app draws the
-    float and the gridded analysis on the same axis, so the error would show up
-    exactly where someone is trying to read a difference.
+    Accounts for latitude. At 2000 dbar it's a few metres off the simple p / 1.02,
+    which shows up when comparing against the model.
     """
     p = np.asarray(pressure_db, dtype=np.float64)
     phi = np.deg2rad(latitude)
@@ -74,10 +65,8 @@ def _fetch_window(
     lat_range: tuple[float, float],
     lon_range: tuple[float, float],
 ) -> tuple[pd.DataFrame, SourceStatus, int]:
-    """Pull every level in a space/time window, then QC-filter locally.
-
-    Filtering here rather than server-side lets us count what was rejected and
-    show that number in Ops mode, so the filtering is visible instead of silent.
+    """Get every level in a space/time window, then QC-filter here so we can count
+    how many levels were rejected.
     """
     lat0, lat1 = sorted(lat_range)
     lon0, lon1 = sorted(lon_range)
@@ -102,8 +91,7 @@ def _fetch_window(
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
     frame["CYCLE_NUMBER"] = pd.to_numeric(frame["CYCLE_NUMBER"], errors="coerce").astype("Int64")
 
-    # Prefer the delayed-mode adjusted values when present; that is what the
-    # Argo programme considers scientifically usable.
+    # Use delayed-mode adjusted values when available.
     frame["pres_use"] = frame["PRES_ADJUSTED"].where(frame["PRES_ADJUSTED"].notna(), frame["PRES"])
     frame["temp_use"] = frame["TEMP_ADJUSTED"].where(frame["TEMP_ADJUSTED"].notna(), frame["TEMP"])
     frame["psal_use"] = frame["PSAL_ADJUSTED"].where(frame["PSAL_ADJUSTED"].notna(), frame["PSAL"])
@@ -120,9 +108,8 @@ def _fetch_window(
     if frame.empty:
         return frame, source, rejected
 
-    # Salinity carries its own flag; drop only the salinity value when it fails,
-    # never the whole level, or a good temperature profile would vanish because
-    # one sensor misbehaved.
+    # Salinity has its own flag. Drop just the salinity value when it fails, not the
+    # whole level.
     psal_bad = ~frame["PSAL_QC"].astype(str).str.strip().isin(ARGO_ACCEPTED_QC)
     frame.loc[psal_bad, "psal_use"] = np.nan
 
@@ -176,7 +163,7 @@ def fetch_profile(
     lon_range: tuple[float, float],
     cycle: int | None = None,
 ) -> InstrumentProfile | None:
-    """One cast, normalized to context.md §6.2."""
+    """One profile, in the standard point-profile shape."""
     frame, source, _ = _fetch_window(
         time_start=time_start, time_end=time_end, lat_range=lat_range, lon_range=lon_range
     )

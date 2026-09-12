@@ -1,15 +1,10 @@
 /**
  * Timeline for the map: one clock, several cadences.
  *
- * `components/Timeline.tsx` cannot be reused — its props are a single axis
- * addressed by integer index, and the map has up to three axes at three
- * cadences and must address time by ISO instant.
- *
- * The rail spans the union of every visible layer's coverage, and each layer
- * gets its own thin row of ticks under it. You can therefore *see* that one
- * layer has twelve steps a year and another has three hundred, which is the
- * honest way to show that a stack is not all the same instant. The stepper and
- * the play button use the ACTIVE layer's cadence, and the label says which.
+ * Timeline.tsx works with one axis by index; the map has up to three axes and
+ * works with ISO times. The rail covers every visible layer's range, and each
+ * layer gets its own row of ticks, so you can see a monthly layer next to a daily
+ * one. Step and play use the active layer's cadence.
  */
 
 import { datasetOf, timelineBounds, resolveLayerTime, activeLayer, type MapState } from "./state";
@@ -59,8 +54,7 @@ export function MapTimeline({ state, onSeek, onStep, onTogglePlay }: Props) {
     onSeek(iso(start + t * span));
   };
 
-  // One tick row per visible layer, so differing cadences are visible rather
-  // than averaged away. Rows are sampled to what a rail can actually resolve.
+  // One tick row per visible layer, sampled down to what the rail can show.
   const rows = state.layers
     .filter((l) => l.visible)
     .map((layer) => {
@@ -157,9 +151,7 @@ export function MapTimeline({ state, onSeek, onStep, onTogglePlay }: Props) {
           <div
             key={row.id}
             className="map-timeline__row"
-            /* Offset explicitly rather than with :nth-child: the year labels are
-               siblings too, so nth-child was numbering those and leaving every
-               tick row stacked at the same place. */
+            /* Explicit offset instead of :nth-child, which also counted the year labels. */
             style={{ bottom: 3 + rowIndex * 8 }}
             title={`${row.label} steps`}
           >

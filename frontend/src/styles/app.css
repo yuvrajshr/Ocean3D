@@ -1,28 +1,28 @@
-/* ============================================================================
-   app.css — the instrument console.
-   Every value here comes from tokens.css. Class names are flat and namespaced
-   (block__element--modifier) so that layout-level and component-level rules can
-   never accidentally out-specify each other on spacing.
-   ========================================================================== */
+/*
+ * app.css: console layout. Values come from tokens.css. Class names are flat
+ * BEM (block__element--modifier) so layout and component rules don't fight over
+ * specificity.
+ */
 
 .console {
   position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  /* Explicit, constrained column. Without it the implicit column sizes to the
-     widest row's min-content — the header's nowrap controls — and drags the
-     whole console wider than the viewport on a phone. */
+  /*
+   * Explicit column; otherwise the header's nowrap controls make the console wider
+   * than a phone screen.
+   */
   grid-template-columns: minmax(0, 1fr);
   height: 100%;
   background: var(--surface-viewport);
 }
 
-/* ------------------------------------------------------------------ header */
+/* --- header --- */
 
-/* Concealed, not unmounted: the chunk view covers the console, and tearing the
-   ocean scene down and rebuilding it on every visit would reset the camera and
-   re-fetch the basemap. `visibility` also takes the console's controls out of
-   the tab order, which `opacity` would not. */
+/*
+ * Hidden rather than unmounted when the chunk view is open, so the 3D scene keeps
+ * its camera and basemap. visibility also removes the controls from tab order.
+ */
 .console--concealed {
   visibility: hidden;
 }
@@ -44,9 +44,7 @@
   min-width: 0;
 }
 
-/* The INCOIS seal is a circular device on a light ground. Rather than knock it
-   out or recolour an official emblem — which we may not do — it sits on its own
-   small light chip, the way a seal sits on a document. */
+/* The INCOIS seal sits on a small light chip; we can't recolour an official emblem. */
 .header__seal {
   width: 30px;
   height: 30px;
@@ -88,7 +86,7 @@
   gap: var(--space-4);
 }
 
-/* ------------------------------------------------------- provenance readout */
+/* --- provenance readout --- */
 
 .provenance {
   display: flex;
@@ -114,7 +112,7 @@
 
 .provenance__text { color: var(--text-muted); }
 
-/* -------------------------------------------------------------------- main */
+/* --- main --- */
 
 .console__main {
   display: grid;
@@ -123,15 +121,16 @@
   position: relative;
 }
 
-/* Globe mode drops the side panels entirely */
+/* No side panels in globe mode */
 .console__main--globe { grid-template-columns: minmax(0, 1fr); }
 
 .panel {
   display: flex;
   flex-direction: column;
-  /* Grid items default to min-width/min-height:auto, which resolves to their
-     min-content size. Without these, the horizontally-scrolling panel on
-     narrow screens widens the whole page instead of scrolling inside itself. */
+  /*
+   * Grid items default to min-width/min-height auto; without this the scrolling
+   * panel on narrow screens widens the page instead of scrolling.
+   */
   min-height: 0;
   min-width: 0;
   background: var(--surface-panel);
@@ -158,7 +157,7 @@
   margin: 0 0 var(--space-2);
 }
 
-/* ---------------------------------------------------------------- variables */
+/* --- variables --- */
 
 .variable-list {
   list-style: none;
@@ -210,7 +209,7 @@
   line-height: var(--leading-body);
 }
 
-/* -------------------------------------------------------------- float list */
+/* --- float list --- */
 
 .float-list {
   list-style: none;
@@ -265,7 +264,7 @@
   line-height: var(--leading-body);
 }
 
-/* -------------------------------------------------------------- depth ruler */
+/* --- depth ruler --- */
 
 .depth-ruler {
   position: relative;
@@ -305,9 +304,7 @@
   color: var(--text-muted);
 }
 
-/* The track is the water column in miniature: it carries the same depth
-   gradient as the scene, quietly, so the ruler reads as part of the same
-   instrument rather than as a filled progress bar. */
+/* The track uses the same depth gradient as the scene, subtly. */
 .depth-ruler__track {
   position: relative;
   cursor: ns-resize;
@@ -363,7 +360,7 @@
   pointer-events: none;
 }
 
-/* ---------------------------------------------------------------- colorbar */
+/* --- colorbar --- */
 
 .colorbar {
   display: grid;
@@ -422,7 +419,7 @@
 
 .colorbar__note-line { cursor: help; }
 
-/* --------------------------------------------------------------- viewport */
+/* --- viewport --- */
 
 .viewport {
   position: relative;
@@ -432,9 +429,10 @@
   z-index: var(--z-viewport);
 }
 
-/* touch-action: none hands 100% of touch gesturing to our own pointer-event
-   camera controls — without it, mobile browsers also try to interpret drags
-   as page pan and double-tap/pinch as page zoom, fighting the 3D camera. */
+/*
+ * touch-action: none so the browser doesn't treat drags and pinches as page
+ * scroll/zoom and fight the 3D camera.
+ */
 .viewport__canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .viewport__canvas:active { cursor: grabbing; }
 
@@ -473,8 +471,10 @@
   color: var(--rt-red, #ff0000) !important;
 }
 
-/* Map attribution, in the corner convention every basemap uses. Absolutely positioned so
-   it stays out of the overlay's space-between flow, which only expects two children. */
+/*
+ * Map attribution in the corner. Absolutely positioned so it stays out of the
+ * overlay's space-between layout.
+ */
 .viewport__credit {
   position: absolute;
   left: var(--space-4);
@@ -500,10 +500,10 @@
   white-space: nowrap;
 }
 
-/* A brief, non-blocking sentence — not a literal readout, so --font-ui
-   rather than .viewport__hover's mono. Shown when a globe fly-to lands
-   outside the analysis extent. Centred and wrapping, unlike .viewport__hover's
-   fixed one-line anchor. */
+/*
+ * Short message shown when a globe click lands outside the analysis area.
+ * Plain UI font (not a readout), centred and wrapping.
+ */
 .viewport__message {
   position: absolute;
   inset: 0;
@@ -543,7 +543,7 @@
 
 .skip-entry:hover { background: var(--control-hover); color: var(--text-primary); }
 
-/* --------------------------------------------------------------- timeline */
+/* --- timeline --- */
 
 .timeline {
   display: flex;
@@ -638,7 +638,7 @@
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------- profile panel */
+/* --- profile panel --- */
 
 .profile-panel {
   position: absolute;
@@ -751,7 +751,7 @@
   font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
 }
 
-/* --------------------------------------------------------------- feedback */
+/* --- feedback --- */
 
 .notice {
   display: flex;
@@ -784,19 +784,19 @@
   color: var(--text-primary);
 }
 
-/* -------------------------------------------------------------- responsive */
+/* --- responsive --- */
 
-/* One interface serves both audiences, so the narrow layout is simply the
-   narrow layout — there is no denser variant to except (context.md §5.4). */
+/* Same interface for everyone; this is just the narrow layout. */
 @media (max-width: 900px) {
   .console__main {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
   }
 
-  /* The water column is the hero and must stay on top; the controls become a
-     scrolling strip beneath it. Explicit rows are required because the panel
-     precedes the viewport in the DOM. */
+  /*
+   * The viewport stays on top and the controls become a scrolling strip below it.
+   * Explicit rows because the panel comes first in the DOM.
+   */
   .viewport { grid-row: 1; }
   .panel--left { grid-row: 2; }
 
@@ -816,18 +816,16 @@
     width: 190px;
   }
 
-  /* The depth ruler stays: it is a core control, and it reads correctly as a
-     vertical ruler inside the horizontal strip. */
+  /* Keep the depth ruler; it still works as a vertical ruler inside the strip. */
   .panel--left .panel__section--grow { width: 148px; }
   .panel--right { display: none; }
   .profile-panel { top: auto; bottom: var(--space-2); right: var(--space-2); left: var(--space-2); width: auto; }
 
-  /* The header wraps rather than truncating: the provenance readout must stay
-     legible as text, since colour alone may not carry its meaning (§5.4). */
-  /* Concealed, not unmounted: the chunk view covers the console, and tearing the
-   ocean scene down and rebuilding it on every visit would reset the camera and
-   re-fetch the basemap. `visibility` also takes the console's controls out of
-   the tab order, which `opacity` would not. */
+  /* The header wraps instead of truncating so the status text stays readable. */
+  /*
+   * Hidden rather than unmounted when the chunk view is open, so the 3D scene keeps
+   * its camera and basemap. visibility also removes the controls from tab order.
+   */
 .console--concealed {
   visibility: hidden;
 }
@@ -841,16 +839,16 @@
 }
 
 
-/* ==================================================================== map */
-/* The 2D map view. Everything here extends the locked system in
-   context.md 5.1: six tokens only, hairline dividers, square housings, and
-   2px radius on controls alone. A layer is a HOUSING, not a card - both
-   reference tools draw rounded shadowed cards, which is the SaaS-card kit
-   CLAUDE.md Step 4 names. */
+/* --- map --- */
+/*
+ * 2D map view. Same tokens, thin dividers and square layer housings as the rest
+ * of the console.
+ */
 
-/* No --map grid rule: the merged layout has no docked side rails at all. The
-   layer panel, depth ruler and tool dock all float inside the viewport, so the
-   map inherits the same single-column main as every other view. */
+/*
+ * No separate map grid: the panels float inside the viewport, so the map uses the
+ * same single column as the other views.
+ */
 
 .panel__note {
   margin: 0;
@@ -859,8 +857,10 @@
   line-height: var(--leading-body);
 }
 
-/* The 3D canvas stays mounted so OceanScene keeps its context; it is simply
-   not the thing being looked at while the map is up. */
+/*
+ * The 3D canvas stays mounted (keeping its WebGL context), just hidden while the
+ * map is shown.
+ */
 .viewport__canvas--idle { visibility: hidden; }
 .viewport__overlay--hidden { display: none; }
 
@@ -908,7 +908,7 @@
   pointer-events: none;
 }
 
-/* ------------------------------------------------------------ layer stack */
+/* --- layer stack --- */
 
 .layer-stack { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 
@@ -942,7 +942,7 @@
 
 .layer-stack__list { list-style: none; margin: 0; padding: 0; }
 
-/* A housing: flat, square, hairline-separated. No shadow, no radius. */
+/* Flat, square, thin divider. No shadow or radius. */
 .layer-card {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
@@ -985,7 +985,7 @@
 .layer-card__close:hover { color: var(--text-primary); }
 .layer-card__order button:disabled { opacity: 0.3; cursor: default; }
 
-/* Always visible, never a tooltip: this is what keeps a global map honest. */
+/* Always visible, never in a tooltip. */
 .layer-card__source {
   margin: var(--space-1) 0 0;
   font-size: 10px;
@@ -1052,7 +1052,7 @@
   color: var(--text-on-accent);
 }
 
-/* -------------------------------------------------------------- tool rail */
+/* --- tool rail --- */
 
 .panel--map-tools { display: flex; flex-direction: column; }
 
@@ -1079,7 +1079,7 @@
 .tool-rail__button[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); }
 .tool-rail__glyph { font-family: var(--font-readout); font-size: 13px; }
 
-/* ------------------------------------------------------------ depth ruler */
+/* --- depth ruler --- */
 
 .map-depth { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .map-depth__track { position: relative; flex: 1 1 auto; min-height: 120px; margin-left: 2px; }
@@ -1125,7 +1125,7 @@
   text-align: center;
 }
 
-/* --------------------------------------------------------------- timeline */
+/* --- timeline --- */
 
 .map-timeline {
   gap: var(--space-2);
@@ -1196,7 +1196,7 @@
   transform: translateX(-1px);
 }
 
-/* Signature Copper Playhead Needle in Map Mode */
+/* Playhead */
 .map-timeline__thumb {
   position: absolute;
   top: 0;
@@ -1235,9 +1235,8 @@
   font-size: 12px;
 }
 
-/* ----------------------------------------------------------- point panel */
-/* The one floating element on this view, reusing the profile panel's exact
-   treatment so the product keeps three z-planes and not four. */
+/* --- point panel --- */
+/* Same styling as the profile panel, so it sits on the same layer. */
 
 .point-panel {
   position: absolute;

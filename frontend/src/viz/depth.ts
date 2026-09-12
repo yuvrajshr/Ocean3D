@@ -1,79 +1,56 @@
 /**
- * The vertical axis, defined once.
+ * The depth axis, shared by the 3D column, the depth ruler and the profile chart
+ * so they all put a given depth at the same height.
  *
- * The 3D water column, the depth ruler and the profile chart must agree
- * exactly on where a given depth sits, or the app quietly lies: a float's
- * thermocline would draw at a different height than the analysis's. So the
- * transform lives here and nothing computes its own.
- *
- * The scale is square-root, not linear. Nearly all the structure worth seeing —
- * the mixed layer, the thermocline, a cyclone's cold wake — is in the top
- * 200 m of a 2000 m column, and a linear axis compresses it into 10% of the
- * height. Square root gives the surface layer proportionate space while keeping
- * the axis monotonic and honest. Ticks are always labelled with true metres, so
- * the reader is never asked to infer a value from a position.
+ * The scale is a power curve, not linear: most of the interesting structure
+ * (mixed layer, thermocline, cold wake) is in the top 200 m of 2000 m. Ticks
+ * always show real metres.
  */
 
 export const SURFACE_DEPTH = 0;
 export const MAX_DEPTH = 2000;
 
 /**
- * Curvature of the depth axis.
- *
- * Square root (0.5) gives the surface layer the most space, but its slope is
- * infinite at zero — which turned the continental shelf, dropping 0 to 200 m
- * across a single grid cell, into a sheer vertical cliff once the seafloor was
- * drawn on the same axis. 0.65 keeps most of the surface emphasis (the top
- * 200 m still gets ~22% of a 2000 m column, against 3.6% for a linear axis)
- * while being finite and well-behaved at the coastline.
+ * Depth axis exponent. 0.5 (square root) has infinite slope at zero, which made
+ * the continental shelf look like a cliff. 0.65 still gives the top 200 m about
+ * 22% of the height (vs 3.6% linear).
  */
 export const DEPTH_EXPONENT = 0.65;
 
-/** Depth in metres to a normalized 0 (surface) .. 1 (max) position. */
+/** Depth in metres to 0 (surface) .. 1 (max). */
 export function depthToNorm(depth: number, maxDepth = MAX_DEPTH): number {
   const clamped = Math.max(0, Math.min(maxDepth, depth));
   return Math.pow(clamped / maxDepth, DEPTH_EXPONENT);
 }
 
-/**
- * Same curve, but allowed past 1.0 — the analysis stops at 2000 m and the
- * seafloor does not, so the terrain needs to continue below the ruler.
- */
+/** Same curve but can go past 1, for terrain below 2000 m. */
 export function depthToNormUnclamped(depth: number, maxDepth = MAX_DEPTH): number {
   return Math.pow(Math.max(0, depth) / maxDepth, DEPTH_EXPONENT);
 }
 
-/** Inverse of depthToNorm — used when a drag on the ruler becomes a depth. */
+/** Inverse of depthToNorm, for dragging on the ruler. */
 export function normToDepth(norm: number, maxDepth = MAX_DEPTH): number {
   const clamped = Math.max(0, Math.min(1, norm));
   return Math.pow(clamped, 1 / DEPTH_EXPONENT) * maxDepth;
 }
 
 /**
- * Tick depths for the ruler.
- *
- * Hand-chosen rather than generated: these are the depths oceanographers
- * actually reference (the mixed layer, the 26 °C isotherm's usual range, the
- * Argo parking depth at 1000 m, and its profile floor at 2000 m). An
- * even-spaced generated set would be arithmetically tidy and less useful.
+ * Ruler tick depths. Picked by hand: depths people actually refer to (mixed layer,
+ * 26 °C isotherm range, Argo parking depth 1000 m, profile floor 2000 m).
  */
 export const RULER_TICKS: readonly number[] = [
   0, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000,
 ];
 
-/** The subset that gets a printed label; the rest are unlabelled hairlines. */
+/** Ticks that get a label; the rest are plain lines. */
 export const LABELLED_TICKS: ReadonlySet<number> = new Set([
   0, 50, 100, 200, 500, 1000, 2000,
 ]);
 
 /**
- * Resample a column defined at arbitrary depths onto evenly-spaced positions in
- * the normalized (square-root) axis.
- *
- * The INCOIS grid's 24 levels are unevenly spaced — dense near the surface,
- * sparse below 1000 m — but a 3D texture samples uniformly. Resampling here
- * means the shader can do a plain linear lookup, and the visual spacing matches
- * the ruler exactly.
+ * Resample a column from its own depth levels onto even steps of the normalised
+ * axis. The INCOIS levels are uneven, but a 3D texture samples evenly, so this
+ * lets the shader do a plain lookup that lines up with the ruler.
  */
 export function resampleToNormAxis(
   sourceDepths: readonly number[],
@@ -106,8 +83,7 @@ export function resampleToNormAxis(
     const a = sourceValues[offset + lo * stride]!;
     const b = sourceValues[offset + hi * stride]!;
 
-    // Never interpolate across a gap: a NaN neighbour means the analysis has no
-    // value there, and inventing one would draw ocean where there is none.
+    // Don't interpolate across a gap, or we'd draw ocean where there's no data.
     if (Number.isNaN(a) || Number.isNaN(b)) {
       out[k] = Number.isNaN(a) ? b : a;
       continue;

@@ -1,18 +1,8 @@
-"""Endpoints for the chunk view — one block of ocean, in three dimensions.
+"""Endpoints for the chunk view: one 5 degree block of ocean in 3D.
 
-A third gridded router, and the split is the same one `map.py` already explains.
-`field.py` serves whole INCOIS volumes for the water column and `map.py` serves
-one depth level of a global product; this one serves a whole *sub-volume* of a
-global product, which neither of those can do without changing a contract the
-other two views already depend on.
-
-What all three share is the colour-scale rule in `scaling.py`, so a legend here
-cannot disagree with the same field drawn on the map.
-
-The chunk itself is a fixed 5-degree tile (`CHUNK_TILE_DEGREES`). That is a
-request-shaping convention so a repeated visit reuses the disk cache — it is not
-the storage tiling layer context.md §12 rules out, and no data is reorganised on
-disk to serve it.
+field.py serves INCOIS volumes, map.py serves single levels; this serves a
+sub-volume of a global dataset. All three use scaling.py for the colour range.
+Tiles are snapped to a fixed grid so repeat visits hit the disk cache.
 """
 
 from __future__ import annotations
@@ -38,11 +28,10 @@ from ..scaling import percentile_range
 router = APIRouter()
 
 
-# --------------------------------------------------------------------- models
 
 
 class ChunkGrid(BaseModel):
-    """The chunk's real axes, as the upstream returned them."""
+    """The chunk's axes as returned by the upstream."""
 
     lat: list[float]
     lon: list[float]
@@ -53,13 +42,11 @@ class ChunkMeta(BaseModel):
     dataset: str
     label: str
     time: str
-    # (lon_min, lat_min, lon_max, lat_max), matching the scene spec's own order.
+    # (lon_min, lat_min, lon_max, lat_max), same order as the scene spec.
     bbox: tuple[float, float, float, float]
     depth_levels: list[float]
     grid: ChunkGrid
-    # C order, always three long. A surface field reports a depth axis of 1 so
-    # the frontend has one code path, the same trick `erddap_grid.fetch_surface`
-    # already uses for INCOIS.
+    # Always 3D. Surface fields get a depth axis of 1 so the frontend has one code path.
     shape: list[int]
     stride: int
     kind: str
@@ -76,7 +63,6 @@ class ChunkMeta(BaseModel):
     source: SourceStatus
 
 
-# -------------------------------------------------------------------- helpers
 
 
 def _dataset(variable: str) -> MapDataset:
@@ -114,11 +100,8 @@ def _guard(ds: MapDataset, call):
 
 
 def _tile(lon_min: float, lat_min: float) -> tuple[float, float, float, float]:
-    """Floor a corner onto the tile grid.
-
-    Server-side too, not only in the browser: two clients that disagree about
-    where a tile starts would ask two different questions and cache two answers
-    to the same one.
+    """Snap a corner to the tile grid. Done on the server too so all clients agree on
+    tile boundaries and share cache entries.
     """
     step = CHUNK_TILE_DEGREES
     lon0 = float(np.floor(lon_min / step) * step)
@@ -141,23 +124,15 @@ def _query(variable: str, time: str, bbox) -> str:
 
 
 def _bbox(lon_min: float, lat_min: float, lon_max: float | None, lat_max: float | None):
-    """Resolve the requested area to a tile.
-
-    Bounds are accepted rather than a point so the URL — and therefore the cache
-    key — states exactly what was fetched. They are snapped anyway: a caller that
-    asks for a slightly different rectangle should get the same tile, not a
-    near-duplicate megabyte in the cache.
+    """Resolve the requested area to a tile. Bounds are in the URL so the cache key is
+    explicit, but they get snapped anyway.
     """
-    del lon_max, lat_max  # snapped; kept in the signature so the URL round-trips
+    del lon_max, lat_max  # snapped; kept so the URL round-trips
     return _tile(lon_min, lat_min)
 
 
 def _volume(ds: MapDataset, variable: str, time: str, bbox):
-    """Fetch the chunk as a (depth, lat, lon) block, whatever its kind.
-
-    A surface product comes back with a depth axis of length 1 rather than none,
-    so every caller downstream indexes it the same way.
-    """
+    """Fetch the chunk as (depth, lat, lon). Surface products get a depth axis of 1."""
     lon0, lat0, lon1, lat1 = bbox
     lat_range, lon_range = (lat0, lat1), (lon0, lon1)
 
@@ -174,8 +149,8 @@ def _volume(ds: MapDataset, variable: str, time: str, bbox):
         vec = _guard(ds, lambda: erddap_map.fetch_vector_volume(
             ds=ds, time=time, lat_range=lat_range, lon_range=lon_range,
             depth_range=(0.0, CHUNK_MAX_DEPTH)))
-        # hypot, so the scalar path is identical for every variable. Direction is
-        # still available in full at /api/chunk/vector — this does not discard it.
+        # Speed via hypot so every variable uses the same path. u/v are available at
+        # /api/chunk/vector.
         return (
             np.hypot(vec.u, vec.v).astype(np.float32),
             vec.depths, vec.lats, vec.lons, vec.time, vec.stride, vec.source,
@@ -187,7 +162,6 @@ def _volume(ds: MapDataset, variable: str, time: str, bbox):
     return vol.values, vol.depths, vol.lats, vol.lons, vol.time, vol.stride, vol.source
 
 
-# ------------------------------------------------------------------ endpoints
 
 
 @router.get("/chunk/meta", response_model=ChunkMeta)
@@ -205,8 +179,8 @@ def chunk_meta(
 
     scale = percentile_range(values)
     if scale is None:
-        # This 404 is also the client's coverage test: a tile over land, or
-        # outside the product's extent, has nothing finite in it.
+        # The client uses this 404 to find tiles with data (land or out-of-range tiles
+        # have nothing finite).
         raise HTTPException(
             404,
             f"No {ds.label.lower()} in this chunk on {time[:10]}. {ds.provider} has "
@@ -255,7 +229,7 @@ def chunk_data(
     lon_max: float | None = None,
     lat_max: float | None = None,
 ) -> Response:
-    """Raw little-endian Float32, C order (depth, lat, lon). NaN = land or no data."""
+    """Raw little-endian Float32, (depth, lat, lon). NaN = land or no data."""
     ds = _dataset(variable)
     bbox = _bbox(lon_min, lat_min, lon_max, lat_max)
     values, _, _, _, _, stride, source = _volume(ds, variable, time, bbox)
@@ -280,10 +254,8 @@ def chunk_vector(
     lon_max: float | None = None,
     lat_max: float | None = None,
 ) -> Response:
-    """Two Float32 volumes, u then v, each C order (depth, lat, lon).
-
-    Separate from /chunk/data because that one carries speed, and a magnitude
-    cannot be advected. The traces in the chunk view need the direction.
+    """Two Float32 volumes, u then v, each (depth, lat, lon). The chunk view needs
+    the direction to advect particles.
     """
     ds = _dataset(variable)
     if not ds.vector_components or ds.depth_dim is None:

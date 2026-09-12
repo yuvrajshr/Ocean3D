@@ -1,10 +1,8 @@
-"""Reads: the only way the assistant learns a number, now resolved per view.
+"""Reads resolve per view.
 
-A point question is answered from the dataset the view on screen actually draws,
-on the date it shows, at the source's native cell — never a source that does not
-cover the date (the "HYCOM unreachable" failure), and never the strided slice.
-In the chunk view, "here" means the tile on screen, sampled from the volume the
-view already loaded. Fetches are faked: no network.
+On the map, a point question reads the dataset the map is drawing for that date,
+at its native cell. In the chunk view, "here" is the tile on screen, sampled from
+the loaded volume. Fetches are faked.
 """
 
 import numpy as np
@@ -61,9 +59,7 @@ def in_chunk(**over) -> ScreenState:
     return ScreenState(view="chunk", chunk=ChunkState(**c))
 
 
-# --------------------------------------------------------------------------
-# The map: the source the map draws, on the date it shows
-# --------------------------------------------------------------------------
+# --- Map: same source and date the map shows ---
 
 def test_the_2026_map_is_read_from_copernicus_not_hycom(monkeypatch, point_calls):
     monkeypatch.setattr(config, "MAP_DATASETS", WITH_CMEMS)
@@ -114,9 +110,7 @@ def test_the_reads_cache_key_changes_with_the_date_on_screen():
     assert a != b
 
 
-# --------------------------------------------------------------------------
-# The chunk: "here" is the tile on screen
-# --------------------------------------------------------------------------
+# --- Chunk: "here" is the tile on screen ---
 
 DEPTHS = np.array([0.0, 50.0, 100.0, 200.0], dtype="f4")
 LATS = np.array([10.0, 12.5, 15.0], dtype="f4")
@@ -129,7 +123,7 @@ def volume(monkeypatch):
     profile = np.array([29.0, 28.5, 22.0, 15.0], dtype="f4")
     values = np.broadcast_to(profile[:, None, None], (4, 3, 3)).copy()
     values[3, 0, 0] = np.nan  # below the seabed in one corner
-    values[2, 2, 2] = 23.0  # the warmest cell at 100 m
+    values[2, 2, 2] = 23.0  # warmest cell at 100 m
 
     def fake(ds, variable, time, bbox):
         calls.append((ds.id, variable, time, tuple(bbox)))
@@ -174,9 +168,7 @@ def test_describe_chunk_at_one_depth_says_where_the_extremes_are(volume):
     assert out["level"]["max_at"] == {"lat": 15.0, "lon": 90.0}
 
 
-# --------------------------------------------------------------------------
-# The comparison: the signature feature must carry its citation
-# --------------------------------------------------------------------------
+# --- Float comparison must be cited ---
 
 def test_compare_float_is_cited_and_compact(monkeypatch):
     from app.routers import instruments as instruments_router
@@ -195,12 +187,11 @@ def test_compare_float_is_cited_and_compact(monkeypatch):
     monkeypatch.setattr(instruments_router, "compare", lambda **_: full)
     out = reads.compare_float(on_map(), {"platform_id": "2901335"})
 
-    # Found live, 2026-09-12: the comparison's numbers reached the reader with no
-    # citation, because the result carried no provenance block.
+    # The comparison result needs a provenance block for the citation.
     assert out["provenance"]["dataset"] == config.GRID_DATASET
     assert out["provenance"]["time"] == "2013-10-06"
     assert out["residual_summary"]["largest"] == {"depth_m": 76.0, "value": -1.21}
     assert out["residual_summary"]["levels_compared"] == 3
-    # ~154 measured levels become the handful a forecaster reads a cast at.
+    # ~154 measured levels reduced to the standard depths.
     assert len(out["observed"]) <= 12 and out["observed"][0]["depth_m"] == 0.0
     assert "extent" not in out and "source" not in out

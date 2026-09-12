@@ -1,9 +1,7 @@
-"""Snapshot the Cyclone Phailin demo window from INCOIS ERDDAP into data/.
+"""Save the Cyclone Phailin demo data from INCOIS ERDDAP into data/.
 
-The runtime disk cache already keeps the demo alive without a network, but that
-cache is machine-local and disposable. These fixtures are the committed,
-reproducible copy: real CF-1.6 NetCDF and real Argo JSON, so the repository
-carries the demo's data rather than only a pointer to it.
+The runtime cache is per machine; these files are committed so the repo has
+the demo data itself (real CF-1.6 NetCDF and Argo JSON).
 
     cd backend && .venv/Scripts/python snapshot_fixtures.py
 """
@@ -26,7 +24,7 @@ from app.config import (
 NETCDF_DIR = FIXTURE_DIR / "sample_netcdf"
 INSTRUMENT_DIR = FIXTURE_DIR / "sample_instruments"
 
-# The three model runs that bracket landfall on 12 October 2013.
+# The three model runs around landfall on 12 October 2013.
 TIMESTEPS = ["2013-09-30", "2013-10-10", "2013-10-20"]
 
 LAT = PHAILIN.lat_range

@@ -1,9 +1,5 @@
-"""Conversation store: persistence and the analysis cache.
-
-Pure logic against a temp database — no network, no Gemini, no FastAPI. The
-store is the one piece of the assistant that must be right before anything
-else exists, because the tool-call audit trail is what makes the grounding
-rule in context.md §5.1 checkable after the fact rather than merely asserted.
+"""Conversation store and analysis cache, against a temp database. No network or
+Gemini. The stored tool calls are the record of where each number came from.
 """
 
 from __future__ import annotations
@@ -18,9 +14,7 @@ def store(tmp_path):
     return SqliteConversationStore(tmp_path / "assistant.db")
 
 
-# --------------------------------------------------------------------------
-# Conversations and messages
-# --------------------------------------------------------------------------
+# --- Conversations and messages ---
 
 def test_creates_a_conversation_and_reads_it_back(store) -> None:
     cid = store.create_conversation(title="Cold wake check")
@@ -54,9 +48,7 @@ def test_listing_puts_the_most_recent_conversation_first(store) -> None:
     assert [c.id for c in store.list_conversations()] == [second, first]
 
 
-# --------------------------------------------------------------------------
-# Tool calls — the audit trail behind every stated number
-# --------------------------------------------------------------------------
+# --- Tool calls ---
 
 def test_tool_calls_are_persisted_against_their_message(store) -> None:
     cid = store.create_conversation(title="t")
@@ -81,15 +73,13 @@ def test_tool_calls_are_persisted_against_their_message(store) -> None:
 
 
 def test_an_answer_with_no_tool_calls_records_none(store) -> None:
-    """A general-knowledge answer has nothing to cite, and must not invent one."""
+    """A general-knowledge answer has no tool calls to cite."""
     cid = store.create_conversation(title="t")
     mid = store.append_message(cid, role="assistant", content="The D26 isotherm is ...")
     assert store.get_tool_calls(mid) == []
 
 
-# --------------------------------------------------------------------------
-# Analysis cache — the free-tier mitigation
-# --------------------------------------------------------------------------
+# --- Analysis cache ---
 
 def test_cache_returns_what_was_put_in(store) -> None:
     store.cache_put("query_point:15,88,0", {"value": 29.1}, ttl=60)
@@ -111,9 +101,7 @@ def test_cache_put_overwrites_rather_than_duplicating(store) -> None:
     assert store.cache_get("k") == {"value": 2}
 
 
-# --------------------------------------------------------------------------
-# Durability
-# --------------------------------------------------------------------------
+# --- Durability ---
 
 def test_data_survives_reopening_the_database(tmp_path) -> None:
     path = tmp_path / "assistant.db"

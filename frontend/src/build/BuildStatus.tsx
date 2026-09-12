@@ -1,18 +1,11 @@
 /**
- * BuildStatus — which build is on screen, and a warning when it is out of date.
+ * Shows which build is running, and warns when it's out of date.
  *
- * context.md §5.1 Principle 14. Two elements with one job each:
- *
- *   - the stamp: a faint readout in the viewport's bottom-right corner, the
- *     mirror of the map's bottom-left pan/zoom readout. It names the commit the
- *     page was built from, and splits into "ui" and "api" only when those differ
- *     — at that point the split is the diagnosis.
- *
- *   - the alert: a status line that appears only when the running code is older
- *     than the code on disk. It gives both commits and the action. There is no
- *     "Refresh" button, because reloading cannot fix a stale server; the fix is
- *     restarting a process, so the line says exactly that. It does not hide on a
- *     timer, because staleness does not resolve itself.
+ * - The stamp: a faint readout in the bottom-right with the commit the page was
+ *   built from. It splits into "ui" and "api" only when they differ.
+ * - The alert: shown only when the running code is older than the code on disk.
+ *   It shows both commits and what to do. No "Refresh" button, since reloading
+ *   doesn't fix a stale server; you have to restart it.
  */
 
 import { useState } from "react";
@@ -35,11 +28,11 @@ function writeDismissed(value: string): void {
   try {
     window.sessionStorage.setItem(DISMISS_KEY, value);
   } catch {
-    /* storage blocked: the dismissal lasts until the next re-render instead */
+    /* storage blocked; dismissal only lasts until the next render */
   }
 }
 
-/** "pull: Fast-forward" → "pull". Only verbs a reader would recognise. */
+/** "pull: Fast-forward" -> "pull". Only verbs people will recognise. */
 function gitVerb(reason: string | undefined): string | null {
   const verb = /^([a-z-]+)/.exec(reason ?? "")?.[1];
   return verb && ["pull", "merge", "checkout", "rebase", "reset", "cherry-pick", "revert"].includes(verb)
@@ -62,7 +55,7 @@ export function BuildStatus() {
   const head = disk?.head ?? null;
   const apiSplit = Boolean(api?.sha && !sameCommit(api.sha, ui.sha));
 
-  // One dismissal per exact situation: a newer pull brings the line back.
+  // Dismissed per exact situation, so a newer pull shows it again.
   const situation = `${ui.sha}>${head}|${api?.sha ?? "-"}>${head}`;
   const showAlert = (uiStale || apiStale) && head !== null && dismissed !== situation;
 

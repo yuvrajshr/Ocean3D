@@ -1,9 +1,6 @@
 """Gridded fields from INCOIS ERDDAP, via NetCDF + xarray.
 
-We ask ERDDAP for ``.nc`` rather than ``.json`` deliberately: a full 3D volume
-(24 x 60 x 90, two variables) is 1.0 MB as NetCDF and 8.0 MB as JSON, and the
-NetCDF path exercises the xarray/CF ingestion the problem statement asks for
-instead of simulating it.
+We request .nc instead of .json: a full volume is 1 MB as NetCDF vs 8 MB as JSON.
 """
 
 from __future__ import annotations
@@ -22,16 +19,12 @@ from .netcdf_memory import open_in_memory
 
 
 def _open(payload: bytes) -> xr.Dataset:
-    """Open an in-memory NetCDF byte string as an xarray Dataset.
-
-    netCDF4 can read from a memory buffer, and xarray can wrap that store, so
-    nothing touches the filesystem.
-    """
+    """Open NetCDF bytes as an xarray Dataset without touching disk."""
     return open_in_memory(payload)
 
 
 def available_times(dataset_id: str = GRID_DATASET) -> tuple[list[str], SourceStatus]:
-    """Every timestep the dataset offers, as ISO strings."""
+    """All timesteps in the dataset, as ISO strings."""
     url = client.griddap_url(dataset_id, "time", fmt="json")
     payload, source = client.fetch(url)
     doc = json.loads(payload)
@@ -53,15 +46,11 @@ def fetch_volume(
     lat_range: tuple[float, float] | None = None,
     lon_range: tuple[float, float] | None = None,
 ) -> VolumeResult:
-    """Fetch one timestep of a depth-resolved field.
-
-    Returns values in C order (depth, lat, lon) with NaN where the analysis has
-    no data — which, at 1 degree resolution, is mostly land and marginal seas.
-    """
+    """Fetch one timestep of a 3D field as (depth, lat, lon), NaN where there's no data."""
     stamp = time if time.endswith("Z") else f"{time}T00:00:00Z"
     query = (
         f"{variable}[({stamp})]"
-        f"[]"  # all 24 depth levels; the whole column is the point
+        f"[]"  # all 24 depth levels
         f"{_range_expr(lat_range)}"
         f"{_range_expr(lon_range)}"
     )
@@ -70,7 +59,7 @@ def fetch_volume(
 
     with _open(payload) as ds:
         da = ds[variable]
-        # ERDDAP returns the requested time as a length-1 leading dimension.
+        # ERDDAP keeps time as a length-1 leading dimension.
         if "time" in da.dims:
             da = da.isel(time=0)
         depth_name = next(
@@ -87,8 +76,7 @@ def fetch_volume(
         units = str(da.attrs.get("units", "")).strip()
         actual_time = str(np.datetime_as_string(ds["time"].values.reshape(-1)[0], unit="s")) + "Z"
 
-    # ERDDAP already applies the fill value, but be explicit: anything
-    # non-finite is missing data, and the shader treats NaN as "draw nothing".
+    # Treat anything non-finite as missing; the shader skips NaN.
     values = np.where(np.isfinite(values), values, np.nan).astype(np.float32)
 
     return VolumeResult(
@@ -110,10 +98,8 @@ def fetch_surface(
     lat_range: tuple[float, float] | None = None,
     lon_range: tuple[float, float] | None = None,
 ) -> VolumeResult:
-    """Fetch a 2D (time, lat, lon) field — currents, chlorophyll, hazard layers.
-
-    Returned with a length-1 depth axis so the frontend has exactly one code
-    path for gridded data rather than two.
+    """Fetch a 2D field (currents, chlorophyll, hazard layers). Returned with a
+    length-1 depth axis so the frontend handles everything the same way.
     """
     stamp = time if time.endswith("Z") else f"{time}T00:00:00Z"
     query = (
@@ -156,11 +142,8 @@ def fetch_vector_magnitude(
     lat_range: tuple[float, float] | None = None,
     lon_range: tuple[float, float] | None = None,
 ) -> VolumeResult:
-    """Speed from a velocity pair, as sqrt(u^2 + v^2).
-
-    Serving only the eastward component while calling the layer "currents"
-    would be wrong in a way nobody could see: a strong southward flow would
-    render as slack water. Both components are fetched and combined.
+    """Current speed, sqrt(u^2 + v^2). Using u alone would show strong north-south
+    flow as still water.
     """
     u_name, v_name = components
     stamp = time if time.endswith("Z") else f"{time}T00:00:00Z"
@@ -184,8 +167,7 @@ def fetch_vector_magnitude(
         lons = np.asarray(ds["longitude"].values, dtype=np.float32)
         actual_time = str(np.datetime_as_string(ds["time"].values.reshape(-1)[0], unit="s")) + "Z"
 
-    # A cell is only usable where BOTH components are present; hypot with one
-    # NaN would otherwise silently report the other component as the speed.
+    # Need both components, otherwise hypot quietly returns just the other one.
     speed = np.hypot(u, v).astype(np.float32)
     speed = np.where(np.isfinite(u) & np.isfinite(v), speed, np.nan).astype(np.float32)
 
@@ -201,11 +183,8 @@ def fetch_vector_magnitude(
 
 
 def sample_column(volume: VolumeResult, lat: float, lon: float) -> tuple[np.ndarray, np.ndarray]:
-    """Nearest-neighbour vertical column at a point.
-
-    Nearest-neighbour, not interpolation, and deliberately so: the grid is 1
-    degree (~111 km), and smoothing it would imply a precision the analysis does
-    not have. The UI states the grid resolution next to any comparison.
+    """Nearest grid column to a point. No interpolation, since the grid is 1 degree
+    and smoothing would suggest more precision than we have.
     """
     i = int(np.argmin(np.abs(volume.lats - lat)))
     j = int(np.argmin(np.abs(volume.lons - lon)))

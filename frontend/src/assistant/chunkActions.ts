@@ -1,19 +1,17 @@
 /**
- * The assistant's chunk actions: pure transforms of the scene spec.
+ * The assistant's chunk actions, as pure transforms of the scene spec.
  *
- * The chunk view's own panels change the scene by mutating the spec and calling
- * `commit`. The assistant has to arrive at the same end state by the same rules,
- * or "show salinity" typed into the panel and "show salinity" clicked would draw
- * two different things. So each rule lives here, as a function from one spec to
- * the next that never mutates its input:
+ * The chunk panels change the scene by editing the spec and calling commit. The
+ * assistant has to follow the same rules, so each rule lives here as a function
+ * from one spec to the next (never mutating the input):
  *
- *   - a variable change resets palette, range and scale exactly as clicking the
- *     variable does, and re-centres an isovalue carried over from another field;
- *   - a surface-only field (chlorophyll) falls back to a depth slice, which is
- *     what the panel's disabled Volume / Iso / Lon / Lat buttons already imply.
+ *   - changing variable resets palette, range and scale like clicking it does,
+ *     and re-centres an isovalue carried over from another field
+ *   - a surface-only field (chlorophyll) falls back to a depth slice, same as the
+ *     panel's disabled Volume / Iso / Lon / Lat buttons
  *
- * What the engine must run itself — a camera tween, a group rescale, opening a
- * neighbouring tile — comes back as an effect rather than a spec change.
+ * Things the engine has to do itself (camera moves, rescaling, opening a
+ * neighbouring tile) come back as effects.
  */
 
 import type { Bbox } from "../viz/chunk/loader";
@@ -35,19 +33,19 @@ export type ChunkAssistantAction =
 
 export interface ChunkEffect {
   spec: SceneSpec;
-  /** Set when the field changed, so an open cast can be re-paired against it. */
+  /** Set when the field changed, so an open profile can be re-paired. */
   variableChanged?: VariableKey;
-  /** A camera preset for the engine to tween to. */
+  /** Camera preset for the engine to move to. */
   preset?: PresetName;
-  /** True when the exaggeration changed; the engine rescales its group. */
+  /** True if exaggeration changed; the engine rescales its group. */
   exaggeration?: boolean;
-  /** Open the tile containing this point, through the same resolver a click uses. */
+  /** Open the tile containing this point (same resolver as a click). */
   move?: { lat: number; lon: number };
-  /** Open this float's cast against the model, as clicking its track does. */
+  /** Open this float's profile against the model, like clicking its track. */
   openFloat?: string;
 }
 
-/** What the chunk tells the assistant about itself. Mirrors ChunkState in tools.py. */
+/** What the chunk reports to the assistant. Same as ChunkState in tools.py. */
 export interface ChunkStatePayload {
   mounted: boolean;
   bbox: number[];
@@ -63,7 +61,7 @@ export interface ChunkStatePayload {
   colour: { min: number; max: number; scale: "linear" | "log" };
   /** Floats with a track in this chunk and window. */
   platforms: string[];
-  /** The float whose cast is open against the model. */
+  /** Float whose profile is open. */
   open_float: string | null;
 }
 
@@ -82,11 +80,11 @@ export interface ChunkController {
 export interface ChunkApplyContext {
   /** The chunk's daily window, one ISO date per step. */
   times: string[];
-  /** The loaded field's true extremes — what the panel's Auto applies. */
+  /** The loaded field's actual min/max (what "Auto" uses). */
   hist: { lo: number; hi: number } | null;
 }
 
-/** No upstream serves chlorophyll in 3D. Mirrors SURFACE_ONLY_CHUNK_VARIABLES. */
+/** No 3D chlorophyll exists. Same as SURFACE_ONLY_CHUNK_VARIABLES in tools.py. */
 const SURFACE_ONLY = new Set<VariableKey>(["chlorophyll"]);
 
 const CUT_KEY: Record<CutAxis, "sliceDepth" | "sliceLon" | "sliceLat"> = {
@@ -95,7 +93,7 @@ const CUT_KEY: Record<CutAxis, "sliceDepth" | "sliceLon" | "sliceLat"> = {
   lat: "sliceLat",
 };
 
-/** The step whose date is nearest the one asked for. */
+/** Index of the step nearest the requested date. */
 export function nearestStep(times: string[], day: string): number {
   const want = Date.parse(`${day.slice(0, 10)}T00:00:00Z`);
   let best = 0;
@@ -137,8 +135,8 @@ export function applyChunkAction(
         scale: "linear",
       };
       if (props) {
-        // An isovalue carried over from another variable is meaningless — 20 °C
-        // is not 20 PSU — so it re-centres, as the panel's setVariable does.
+        // An isovalue from another variable makes no sense (20 °C isn't 20 PSU), so
+        // re-centre it like the panel does.
         if (props.mode === "isosurface") {
           props.isoValue = info.range[0] + (info.range[1] - info.range[0]) * 0.55;
         }
@@ -201,7 +199,7 @@ export function applyChunkAction(
   }
 }
 
-/** The chunk as the assistant needs to know it. Pure, so the unmounted case can use it too. */
+/** The chunk as the assistant sees it. Pure, so it also works before the chunk opens. */
 export function describeChunkSpec(
   spec: SceneSpec,
   times: string[],
@@ -235,11 +233,9 @@ export function describeChunkSpec(
 }
 
 /**
- * Chunk actions that arrive before a chunk is there to take them.
- *
- * "Open the chunk over the Bay of Bengal and show salinity" arrives as two
- * actions in one batch; the second targets an engine that does not exist until
- * the view has mounted. It waits here and is applied when ChunkView registers.
+ * Chunk actions that arrive before the chunk view has mounted. "Open the chunk
+ * over the Bay of Bengal and show salinity" is two actions; the second waits here
+ * until ChunkView registers.
  */
 export class ChunkActionQueue {
   private actions: ChunkAssistantAction[] = [];
@@ -249,7 +245,7 @@ export class ChunkActionQueue {
     this.actions.push(action);
   }
 
-  /** An undo supersedes anything still waiting: the reader asked for the old state. */
+  /** An undo replaces anything still waiting. */
   pushRestore(snapshot: ChunkSnapshot): void {
     this.restoreTo = snapshot;
     this.actions = [];
@@ -259,7 +255,7 @@ export class ChunkActionQueue {
     return this.actions.length + (this.restoreTo ? 1 : 0);
   }
 
-  /** Apply everything waiting. Returns false, keeping it all, when there is no chunk yet. */
+  /** Apply everything waiting. Returns false (and keeps it) if there's no chunk yet. */
   drain(controller: ChunkController | null): boolean {
     if (!controller) return false;
     if (this.restoreTo) controller.restore(this.restoreTo);

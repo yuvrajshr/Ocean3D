@@ -1,20 +1,12 @@
 /**
- * Colouring a field into pixels, on the CPU.
+ * Colours a field into pixels on the CPU.
  *
- * Deliberately not a shader. context.md §10 records two separate incidents where
- * a GPU path silently shifted a cmocean value away from the colorbar that
- * labelled it — once through renderer tone mapping, once through a Three.js
- * addon's colour-space fragment. Writing LUT bytes straight into an ImageData
- * removes that entire class of failure: there is no colour-space conversion, no
- * premultiplied alpha, no filtering mode, and no `outputColorSpace` to get wrong.
+ * Not a shader on purpose: GPU paths (tone mapping, colour-space conversion) have
+ * shifted colormap values away from the colorbar before. Writing LUT bytes into
+ * ImageData avoids all of that, and it's easy to unit test in Node.
  *
- * It is also the only version that can be tested. The screenshot harness runs on
- * SwiftShader and, as next_session.md §7 states, tells you nothing about shading;
- * this function is pure and returns bytes you can assert on in Node.
- *
- * Cost is not the constraint: a global HYCOM slice is ~300k cells, one LUT lookup
- * each, and it re-runs only when the data or the scale changes — never on pan or
- * zoom, which are a canvas transform over an already-coloured bitmap.
+ * Performance is fine: a global slice is ~300k cells and this only reruns when
+ * the data or scale changes, not on pan or zoom.
  */
 
 import { buildLut, encodeRange, lutIndex, type ColormapName } from "../viz/colormaps";
@@ -29,9 +21,9 @@ export interface SliceGrid {
 }
 
 export interface RasterOptions {
-  /** Logarithmic scale, for strongly right-skewed fields such as chlorophyll. */
+  /** Log scale, for skewed fields like chlorophyll. */
   log?: boolean;
-  /** 0..1, applied to every valid pixel. No-data stays fully transparent. */
+  /** 0..1, applied to every valid pixel. No-data stays transparent. */
   opacity?: number;
 }
 
@@ -47,13 +39,10 @@ function lutFor(name: ColormapName): Uint8Array {
 }
 
 /**
- * Colour one depth slice into an ImageData, north-up.
+ * Colour one depth slice into an ImageData, north up.
  *
- * The payload arrives C order (lat, lon) with **latitude ascending** — row 0 is
- * the southernmost. An ImageData's row 0 is the TOP of the picture, which is
- * north. So the rows are written in reverse. Getting this wrong renders a
- * perfectly plausible upside-down ocean, which is why it is stated here and
- * asserted in the tests rather than left to the reader.
+ * The data is (lat, lon) with latitude ascending, so row 0 is the south. ImageData
+ * row 0 is the top (north), so rows are written in reverse. Tests check this.
  */
 export function rasterizeSlice(
   values: Float32Array,
@@ -66,11 +55,10 @@ export function rasterizeSlice(
   return new ImageData(bytes, grid.n_lon, grid.n_lat);
 }
 
-/** The pixels themselves, RGBA, without the DOM wrapper.
- *
- *  Split out so the colouring can be asserted byte-for-byte in a plain Node
- *  test: `ImageData` is a browser global, and the thing worth testing is the
- *  bytes, not the wrapper. */
+/**
+ * Just the RGBA bytes, so the colouring can be tested in Node (ImageData is a
+ * browser global).
+ */
 export function rasterizeSliceBytes(
   values: Float32Array,
   grid: SliceGrid,
@@ -87,19 +75,17 @@ export function rasterizeSliceBytes(
   const log = options.log === true;
   const alpha = Math.round(Math.max(0, Math.min(1, options.opacity ?? 1)) * 255);
 
-  // encodeRange is shared with the 3D volume so a diverging map is centred
-  // identically in both views. See its comment in viz/colormaps.ts.
+  // Shared with the 3D volume so diverging maps are centred the same way.
   let encoded = encodeRange(valueRange, colormap);
   if (log) {
-    // Guard the lower bound: a log scale cannot express zero, and these fields
-    // (chlorophyll especially) legitimately reach it.
+    // Log scale can't do zero, and these fields can reach it.
     const lo = Math.max(encoded[0], 1e-4);
     const hi = Math.max(encoded[1], lo * 10);
     encoded = [Math.log10(lo), Math.log10(hi)];
   }
 
-  // Allocated from an explicit ArrayBuffer: TypeScript 7 types a bare
-  // Uint8ClampedArray as ArrayBufferLike, which ImageData will not accept.
+  // Use an explicit ArrayBuffer: TypeScript 7 types a bare Uint8ClampedArray as
+  // ArrayBufferLike, which ImageData won't accept.
   const out = new Uint8ClampedArray(new ArrayBuffer(nLat * nLon * 4));
   for (let row = 0; row < nLat; row++) {
     // Flip: data row 0 is south, image row 0 is north.
@@ -111,8 +97,7 @@ export function rasterizeSliceBytes(
       const i = lutIndex(value, encoded);
       const o = dst + col * 4;
       if (i < 0) {
-        // No data. Fully transparent so the basemap shows through — never a
-        // colour, which would read as a measurement.
+        // No data: fully transparent so the basemap shows through.
         out[o + 3] = 0;
         continue;
       }
@@ -126,13 +111,8 @@ export function rasterizeSliceBytes(
 }
 
 /**
- * A land / no-data mask as an opaque silhouette.
- *
- * The basemap is derived from the data's own missing values rather than a
- * coastline asset — the same decision context.md §10 already records for the 3D
- * view ("land is derived from the analysis's own no-data mask"). It cannot drift
- * from the data, needs no extra request, and at a global grid it is a finer
- * coastline than a strided bathymetry file would give.
+ * Land / no-data mask as an opaque silhouette. It comes from the data's own
+ * missing values, so it always matches the data and needs no extra request.
  */
 export function rasterizeLandMask(
   values: Float32Array,
@@ -150,8 +130,7 @@ export function rasterizeLandMaskBytes(
   alpha = 255,
 ): Uint8ClampedArray<ArrayBuffer> {
   const { n_lat: nLat, n_lon: nLon } = grid;
-  // Allocated from an explicit ArrayBuffer: TypeScript 7 types a bare
-  // Uint8ClampedArray as ArrayBufferLike, which ImageData will not accept.
+  // Explicit ArrayBuffer, see above.
   const out = new Uint8ClampedArray(new ArrayBuffer(nLat * nLon * 4));
   for (let row = 0; row < nLat; row++) {
     const src = (nLat - 1 - row) * nLon;
@@ -168,7 +147,7 @@ export function rasterizeLandMaskBytes(
   return out;
 }
 
-/** Nearest-cell lookup, for the value readout under the cursor. */
+/** Nearest-cell lookup for the value under the cursor. */
 export function sampleAt(
   values: Float32Array,
   grid: SliceGrid,
@@ -177,7 +156,7 @@ export function sampleAt(
 ): number | null {
   const row = Math.round((lat - grid.lat0) / grid.dlat);
   let col = Math.round((lon - grid.lon0) / grid.dlon);
-  // Longitude wraps; latitude does not.
+  // Longitude wraps; latitude doesn't.
   const span = grid.n_lon * grid.dlon;
   if (Math.abs(span) >= 359) col = ((col % grid.n_lon) + grid.n_lon) % grid.n_lon;
   if (row < 0 || row >= grid.n_lat || col < 0 || col >= grid.n_lon) return null;

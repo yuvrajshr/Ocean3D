@@ -1,38 +1,29 @@
 /**
- * One observed cast against the model column beside it.
+ * Compare an observed profile against the model column next to it.
  *
- * This is the comparison the whole product exists for, and the chunk view builds
- * it locally rather than calling `/api/compare`. That endpoint samples INCOIS's
- * 1-degree analysis, which is the right answer for the map and the water column
- * — but it would put a different model in this chart than the one filling the
- * box around it. Sampling the chunk the view has already loaded costs no request
- * and cannot disagree with what is on screen.
+ * Built from the loaded chunk rather than /api/compare, because that endpoint
+ * uses the INCOIS 1 degree analysis, and this chart should match the model in
+ * the box around it (and it saves a request).
  */
 
 import type { InstrumentProfile } from "../../api/client";
 import type { Profile, VariableKey } from "./model";
 import type { ChunkSource } from "./source";
 
-/** Which measured column, if any, this variable can be compared against. */
+/** Which measured values, if any, can be compared for this variable. */
 function observedAt(
   level: InstrumentProfile["profile"][number],
   variable: VariableKey,
 ): number | null {
   if (variable === "temperature") return level.temperature;
   if (variable === "salinity") return level.salinity;
-  // An Argo core float measures neither chlorophyll nor velocity. The BGC
-  // sensors that would carry the first are not in this ingestion path yet, and
-  // `ProfileLevel.chlorophyll` has been a declared-but-never-filled field since
-  // the schema was written.
+  // Core Argo floats don't measure chlorophyll or velocity.
   return null;
 }
 
 /**
- * Pair a cast with the model, level by level.
- *
- * Returns null where the instrument did not measure this variable — the card
- * then says so instead of drawing one curve and implying the other is missing
- * data rather than missing sensors.
+ * Pair the profile with the model level by level. Returns null if the instrument
+ * didn't measure this variable, and the card shows that.
  */
 export function buildProfile(
   source: ChunkSource,
@@ -48,9 +39,7 @@ export function buildProfile(
     if (measured === null || !Number.isFinite(measured)) continue;
     if (level.depth > source.grid.maxDepth) break;
     const modelled = source.value(cast.lon, cast.lat, level.depth);
-    // Only levels where both exist are paired. The chart's RMSD reads the two
-    // arrays by index, so a gap in one of them would silently compare a
-    // measurement against the wrong depth.
+    // Only pair levels where both have a value; the RMSD compares by index.
     if (!Number.isFinite(modelled)) continue;
     obs.push([measured, level.depth]);
     model.push([modelled, level.depth]);

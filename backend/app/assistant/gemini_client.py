@@ -1,31 +1,19 @@
-"""The only place in the project that talks to Gemini.
+"""Everything that talks to Gemini lives here. The API key stays on the server.
 
-Same discipline as `erddap_client.py`: one module owns the upstream, so the
-auth, the request shape and the failure modes live together. The API key is read
-from `backend/.env` and never leaves the server (context.md §5.5).
+Uses google-genai's interactions API: client.interactions.create(...) returns an
+Interaction with steps and output_text; a function_call step is answered with a
+function_result entry.
 
-The API shape was verified against the installed `google-genai` 2.22 and the
-live docs, not recalled: `client.interactions.create(...)` returning an
-`Interaction` with `steps` and `output_text`, where a `function_call` step
-carries `name`/`arguments`/`id` and is answered with a `function_result` entry.
-`generation_config.thinking_level` and `timeout` are real parameters of that
-call (checked in `_gaos/types/interactions/createmodelinteraction.py`).
+Speed:
+- gemini-3.5-flash-lite with minimal thinking (~2 s per round)
+- a turn that only runs actions ends after one round, with the confirmation
+  built from the actions instead of asking the model
+- reads in a round run in parallel with a time budget
+- on a rate limit we move to the next model (quota is per model)
+- the Google Search check happens in the background
 
-**Speed is designed in, not tuned** (2026-09-10; measured before the change at
-8-13 s per round on gemini-3.5-flash, 21 s for a one-line command):
-
-- `gemini-3.5-flash-lite` at minimal thinking, ~1.9 s per round;
-- a turn made only of successful actions ends after ONE round, its sentence
-  composed from the validated actions instead of asked of the model;
-- reads in a round run in parallel, each inside a budget;
-- a rate-limited model is swapped for the next in the chain, never slept on,
-  because each model has its own free-tier quota;
-- Google Search is probed off the request path, not on a reader's first question.
-
-The tool loop is split by necessity. Read tools execute here. Action tools
-cannot — they mutate React state in a browser — so they are validated against
-the client's screen snapshot and collected for the client to apply, and the
-model is told the truth either way.
+Read tools run here. Action tools change React state, so we only validate them
+against the client's screen state and send them back for the client to apply.
 """
 
 from __future__ import annotations
@@ -68,7 +56,7 @@ from .tools import (
 
 
 class AssistantUnavailable(Exception):
-    """No API key, or no model would answer. Carries a reader-facing reason."""
+    """No API key, or no model answered. The message is shown to the user."""
 
 
 @dataclass
@@ -77,18 +65,15 @@ class TurnResult:
     actions: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     web_sources: list[dict[str, Any]] = field(default_factory=list)
-    #: The model that produced the final round, and how many rounds it took.
+    # Model used for the last round, and how many rounds it took.
     model: str | None = None
     rounds: int = 0
 
     @property
     def citations(self) -> list[dict[str, Any]]:
-        """Provenance for the answer, built from what actually ran.
-
-        This is the whole grounding mechanism: the panel cites from here, not
-        from the prose. `kind="data"` is a measurement from one of this
-        project's upstreams; `kind="web"` is a page Google Search returned. A
-        reader must never mistake one for the other, so they are kept apart.
+        """Citations for the answer, built from the tool calls that actually ran (not
+        from the text). kind="data" is one of our datasets, kind="web" is a Google
+        Search result; they're shown differently.
         """
         out: list[dict[str, Any]] = []
         for call in self.tool_calls:
@@ -105,16 +90,14 @@ def is_available() -> bool:
     return GEMINI_AVAILABLE
 
 
-# --------------------------------------------------------------------------
-# The client and the model chain
-# --------------------------------------------------------------------------
+# --- Client and model chain ---
 
 _client_lock = threading.Lock()
 _client_obj: Any = None
 
 
 def _client():
-    """One client for the process: its connection pool outlives a turn."""
+    """One client per process so the connection pool is reused."""
     global _client_obj
     if not GEMINI_AVAILABLE:
         raise AssistantUnavailable(
@@ -123,14 +106,14 @@ def _client():
         )
     with _client_lock:
         if _client_obj is None:
-            from google import genai  # lazily, so a missing key never costs the import
+            from google import genai  # lazy import
 
             _client_obj = genai.Client(api_key=GEMINI_API_KEY)
         return _client_obj
 
 
 class ModelChain:
-    """The models to try, in order, and when each may be tried again."""
+    """Models to try in order, and when each can be retried."""
 
     def __init__(self, models) -> None:
         self.models = list(dict.fromkeys(m for m in models if m))
@@ -151,9 +134,9 @@ class ModelChain:
 
 
 _chain = ModelChain([GEMINI_MODEL, *GEMINI_FALLBACK_MODELS])
-#: Models that rejected `thinking_level`; asked without it from then on.
+# Models that rejected thinking_level; we stop sending it to them.
 _thinking_refused: set[str] = set()
-#: The longest the loop will wait for a cooled model before saying so.
+# Longest we'll wait for a rate-limited model before giving up.
 MAX_QUOTA_WAIT_SECONDS = 15.0
 
 
@@ -170,7 +153,7 @@ def _is_timeout(exc: Exception) -> bool:
 
 
 def _retry_delay(message: str) -> float | None:
-    """The delay Gemini itself asks for on a 429 ("Please retry in 30.6s")."""
+    """The retry delay Gemini asks for in a 429 ("Please retry in 30.6s")."""
     match = re.search(r"retry in ([\d.]+)\s*s", message)
     return float(match.group(1)) if match else None
 
@@ -212,15 +195,10 @@ def _create(client: Any, *, on_status: Callable[[str], None] | None, **request: 
     raise AssistantUnavailable(f"The assistant could not reach Gemini: {last_error}")
 
 
-# --------------------------------------------------------------------------
-# Google Search, probed off the request path
-# --------------------------------------------------------------------------
-#
-# Grounding is billed separately and is NOT on the free tier: with
-# `google_search` in `tools`, every request 429s while the same request without
-# it succeeds. The old code learned that on a reader's first question, paying a
-# 6-8 s 429 each restart. Now requests go without search until a background
-# probe — started when the dock asks /assistant/status — settles it.
+# --- Google Search ---
+# Search grounding isn't in the free tier (requests with google_search get a 429).
+# We send requests without it until a background probe, started from
+# /assistant/status, finds out whether this key can use it.
 
 _search_available: bool | None = {"on": True, "off": False}.get(GEMINI_SEARCH)
 _probe_lock = threading.Lock()
@@ -228,7 +206,7 @@ _probe_running = False
 
 
 def search_available() -> bool | None:
-    """True, False, or None if it has not been settled yet."""
+    """True, False, or None if we don't know yet."""
     return _search_available
 
 
@@ -263,7 +241,7 @@ def _probe_search() -> None:
                 return
             try:
                 client.interactions.create(**base)
-                _search_available = False  # plain works, search refused: this key cannot search
+                _search_available = False  # plain works, search doesn't
             except Exception:  # noqa: BLE001 - inconclusive: the quota is genuinely out
                 pass
     finally:
@@ -271,28 +249,26 @@ def _probe_search() -> None:
             _probe_running = False
 
 
-# --------------------------------------------------------------------------
-# Tools
-# --------------------------------------------------------------------------
+# --- Tools ---
 
 _reads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="assistant-read")
 
 
 def _cache_key(name: str, args: dict[str, Any], context: dict[str, Any]) -> str:
-    """Stable across argument order, specific to what was on screen, and to the
-    shape the reads return — so a row written by older code is never served."""
+    """Cache key: independent of argument order, includes what's on screen and
+    RESULT_VERSION so results from older code aren't reused.
+    """
     body = json.dumps({"args": args, "screen": context}, sort_keys=True, default=str)
     return f"v{reads_module.RESULT_VERSION}:{name}:{body}"
 
 
 def _start_read(name: str, args: dict[str, Any], state: ScreenState, store: Any | None):
-    """A cached or refused result now, or a Future for one that is running."""
+    """Return a cached or refused result, or a Future if it's still running."""
     fn = READ_TOOLS.get(name)
     if fn is None:
         return {"ok": False, "error": f"There is no {name!r} tool."}
 
-    # The read sees the screen as it was at this call, not as later actions in
-    # the same round leave it; it runs on another thread.
+    # Copy the state, since the read runs on another thread while actions keep updating it.
     snapshot = copy.deepcopy(state)
     key = _cache_key(name, args, cache_context(name, snapshot))
     if store is not None:
@@ -307,7 +283,7 @@ def _start_read(name: str, args: dict[str, Any], state: ScreenState, store: Any 
             return {"ok": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - an upstream failure must not kill the turn
             return {"ok": False, "error": f"That data could not be read: {exc}"}
-        # Cached even when it lands after the budget, so asking again is instant.
+        # Cache it even if it finished after the budget, so asking again is instant.
         if store is not None and not (isinstance(result, dict) and result.get("ok") is False):
             store.cache_put(key, result, ttl=ASSISTANT_CACHE_TTL_SECONDS)
         return result
@@ -326,14 +302,11 @@ def _pending(name: str) -> dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------------
-# The turn
-# --------------------------------------------------------------------------
+# --- The turn ---
 
-# A message that asks for information must end in an answer, even when the
-# model's first step only changed the view. Found live on 2026-09-10: "What is
-# the temperature at 100 m here?" drew a show_variable first, and the one-round
-# shortcut ended the turn at "Showing temperature." without ever reading a value.
+# If the user asked a question, the turn has to end with an answer. Otherwise
+# "What is the temperature at 100 m here?" could end at "Showing temperature."
+# after a view change.
 _QUESTION = re.compile(
     r"^s*(what|what's|whats|where|which|how|why|when|who|whose|is|are|was|were|"
     r"does|do|did|can|could|will|would|should|tell me|explain|describe|summari[sz]e)",
@@ -342,7 +315,7 @@ _QUESTION = re.compile(
 
 
 def _asks_a_question(history: list[dict[str, Any]]) -> bool:
-    """Whether the reader's latest message asks for information, not a change."""
+    """Whether the latest message asks for information rather than a change."""
     for entry in reversed(history):
         if isinstance(entry, dict) and entry.get("type") == "user_input":
             text = " ".join(
@@ -359,13 +332,11 @@ def run_turn(
     store: Any | None = None,
     on_status: Callable[[str], None] | None = None,
 ) -> TurnResult:
-    """One user message through to a finished answer.
+    """Run one user message until there's a final answer.
 
-    `history` is the transcript in the API's own `input` shape; we hold it rather
-    than letting Gemini store it (`store=False`), so nothing about a forecaster's
-    session persists on a third-party server. `state` is advanced as actions are
-    accepted, so a later round — and a later action in the same round — sees the
-    screen the earlier ones produced.
+    ``history`` is kept by us (store=False), so nothing is stored on Google's side.
+    ``state`` is updated as actions are accepted, so later actions see the result
+    of earlier ones.
     """
     client = _client()
     result = TurnResult()
@@ -406,7 +377,7 @@ def run_turn(
         for index, call in enumerate(calls):
             name = getattr(call, "name", "")
             args = getattr(call, "arguments", None) or {}
-            if isinstance(args, str):  # never string-match a serialized argument
+            if isinstance(args, str):  # don't string-match serialized arguments
                 args = json.loads(args)
             if on_status is not None:
                 on_status(status_for(name, args, state))
@@ -448,8 +419,7 @@ def run_turn(
             })
         result.actions.extend(round_actions)
 
-        # A command turn ends here: nothing to explain, nothing refused, no new
-        # view whose controls the model still needs, and no question to answer.
+        # Command-only turn: nothing to explain or refuse, no view switch, no question.
         if round_actions and only_accepted_actions and not switched and not asks:
             result.text = describe_actions(result.actions)
             return result
@@ -461,13 +431,9 @@ def run_turn(
 
 
 def _collect_web_sources(interaction: Any) -> list[dict[str, Any]]:
-    """Pull the pages Google Search actually returned out of an interaction.
-
-    Read from `url_citation` annotations rather than trusted from the prose, for
-    the same reason the ocean citations are built from tool calls. Defensive:
-    annotations appear on steps or on their content blocks depending on the
-    shape returned, and an unfamiliar variant should cost the sources, not the
-    answer.
+    """Get the pages Google Search returned from the url_citation annotations.
+    They can be on steps or on content blocks, so check both and don't fail the
+    answer if the shape is unexpected.
     """
     found: dict[str, dict[str, Any]] = {}
 

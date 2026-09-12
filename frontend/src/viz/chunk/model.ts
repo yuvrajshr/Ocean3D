@@ -1,21 +1,11 @@
 /**
- * What the chunk view knows before it has fetched anything.
+ * Static info for the chunk view: variables, names, units, colour ramps and a
+ * fixed range per variable. The actual data comes from source.ts (HYCOM, ETOPO
+ * and Argo through the backend).
  *
- * This file used to be a synthetic Bay of Bengal — a complete analytic ocean
- * that stood in for the real thing while the view was built. It is not that any
- * more. Every field, every seabed and every instrument track now comes from
- * `source.ts`, which is backed by HYCOM, ETOPO and Argo through the backend.
- *
- * What is left here is the part that was never data: which variables the view
- * offers, what they are called, what they are measured in, and the cmocean
- * ramps they are drawn with. A published range per variable is kept too, and it
- * is the range the colour scale opens on — deliberately, so the same field
- * reads against the same scale on every chunk and every day. The chunk's own
- * 2nd-98th percentile arrives with the data and is what "Auto" applies.
- *
- * There is no synthetic fallback and there should not be one. If a fetch fails
- * the view says so; a plausible ocean drawn in place of a failed request is the
- * one thing CONTRIBUTING §8 rules out.
+ * The fixed range is what the colour scale starts on, so the same field uses the
+ * same scale everywhere; "Auto" switches to the chunk's own 2-98th percentile.
+ * There's no fake fallback data: if a fetch fails, the view says so.
  */
 
 export type VariableKey = "temperature" | "salinity" | "chlorophyll" | "speed";
@@ -24,10 +14,10 @@ export type CmapName = "thermal" | "haline" | "deep" | "delta" | "algae";
 export interface VariableInfo {
   label: string;
   short: string;
-  /** Fallback only. The units actually drawn come with the data. */
+  /** Fallback only; the real units come with the data. */
   unit: string;
   palette: CmapName;
-  /** The published range the colour scale opens on, not the chunk's extremes. */
+  /** Fixed range the colour scale starts on. */
   range: [number, number];
   dec: number;
 }
@@ -40,13 +30,9 @@ export const VARIABLES: Record<VariableKey, VariableInfo> = {
 };
 
 /**
- * cmocean family (perceptually uniform, the oceanographic standard).
- *
- * Held here as hex stops rather than reusing src/viz/colormaps.ts because the
- * chunk view needs `deep` for bathymetry, which that module does not carry, and
- * because these ramps are read straight into a CSS gradient for the palette
- * swatches as well as into a GPU lookup texture. They encode values, never
- * chrome — the chrome palette is in styles/chunk-view.css.
+ * cmocean ramps as hex stops. Separate from viz/colormaps.ts because the chunk
+ * view also needs ``deep`` for bathymetry, and these are used for CSS swatches as
+ * well as GPU textures. Data only, never UI colours.
  */
 export const CMAPS: Record<CmapName, string[]> = {
   thermal: ["#042333", "#2c3395", "#744992", "#b15f82", "#eb7958", "#fbb43d", "#e8fa5b"],
@@ -56,24 +42,24 @@ export const CMAPS: Record<CmapName, string[]> = {
   algae: ["#d7f9d0", "#8ed58c", "#4bab5e", "#1f7a45", "#12522f", "#0b2e1c"],
 };
 
-/** An observed cast beside the model column at the same place and time. */
+/** An observed profile next to the model column at the same place and time. */
 export interface Profile {
   /** [value, depth] pairs, surface first. */
   model: [number, number][];
   obs: [number, number][];
   lon: number;
   lat: number;
-  /** Deepest level the pair share, in metres. */
+  /** Deepest level both have, in metres. */
   top: number;
   id: string;
-  /** Upstream's platform type, e.g. "argo_float". */
+  /** Platform type from the upstream, e.g. "argo_float". */
   type: string;
   cycle: number | null;
-  /** When the cast was actually taken, which is rarely exactly the model step. */
+  /** When the profile was actually taken (usually not exactly the model time). */
   observedTime: string;
 }
 
-/** A date stamp as the view writes dates. */
+/** Format a date the way the view shows dates. */
 export function dateLabel(iso: string): string {
   if (!iso) return "—";
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);

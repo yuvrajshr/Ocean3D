@@ -1,13 +1,6 @@
 /**
- * DataCatalogueModal Component.
- *
- * Streamlined Ocean Data Catalogue modal:
- * - Clean header (no unnecessary tabs)
- * - Focused 2-category filter sidebar:
- *     1. Primary Ocean Variables (Temperature, Salinity, Current Velocity)
- *     2. Cyclone Hazard Fields (Heat Content, MLD, D26, Chlorophyll)
- * - Single available "+ Add to map..." product; all other products are informational (View Only)
- * - Reduced compact height and width to prevent any overlap with the header or timeline
+ * Data catalogue modal: products grouped into ocean variables and cyclone hazard
+ * fields, with search, and an "Add to map" button on each product.
  */
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -57,7 +50,7 @@ export const CYCLONE_VARIABLES = [
 ];
 
 export const PRODUCTS: CatalogueProduct[] = [
-  // --- Ocean Variables (3D) ---
+  // --- Ocean variables (3D) ---
   {
     id: "prod-temp",
     title: "Sea Water Temperature (3D Analysis)",
@@ -134,7 +127,7 @@ export const PRODUCTS: CatalogueProduct[] = [
     variables: [{ code: "zooplankton", name: "Zooplankton Biomass" }],
   },
 
-  // --- Cyclone Hazard Fields ---
+  // --- Cyclone hazard fields ---
   {
     id: "prod-wave",
     title: "Significant Wave Height (VHM0)",
@@ -236,7 +229,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     setSelectedVariableCode(null);
   };
 
-  // Filter variables based on search input for responsive sidebar options
+  // Filter the sidebar variables by the search text.
   const filteredPrimaryVars = useMemo(() => {
     if (!searchQuery.trim()) return PRIMARY_VARIABLES;
     const q = searchQuery.toLowerCase();
@@ -259,7 +252,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     );
   }, [searchQuery]);
 
-  // Filter products based on search and category/variable
+  // Filter products by search text, category and variable.
   const filteredProducts = useMemo(() => {
     return PRODUCTS.filter((p) => {
       // Text search
@@ -326,7 +319,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
     }, 350);
   };
 
-  // Close modal when pressing Escape key
+  // Close on Escape.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -354,7 +347,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
         className={`catalogue-modal-box ${isClosing ? "catalogue-modal-box--closing" : "catalogue-modal-box--open"}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Streamlined Modal Header */}
+        {/* header */}
         <div className="catalogue-modal-topbar">
           <div className="catalogue-modal-title-wrap">
             <span className="catalogue-modal-title-text">Ocean 3D Data Catalogue</span>
@@ -375,9 +368,8 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Main Body */}
         <div className="catalogue-modal-body">
-          {/* Left Sidebar: 2 Essential Categories (Variables & Cyclone) */}
+          {/* sidebar */}
           <aside className="catalogue-sidebar">
             <div className="catalogue-sidebar-header">
               <span className="catalogue-sidebar-title">
@@ -394,7 +386,6 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
             </div>
 
             <div className="catalogue-sidebar-content">
-              {/* Search input */}
               <div className="catalogue-search-wrapper">
                 <Search className="catalogue-search-icon" style={{ width: 13, height: 13 }} />
                 <input
@@ -417,7 +408,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                 )}
               </div>
 
-              {/* 1. Primary Ocean Variables */}
+              {/* ocean variables */}
               <div className="catalogue-filter-section">
                 <div
                   onClick={() => {
@@ -467,7 +458,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                 </div>
               </div>
 
-              {/* 2. Cyclone Hazard Fields */}
+              {/* cyclone hazard fields */}
               <div className="catalogue-filter-section">
                 <div
                   onClick={() => {
@@ -519,7 +510,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
             </div>
           </aside>
 
-          {/* Right Main Area: Products */}
+          {/* products */}
           <main className="catalogue-products-main">
             {toastMessage && (
               <div className="catalogue-toast">
@@ -559,7 +550,6 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                       key={product.id}
                       className="catalogue-card catalogue-card--available"
                     >
-                      {/* Compact Card Thumbnail */}
                       <div className="catalogue-card-thumb">
                         <div
                           className="catalogue-card-thumb-bg"
@@ -575,8 +565,7 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                           {isAnyVarActive && " · Active"}
                         </div>
 
-                        {/* Every operational product can be added to the map. Sentence case
-                            and no appended arrow (context.md §5.2, §5.3). */}
+                        {/* every product can be added to the map */}
                         <button
                           type="button"
                           onClick={() => handleAddProduct(product)}
@@ -590,7 +579,6 @@ export const DataCatalogueModal: React.FC<DataCatalogueModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Card Details Body */}
                       <div className="catalogue-card-body">
                         <div>
                           <h3 className="catalogue-card-title">{product.title}</h3>

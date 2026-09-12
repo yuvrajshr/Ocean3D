@@ -1,11 +1,7 @@
 /**
- * PointsDrawer.tsx — In-Situ Float Probes Drawer
- *
- * Smooth sliding drawer invoked directly from the top navbar:
- * - Lists active in-situ Argo float profiles reporting in current scenario
- * - Shows coordinates, depth, and 1-click Graph inspection
- * - Smooth cubic-bezier slide & fade animations
- * - Closes on Escape or backdrop/close button click
+ * Drawer listing the Argo floats reporting in the current scenario, with their
+ * position, depth and a button to open the profile graph. Closes on Escape or
+ * on a click outside.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -57,12 +53,12 @@ export function PointsDrawer({
     }
   }, [isOpen, shouldRender]);
 
-  // Handle Escape key
+  // Escape closes it.
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        // If a profile panel is open, let the profile panel close first
+        // If a profile panel is open, let that close first.
         const profilePanel = document.querySelector(".profile-panel, .point-panel");
         if (profilePanel) return;
         onClose();
@@ -72,16 +68,16 @@ export function PointsDrawer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Handle click outside drawer
+  // Close on click outside.
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
-      // Don't close if clicking the navbar button
+      // Ignore clicks on the navbar button.
       const navBtn = document.getElementById("btn-nav-points");
       if (navBtn && navBtn.contains(target)) return;
 
-      // Don't close if clicking inside the profile panel or point panel
+      // Ignore clicks inside the profile or point panel.
       const profilePanel = document.querySelector(".profile-panel, .point-panel");
       if (profilePanel && profilePanel.contains(target)) return;
 

@@ -1,8 +1,6 @@
 /**
- * The colorbar is a real, labelled unit ruler — not a decorative gradient
- * swatch (context.md §5.1, Principle 5). Its ticks carry the variable's actual
- * values and units, so a reader can convert a colour in the water column back
- * into a number.
+ * Vertical colorbar drawn as a ruler: ticks show real values and units, so you
+ * can read a colour in the water column back as a number.
  */
 
 import { useMemo } from "react";
@@ -20,7 +18,7 @@ interface ColorbarProps {
   loading: boolean;
 }
 
-/** Ticks on rounded values a person would actually say out loud. */
+/** Ticks on round numbers. */
 function niceTicks(lo: number, hi: number, count = 5): number[] {
   const span = hi - lo;
   if (!Number.isFinite(span) || span <= 0) return [lo];

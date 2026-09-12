@@ -1,11 +1,6 @@
 /**
- * The floats reporting alongside the selected model run.
- *
- * This exists because a marker in a 3D scene cannot be reached with a keyboard.
- * Rather than bolt synthetic focus onto the canvas, the same selection is
- * offered as a real list — which turns out to be the faster path for a
- * forecaster who already knows which platform they want, and it doubles as the
- * scene's accessible name for the markers.
+ * Floats reporting with the selected model run, as a keyboard-accessible list
+ * (3D markers can't be tabbed to).
  */
 
 import type { PlatformSummary } from "../api/client";

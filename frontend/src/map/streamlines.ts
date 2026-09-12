@@ -1,18 +1,11 @@
 /**
- * Current direction as advected particles.
+ * Current direction as moving particles.
  *
- * This is the feature `next_session.md` §8 deferred ("only speed is drawn"), and
- * it is the one place in the product where continuous motion is allowed: the
- * motion *is* the measurement. A particle's path is an integration of the real
- * u/v field, so what moves on screen is what the water does. That is a different
- * thing from a decorative hover-fade, and it is why it needs its own line in
- * context.md §5.1 rather than sitting under the existing motion rule.
+ * Each particle follows the real u/v field, so the motion shows what the water
+ * is doing. With prefers-reduced-motion the traces freeze instead of disappearing.
  *
- * Under `prefers-reduced-motion` the traces **freeze rather than vanish** — the
- * paths still carry direction, and only the animation is motion.
- *
- * Particle count is chosen for legibility, not for the hardware: earth.nullschool
- * and Copernicus both sit around 3-6k, and past that the field reads as noise.
+ * The particle count is picked for readability (earth.nullschool and Copernicus
+ * use around 3-6k); more just looks like noise.
  */
 
 import type { MapTransform } from "./projection";
@@ -29,7 +22,7 @@ export interface VectorField {
 interface Particle {
   lon: number;
   lat: number;
-  /** Frames lived. Particles are retired on a stagger so the field never pulses. */
+  /** Frames lived. Particles are replaced at staggered times so the field doesn't pulse. */
   age: number;
   life: number;
 }
@@ -37,7 +30,7 @@ interface Particle {
 const DEFAULT_COUNT = 4200;
 const MIN_LIFE = 40;
 const LIFE_SPREAD = 90;
-/** Degrees travelled per frame per (m/s). ~1 deg latitude is 111 km. */
+/** Degrees moved per frame per m/s (~1 deg latitude = 111 km). */
 const SPEED_SCALE = 0.055;
 
 function sample(field: VectorField, lon: number, lat: number): [number, number] | null {
@@ -51,8 +44,8 @@ function sample(field: VectorField, lon: number, lat: number): [number, number] 
   const i = r * field.nLon + c;
   const u = field.u[i]!;
   const v = field.v[i]!;
-  // A NaN cell is land. Returning null retires the particle rather than letting
-  // NaN propagate into its position, which would silently empty the field.
+  // NaN means land. Return null so the particle is replaced instead of getting a
+  // NaN position.
   if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
   return [u, v];
 }
@@ -83,11 +76,8 @@ export class ParticleField {
   }
 
   /**
-   * Advance one frame and draw the trails.
-   *
-   * The previous frame is faded rather than cleared, which is what turns a dot
-   * into a trail. `frozen` skips the integration so reduced motion still shows
-   * the traces, just still.
+   * Advance one frame and draw the trails. The previous frame is faded, not
+   * cleared, which is what makes the trails. ``frozen`` skips the movement.
    */
   draw(
     ctx: CanvasRenderingContext2D,
@@ -96,14 +86,10 @@ export class ParticleField {
     frozen = false,
   ): void {
     const f = this.field;
-    // CSS pixels, from the transform. `ctx.canvas.width` is the device-pixel
-    // backing store, and this context is dpr-scaled — see the note in
-    // geography.ts. Using it here made the antimeridian guard below twice as
-    // permissive on a HiDPI display.
+    // CSS pixels from the transform, not ctx.canvas.width (see geography.ts).
     const { width, height } = transform.size;
 
-    // Fade, not clear. A translucent wipe leaves a decaying tail behind each
-    // particle; clearing outright would draw a field of unconnected dots.
+    // Fade instead of clear so each particle leaves a tail.
     ctx.globalCompositeOperation = "destination-out";
     ctx.fillStyle = `rgba(0, 0, 0, ${frozen ? 0 : 0.09})`;
     ctx.fillRect(0, 0, width, height);
@@ -124,9 +110,7 @@ export class ParticleField {
       }
       const [u, v] = uv;
 
-      // Longitude degrees shrink with latitude, so a due-east current must move
-      // further in longitude near the poles to cover the same ground. Without
-      // this the flow visibly slows toward high latitudes.
+      // Longitude degrees get shorter toward the poles, so scale the east-west step.
       const cos = Math.max(0.2, Math.cos((p.lat * Math.PI) / 180));
       const nextLon = p.lon + (u * SPEED_SCALE) / cos;
       const nextLat = p.lat + v * SPEED_SCALE;
@@ -136,8 +120,7 @@ export class ParticleField {
       const x1 = transform.lonToXNearest(nextLon);
       const y1 = transform.latToY(nextLat);
 
-      // Skip the segment that would otherwise be drawn straight across the
-      // frame when a particle crosses the antimeridian.
+      // Skip segments that would cross the whole frame at the antimeridian.
       if (Math.abs(x1 - x0) < width / 4 && y0 > -50 && y0 < height + 50) {
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);

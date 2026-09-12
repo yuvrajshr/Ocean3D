@@ -1,9 +1,6 @@
 /**
- * Tests for the pure half of the map renderer.
- *
- * These target the bugs that would otherwise ship looking plausible: an ocean
- * drawn upside down, a feature that vanishes across the antimeridian, and a
- * diverging colour scale that disagrees with the 3D view of the same value.
+ * Tests for the pure parts of the map renderer: upside-down rasters, features
+ * lost across the antimeridian, and diverging scales that don't match the 3D view.
  */
 
 import { describe, expect, it } from "vitest";
@@ -41,20 +38,15 @@ describe("projection", () => {
   });
 
   it("finds the nearest copy of a longitude across the antimeridian", () => {
-    // Zoomed right in, because `clampViewport` no longer lets the centre sit at
-    // 179 from far out: it stops at 180 - halfLon. At this zoom halfLon is 1
-    // degree, so 179 survives the clamp and the case stays reachable.
-    //
-    // The method is still needed even though the VIEWPORT can no longer straddle
-    // the date line: a streamline advecting past 180 re-enters at -180, and
-    // without this it would draw one segment straight across the whole frame.
+    // Zoomed right in so a centre at 179 survives clampViewport (it stops at
+    // 180 - halfLon). Still needed: streamlines crossing 180 re-enter at -180.
     const ZOOM = 600;
     const t = new MapTransform({ lonCentre: 179, latCentre: 0, zoom: ZOOM }, SIZE);
     expect(t.viewport.lonCentre).toBeCloseTo(179, 9);
     // 179E and 179W are two degrees apart, not 358.
     const near = t.lonToXNearest(-179);
     expect(Math.abs(near - SIZE.width / 2)).toBeCloseTo(2 * ZOOM, 6);
-    // The naive form is the one that would push it off screen.
+    // The naive version would put it off screen.
     expect(Math.abs(t.lonToX(-179) - SIZE.width / 2)).toBeCloseTo(358 * ZOOM, 6);
   });
 
@@ -66,8 +58,7 @@ describe("projection", () => {
   });
 
   it("covers the frame at minimum zoom, leaving no empty band on any aspect", () => {
-    // `min` used to fit the world INSIDE the canvas, which was only safe while
-    // longitude wrapped and the repeats filled the leftover width.
+    // Using min to fit the world inside the canvas only worked while longitude wrapped.
     for (const size of [SIZE, { width: 1918, height: 860 }, { width: 900, height: 1200 }]) {
       const z = worldFitZoom(size);
       expect(360 * z).toBeGreaterThanOrEqual(size.width - 1e-9);
@@ -91,8 +82,7 @@ describe("projection", () => {
     const min = worldFitZoom(SIZE);
     const v = clampViewport({ lonCentre: 0, latCentre: 85, zoom: min / 10 }, SIZE);
     expect(v.zoom).toBeCloseTo(min, 9);
-    // At world-fit the whole latitude range is visible, so it must stay centred
-    // rather than drifting to leave empty space above the pole.
+    // At world fit the whole latitude range is visible, so it stays centred.
     expect(v.latCentre).toBe(0);
   });
 
@@ -112,7 +102,7 @@ describe("projection", () => {
     for (const s of steps) {
       expect([30, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1]).toContain(s);
     }
-    // Zooming in never coarsens the grid.
+    // Zooming in never makes the grid coarser.
     expect(graticuleStep(20)).toBeLessThanOrEqual(graticuleStep(1));
   });
 
@@ -127,7 +117,7 @@ describe("projection", () => {
   });
 });
 
-// A 3x4 grid, latitude ascending: row 0 is the SOUTHERNMOST.
+// 3x4 grid, latitude ascending: row 0 is the southernmost.
 const grid: SliceGrid = { lat0: -10, dlat: 10, n_lat: 3, lon0: 0, dlon: 10, n_lon: 4 };
 
 describe("raster", () => {
@@ -142,7 +132,7 @@ describe("raster", () => {
     const lut = buildLut("thermal");
     const topPixel = [px[0], px[1], px[2]];
     const bottomPixel = [px[(2 * 4 + 0) * 4], px[(2 * 4 + 0) * 4 + 1], px[(2 * 4 + 0) * 4 + 2]];
-    // Top of the image is the value 100 row (north), bottom is the value 0 row.
+    // Top of the image is the 100 row (north), bottom is the 0 row.
     expect(topPixel).toEqual([lut[(LUT_SIZE - 1) * 3], lut[(LUT_SIZE - 1) * 3 + 1], lut[(LUT_SIZE - 1) * 3 + 2]]);
     expect(bottomPixel).toEqual([lut[0], lut[1], lut[2]]);
   });
@@ -161,21 +151,20 @@ describe("raster", () => {
     values[11] = 10;
     const px = rasterizeSliceBytes(values, grid, [0, 10], "haline");
     const lut = buildLut("haline");
-    // values[0] is the south-west cell, which lands in the LAST image row.
+    // values[0] is the south-west cell, which ends up in the last image row.
     const swOffset = (2 * 4 + 0) * 4;
     expect([px[swOffset], px[swOffset + 1], px[swOffset + 2]]).toEqual([lut[0], lut[1], lut[2]]);
   });
 
   it("centres a diverging map exactly as the 3D volume does", () => {
-    // The whole point of sharing encodeRange: the same value must be the same
-    // colour in the map and in the water column.
+    // The same value has to be the same colour in the map and the 3D view.
     const range: [number, number] = [-2, 8];
     const encoded = encodeRange(range, "delta");
     expect(encoded).toEqual([-8, 8]);
-    // Zero sits at the middle of the ramp, not off to one side.
+    // Zero is in the middle of the ramp.
     const mid = lutIndex(0, encoded);
     expect(Math.abs(mid - (LUT_SIZE - 1) / 2)).toBeLessThanOrEqual(1);
-    // And a sequential map is left alone.
+    // Sequential maps are left alone.
     expect(encodeRange(range, "thermal")).toEqual(range);
   });
 
@@ -222,22 +211,18 @@ describe("sampleAt", () => {
   it("wraps longitude only on a global grid", () => {
     const global: SliceGrid = { lat0: -10, dlat: 10, n_lat: 3, lon0: -180, dlon: 90, n_lon: 4 };
     const g = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    // 190E is the same meridian as 170W, which is the first column.
+    // 190E is the same meridian as 170W, the first column.
     expect(sampleAt(g, global, -10, 190)).toBe(sampleAt(g, global, -10, -170));
   });
 });
 
 
 /**
- * A 2D context stub whose `canvas` is a trap.
+ * A 2D context stub whose ``canvas`` getter throws.
  *
- * The context these functions receive is scaled by devicePixelRatio, so every
- * coordinate they compute is a CSS pixel while `ctx.canvas.width` is the
- * device-pixel backing store. Reading it mixed the two units, and on a HiDPI
- * display that made every frame-relative threshold twice as large as the frame:
- * the antimeridian guards stopped firing and coastlines drew straight across the
- * map. The bounds must come from the transform, which is in the same units as
- * the coordinates. Touching `canvas` at all fails the test.
+ * These functions draw in CSS pixels (the context is scaled by devicePixelRatio),
+ * so reading ctx.canvas.width (device pixels) breaks the antimeridian checks on
+ * HiDPI screens. Bounds have to come from the transform.
  */
 function trapContext() {
   const calls: string[] = [];
@@ -283,13 +268,12 @@ describe("drawing bounds come from the transform, not the backing store", () => 
 
   it("breaks a coastline that crosses the antimeridian instead of drawing across the frame", () => {
     const { ctx, calls } = trapContext();
-    // Zoomed in far enough that the whole world is not on screen, which is when
-    // the +/-360 copies are drawn and a tear can actually appear.
+    // Zoomed in enough that the ±360 copies are drawn and a tear could happen.
     const t = new MapTransform({ lonCentre: 175, latCentre: 0, zoom: 20 }, SIZE);
     const geo: Geography = { coast: [[170, 0, -170, 0]], borders: [] };
     drawGeography(ctx, geo, t, STYLE);
-    // The two points are 340 degrees apart in raw longitude. Whatever is drawn,
-    // no single segment may span more than half the frame.
+    // The points are 340 degrees apart in raw longitude; no segment should span
+    // more than half the frame.
     let prev: [number, number] | null = null;
     for (const c of calls) {
       const [x, y] = c.slice(1).split(",").map(Number) as [number, number];

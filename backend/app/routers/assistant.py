@@ -1,19 +1,15 @@
-"""The assistant endpoint.
+"""Assistant endpoint.
 
-Streams as Server-Sent Events so the panel can say what is happening while the
-tool phase runs — context.md §5.3 asks loading states to name what is loading,
-and "Reading the analysis at 15°, 88°…" is a great deal more honest than a
-spinner.
+Streams Server-Sent Events so the panel can show what it's doing while tools run.
 
-Event types, in the order a client sees them:
+Events, in order:
 
-    status  {"text": "..."}      zero or more, one per tool call
-    answer  {"text": "..."}      exactly one, the prose
-    done    {"actions": [...], "citations": [...], "message_id": "..."}
-    error   {"text": "..."}      instead of answer/done, if the turn failed
+  status  {"text": "..."}      zero or more, one per tool call
+  answer  {"text": "..."}      exactly one, the reply
+  done    {"actions": [...], "citations": [...], "message_id": "..."}
+  error   {"text": "..."}      instead of answer/done if the turn failed
 
-Actions arrive only in `done`, so the client applies them after the prose has
-landed and the viewport never lurches mid-sentence.
+Actions only come in ``done`` so the view doesn't change mid-sentence.
 """
 
 from __future__ import annotations
@@ -45,10 +41,8 @@ def _catalogue_keys() -> list[str]:
 class MessageRequest(BaseModel):
     message: str
     conversation_id: str | None = None
-    # Every view's state, every turn: { view, map, globe, chunk }. Parsed
-    # tolerantly by ScreenState.from_payload, so a client one field behind still
-    # gets an answer rather than a 422. The loop can switch views mid-turn and
-    # validate against the new one without asking the browser again.
+    # State of every view: { view, map, globe, chunk }. Parsed leniently so an older
+    # client still works, and so the loop can switch views mid-turn.
     state: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -60,19 +54,15 @@ class StatusResponse(BaseModel):
 
 @router.get("/assistant/status", response_model=StatusResponse)
 def status() -> StatusResponse:
-    """Whether the assistant can run at all.
-
-    The dock button reads this. With no key it renders disabled with a stated
-    reason rather than failing on click — the same degradation the Copernicus
-    layers already have.
+    """Whether the assistant is available. Without a key the button is disabled with
+    a reason.
     """
     if not gemini_client.is_available():
         return StatusResponse(
             available=False,
             reason="No Gemini API key configured. Add GEMINI_API_KEY to backend/.env.",
         )
-    # The dock asks this when the app opens, which is the moment to learn whether
-    # the key can use Google Search — off the path of the reader's first question.
+    # Check whether the key can use Google Search now, before the first question.
     gemini_client.start_search_probe()
     return StatusResponse(available=True, model=GEMINI_MODEL)
 
@@ -114,7 +104,7 @@ def _sse(event: str, payload: dict[str, Any]) -> str:
 
 @router.post("/assistant/message")
 def message(req: MessageRequest) -> StreamingResponse:
-    """Ask the assistant something, streaming progress back as it works."""
+    """Send a message, streaming progress back."""
     started = time.perf_counter()
     if not gemini_client.is_available():
         raise HTTPException(
@@ -128,16 +118,13 @@ def message(req: MessageRequest) -> StreamingResponse:
     )
     _store.append_message(conversation_id, role="user", content=req.message)
 
-    # Rebuild the transcript in the API's own `input` shape. We hold it rather
-    # than letting Gemini store it, so nothing about a session persists on a
-    # third-party server (store=False in gemini_client).
+    # Rebuild the history ourselves (store=False) so nothing persists on Google's side.
     history: list[dict[str, Any]] = [
         {
             "type": "user_input" if m.role == "user" else "model_output",
             "content": [{"type": "text", "text": m.content}],
         }
-        # The recent turns only: every one is resent on every round, and older
-        # ones cost latency far more often than they change an answer.
+        # Only recent turns; they're resent every round.
         for m in _store.get_messages(conversation_id)[-ASSISTANT_HISTORY_MESSAGES:]
     ]
 
@@ -145,10 +132,7 @@ def message(req: MessageRequest) -> StreamingResponse:
     catalogue = _catalogue_keys()
 
     def stream() -> Iterator[str]:
-        # The turn is blocking, so it runs on a worker while this generator
-        # drains status lines. Without that the panel would sit silent through
-        # the slowest part of the request, which is exactly the part worth
-        # narrating.
+        # The turn blocks, so run it on a worker thread and stream status lines from here.
         events: queue.Queue = queue.Queue()
         box: dict[str, Any] = {}
 
@@ -199,8 +183,7 @@ def message(req: MessageRequest) -> StreamingResponse:
                 "message_id": message_id,
                 "actions": result.actions,
                 "citations": result.citations,
-                # Measured on the server, request in to answer out, so latency
-                # claims can be checked rather than asserted.
+                # Server-side timing, request to answer.
                 "timing": {
                     "total_ms": round((time.perf_counter() - started) * 1000),
                     "rounds": result.rounds,
@@ -212,7 +195,6 @@ def message(req: MessageRequest) -> StreamingResponse:
     return StreamingResponse(
         stream(),
         media_type="text/event-stream",
-        # Without this an intermediate proxy may buffer the whole response and
-        # the status lines all arrive at once, after they stopped being useful.
+        # Stop proxies from buffering the stream.
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

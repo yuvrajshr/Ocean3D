@@ -1,22 +1,16 @@
 /**
- * The assistant's bridge into app state: what it is told, and where its actions go.
+ * Connects the assistant to app state.
  *
- * Three jobs, moved out of App.tsx so they sit in one place with one reason to
- * change:
+ * 1. State out: each turn the backend gets the state of all three views, so it
+ *    can validate actions against the current view (and the next one after a
+ *    switch).
+ * 2. Actions in, routed by scope: map actions go to the map reducer and layer
+ *    stack, globe actions to the clock and float selection, chunk actions to
+ *    the chunk view's controller.
+ * 3. Undo: a snapshot of every view before a batch is applied.
  *
- *   1. **State out.** Every turn the backend receives all three views — map,
- *      globe and chunk — so it can validate an action against the view on screen
- *      and, after a switch mid-turn, against the next one.
- *   2. **Actions in, routed by scope.** A validated action carries the view it
- *      was validated for. Map actions reach the map reducer and the layer stack,
- *      globe actions the scenario clock and the float selection, chunk actions
- *      the chunk view's own controller — and never anywhere else.
- *   3. **Undo.** A snapshot of every view, taken before a batch is applied.
- *
- * Everything reads the latest app state through a ref. The panel calls these
- * after an answer has streamed in, seconds after the render that created them;
- * a closure over that render's state would apply an action to a stale layer
- * stack and quietly undo whatever the reader changed while they waited.
+ * Everything reads the latest state through a ref, since actions are applied
+ * seconds after the render that created these callbacks.
  */
 
 import { useCallback, useLayoutEffect, useMemo, useRef, type Dispatch } from "react";
@@ -42,7 +36,7 @@ import {
   type ChunkStatePayload,
 } from "./chunkActions";
 
-/** What the backend is told each turn. Mirrors ScreenState in assistant/tools.py. */
+/** What the backend gets each turn. Same as ScreenState in assistant/tools.py. */
 export interface ScreenStatePayload {
   view: "map" | "globe" | "chunk";
   map: {
@@ -62,7 +56,7 @@ export interface ScreenStatePayload {
   chunk: ChunkStatePayload;
 }
 
-/** The label and readout in the panel header: which view the assistant acts on. */
+/** Header label and readout: which view the assistant acts on. */
 export interface AssistantScopeLabel {
   view: string;
   detail: string;
@@ -73,17 +67,17 @@ export interface AssistantBridgeDeps {
   handleView: (next: AppView) => void;
   map: MapState;
   dispatchMap: Dispatch<MapAction>;
-  /** The map's CSS-pixel size, for fitting a region to it. */
+  /** Map size in CSS pixels, for fitting a region. */
   mapSize: () => { width: number; height: number };
   layerStack: LayerStack;
-  /** Sets the mirror AND hands the side panel the stack (the §1c trap-1 seam). */
+  /** Sets the mirror and hands the side panel the new stack. */
   pushLayerStack: (stack: LayerStack) => void;
   scenario: Scenario | null;
   timeIndex: number;
   setTimeIndex: (index: number) => void;
   selected: PlatformSummary | null;
   setSelected: (platform: PlatformSummary | null) => void;
-  /** Floats reporting at the globe's date — what the reader can see and pick. */
+  /** Floats reporting at the globe's date. */
   reportingFloats: PlatformSummary[];
   instruments: InstrumentList | null;
   chunkBbox: Bbox;
@@ -111,7 +105,7 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
   const chunkRef = useRef<ChunkController | null>(null);
   const queueRef = useRef(new ChunkActionQueue());
 
-  /** ChunkView registers itself once its engine is ready, and unregisters on unmount. */
+  /** ChunkView registers when its engine is ready and unregisters on unmount. */
   const registerChunk = useCallback((controller: ChunkController | null) => {
     chunkRef.current = controller;
     if (controller) queueRef.current.drain(controller);
@@ -130,8 +124,7 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
     const floats = [...new Set(d.reportingFloats.map((p) => p.platform_id))];
 
     return {
-      // The water column is unreachable (next_session.md §0); a stray "column"
-      // is answered as the map rather than as a view the backend does not know.
+      // The water column isn't reachable, so treat "column" as the map.
       view: d.view === "globe" || d.view === "chunk" ? d.view : "map",
       map: {
         layers: d.layerStack.keys.map((key) => {
@@ -164,8 +157,8 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
       },
       chunk:
         chunkRef.current?.getState() ??
-        // Not open: describe the chunk as it would open, so a switch mid-turn
-        // is validated against the view the reader is about to see.
+        // Chunk not open: describe it as it would open, so a mid-turn switch validates
+        // against what the user is about to see.
         describeChunkSpec(DEFAULT_SPEC, CHUNK_TIMES, d.chunkBbox, false),
     };
   }, []);
@@ -208,8 +201,7 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
         d.dispatchMap({ type: "time/set", time: action.time });
         return stack;
       case "set_depth": {
-        // The index into the active layer's own levels — the same thing the
-        // map's depth ruler dispatches — not the hidden water column's ruler.
+        // Index into the active layer's own levels, same as the map's depth ruler.
         const active = activeLayer(d.map);
         if (active) {
           d.dispatchMap({ type: "layer/patch", id: active.id, patch: { depthIndex: action.depth_index } });
@@ -217,7 +209,7 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
         return stack;
       }
       case "zoom_to_region": {
-        // Fit the region to the map: zoom is CSS pixels per degree.
+        // Fit the region to the map (zoom is CSS pixels per degree).
         const [south, north] = action.lat_range;
         const [west, east] = action.lon_range;
         const { width, height } = d.mapSize();
@@ -239,7 +231,7 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
     }
   };
 
-  /** Apply a batch of actions, returning the state as it was immediately before. */
+  /** Apply a batch of actions and return the state from just before. */
   const applyActions = useCallback((actions: AssistantAction[]): AppSnapshot | undefined => {
     if (actions.length === 0) return undefined;
     const before = snapshot();
@@ -269,8 +261,8 @@ export function useAssistantBridge(deps: AssistantBridgeDeps) {
           }
           break;
         case "chunk":
-          // Straight to the chunk if it is open; otherwise it waits for the
-          // chunk this same batch just opened to register.
+          // Send straight to the chunk if it's open, otherwise it waits for the chunk this
+          // batch just opened.
           if (chunkRef.current) chunkRef.current.apply(action);
           else queueRef.current.push(action);
           break;

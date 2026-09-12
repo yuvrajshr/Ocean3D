@@ -1,13 +1,7 @@
 /**
- * Named ocean regions mapped to coordinate bounding boxes.
- *
- * The chunk view snaps every click to a 5°×5° tile. This module resolves that
- * tile's centre to a human-readable region name — "Bay of Bengal" rather than
- * "10°N–15°N, 85°E–90°E".
- *
- * Regions are ordered most-specific-first so that a tile in the Andaman Sea is
- * not swallowed by the broader "Bay of Bengal" or "North Indian Ocean" entries.
- * The first match wins.
+ * Region names for chunk tiles, e.g. "Bay of Bengal" instead of
+ * "10°N–15°N, 85°E–90°E". The most specific region is listed first, and the
+ * first match wins.
  */
 
 import type { Bbox } from "./loader";
@@ -20,13 +14,9 @@ interface OceanRegion {
   latMax: number;
 }
 
-/**
- * Ordered most-specific → least-specific.  The lookup returns the first region
- * whose box contains the tile centre, so narrow seas must come before the ocean
- * basin they sit inside.
- */
+/** Most specific first: smaller seas have to come before the basins around them. */
 const REGIONS: OceanRegion[] = [
-  // ---- Narrow seas & gulfs (most specific) ----
+  // --- Seas and gulfs ---
   { name: "Gulf of Aden",         lonMin:  43, lonMax:  51, latMin:  11, latMax:  15 },
   { name: "Gulf of Oman",         lonMin:  56, lonMax:  62, latMin:  22, latMax:  27 },
   { name: "Persian Gulf",         lonMin:  48, lonMax:  57, latMin:  24, latMax:  31 },
@@ -35,7 +25,7 @@ const REGIONS: OceanRegion[] = [
   { name: "Strait of Malacca",    lonMin:  98, lonMax: 105, latMin:   0, latMax:   8 },
   { name: "Andaman Sea",          lonMin:  92, lonMax: 100, latMin:   5, latMax:  18 },
 
-  // ---- Medium basins ----
+  // --- Basins ---
   { name: "Arabian Sea",          lonMin:  50, lonMax:  77, latMin:   5, latMax:  25 },
   { name: "Bay of Bengal",        lonMin:  77, lonMax: 100, latMin:   5, latMax:  23 },
   { name: "South China Sea",      lonMin: 100, lonMax: 121, latMin:   0, latMax:  23 },
@@ -50,7 +40,7 @@ const REGIONS: OceanRegion[] = [
   { name: "Tasman Sea",           lonMin: 150, lonMax: 175, latMin: -47, latMax: -24 },
   { name: "Philippine Sea",       lonMin: 120, lonMax: 140, latMin:   5, latMax:  24 },
 
-  // ---- Broad ocean basins (least specific) ----
+  // --- Broad ocean areas ---
   { name: "Equatorial Indian Ocean", lonMin:  40, lonMax: 100, latMin: -10, latMax:   5 },
   { name: "North Indian Ocean",      lonMin:  40, lonMax: 100, latMin:   5, latMax:  25 },
   { name: "South Indian Ocean",      lonMin:  20, lonMax: 120, latMin: -60, latMax: -10 },
@@ -64,12 +54,7 @@ const REGIONS: OceanRegion[] = [
   { name: "Arctic Ocean",            lonMin:-180, lonMax: 180, latMin:  60, latMax:  90 },
 ];
 
-/**
- * Resolve a 5°×5° tile bbox to a human-readable ocean region name.
- *
- * Uses the tile's centre point and returns the first matching region.
- * Falls back to the raw coordinate extent string so the breadcrumb is never blank.
- */
+/** Region name for a tile, based on its centre. Falls back to the coordinates. */
 export function resolveRegionName(bbox: Bbox): string {
   const centLon = (bbox[0] + bbox[2]) / 2;
   const centLat = (bbox[1] + bbox[3]) / 2;
@@ -85,6 +70,6 @@ export function resolveRegionName(bbox: Bbox): string {
     }
   }
 
-  // Fallback: raw extent — always computable, never blank.
+  // Fallback: the coordinates.
   return `${bbox[1]}°N–${bbox[3]}°N, ${bbox[0]}°E–${bbox[2]}°E`;
 }

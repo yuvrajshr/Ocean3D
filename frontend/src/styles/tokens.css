@@ -1,24 +1,19 @@
-/* ============================================================================
-   tokens.css — INCOIS 3D Ocean Data Visualization
-   Derived directly from context.md §5.1. This file is downstream of that
-   section: do not add a color, radius, shadow or type role here without
-   amending §5.1 first (CLAUDE.md hard rules).
-
-   Two color systems live in this project and never mix:
-     1. CHROME  — the six named tokens below. Defined here.
-     2. DATA    — perceptually-uniform cmocean ramps. Defined in
-                  src/viz/colormaps.ts, because the shaders need them as
-                  lookup tables. No token encodes a value; no colormap color
-                  appears in the chrome.
-   ========================================================================== */
+/*
+ * tokens.css: design tokens for the whole app.
+ *
+ * Two colour systems that never mix:
+ *   1. UI colours: the tokens in this file.
+ *   2. Data colours: cmocean ramps in src/viz/colormaps.ts (the shaders need
+ *      them as lookup tables). No token encodes a value, and no colormap colour
+ *      is used for UI.
+ */
 
 :root {
-  /* ══════════════════════════════════════════════════════════════════════════
-     THEME C: WARM MARITIME CHRONOMETER & COPPER TOKENS
-     Preserving Swiss 0px Grid & Geometry, Elevated with Warm Maritime Darkware
-     Palette: #15161A (Ground) · #1C1D22 (Surface) · #2E303A (Border)
-              #F4EFE6 (Parchment Ink) · #9698A3 (Muted Stone) · #E59858 (Copper)
-     ══════════════════════════════════════════════════════════════════════════ */
+  /*
+   * Console palette: warm dark greys with a copper accent, square corners.
+   * Ground #15161A, surface #1C1D22, border #2E303A, text #F4EFE6,
+   * muted #9698A3, accent #E59858.
+   */
   --rt-ground: #15161a;
   --rt-surface: #1c1d22;
   --rt-surface-hover: #262830;
@@ -35,20 +30,20 @@
   --rt-copper-deep: #d97736;
   --rt-copper-glow: rgba(229, 152, 88, 0.2);
 
-  /* Semantic mappings for seamless component compatibility */
-  --rt-black: #f4efe6;          /* Primary text ink (warm parchment white) */
-  --rt-white: #1c1d22;          /* Primary surface (warm basalt card) */
-  --rt-gray: #15161a;           /* Secondary ground (topbar/timeline base) */
-  --rt-gray-hover: #262830;     /* Surface hover */
-  --rt-gray-active: #2f313c;    /* Inset active */
-  --rt-mid: #9698a3;            /* Secondary muted text */
-  --rt-faint: #606370;          /* Faint text */
-  --rt-red: #e59858;            /* THE SIGNATURE COPPER ACCENT RULE */
+  /* Aliases used by the components */
+  --rt-black: #f4efe6;          /* text */
+  --rt-white: #1c1d22;          /* surface */
+  --rt-gray: #15161a;           /* top bar / timeline background */
+  --rt-gray-hover: #262830;     /* hover */
+  --rt-gray-active: #2f313c;    /* active */
+  --rt-mid: #9698a3;            /* muted text */
+  --rt-faint: #606370;          /* faint text */
+  --rt-red: #e59858;            /* accent (copper) */
 
   --rt-font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --rt-font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
-  /* Modular Scale (Perfect Fourth ×1.333) */
+  /* Type scale (×1.333) */
   --rt-text-xs: 9.5px;
   --rt-text-sm: 10.7px;
   --rt-text-base: 14px;
@@ -56,7 +51,7 @@
   --rt-text-lg: 25px;
   --rt-text-xl: 33px;
 
-  /* Spacing Scale (8px base) */
+  /* Spacing (8px base) */
   --rt-space-1: 4px;
   --rt-space-2: 8px;
   --rt-space-3: 12px;
@@ -65,29 +60,21 @@
   --rt-space-8: 32px;
   --rt-space-12: 48px;
 
-  /* Borders & Radius */
+  /* Borders and radius */
   --rt-border: 1px solid var(--rt-border-color, #2e303a);
   --rt-border-light: 1px solid var(--rt-border-color, #2e303a);
   --rt-border-subtle: 1px solid var(--rt-border-color, #2e303a);
   --rt-border-red: 3px solid var(--rt-copper, #e59858);
   --rt-radius: 0px;
 
-  /* --- The six tokens (§5.1). Channels are exposed so alpha variants below
-         stay derived from these exact values rather than re-picked by eye. --- */
+  /* --- Base colours. RGB channels so the alpha variants below use the same values. --- */
   --abyss-rgb: 2 4 8;
-  /* #020408  deepest obsidian canvas       */
   --thermocline-rgb: 12 20 34;
-  /* #0C1422  sleek dark surfaces & panels  */
   --current-rgb: 56 189 248;
-  /* #38BDF8  electric cyan accent          */
   --bioluminescence-rgb: 16 185 129;
-  /* #10B981  live data telemetry emerald   */
   --advisory-rgb: 245 158 11;
-  /* #F59E0B  mission amber / cached state  */
   --foam-rgb: 248 250 252;
-  /* #F8FAFC  ink primary on dark           */
   --linear-blue-rgb: 94 106 210;
-  /* #5E6AD2  Linear signature lavender-blue */
 
   --abyss: rgb(var(--abyss-rgb));
   --thermocline: rgb(var(--thermocline-rgb));
@@ -97,31 +84,25 @@
   --foam: rgb(var(--foam-rgb));
   --linear-blue: rgb(var(--linear-blue-rgb));
 
-  /* --- Depth as the organizing metaphor (§5.1, Principle 1).
-         The chrome gets literally deeper toward the edges of the console. --- */
+  /* --- Surfaces get darker toward the edges of the console. --- */
   --surface-viewport: var(--abyss);
-  /* #020408 */
   --surface-panel: #080d16;
-  /* #080D16 */
   --surface-raised: var(--thermocline);
-  /* #0C1422 */
   --surface-inset: #050810;
-  /* #050810 */
 
-  /* --- Hairline dividers: Linear-style precision borders --- */
+  /* --- Dividers --- */
   --hairline: #1e2b42;
   --hairline-subtle: #162032;
   --hairline-strong: #2d3f5e;
   --hairline-glow: rgba(56, 189, 248, 0.4);
 
-  /* --- Text roles --- */
+  /* --- Text --- */
   --text-primary: var(--foam);
   --text-muted: #94a3b8;
   --text-faint: #64748b;
   --text-on-accent: #020408;
 
-  /* --- Interactive states. Every control needs hover / focus-visible /
-         active (CLAUDE.md Step 6). --- */
+  /* --- Interactive states (hover / focus-visible / active) --- */
   --control-idle: transparent;
   --control-hover: rgb(var(--current-rgb) / 0.18);
   --control-active: rgb(var(--current-rgb) / 0.34);
@@ -130,26 +111,24 @@
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 
-  /* --- Radius: a single 2px value, reserved for interactive controls only.
-         Panels and instrument housings are square (§5.1). --- */
+  /* --- Radius: 2px, for controls only. Panels are square. --- */
   --radius-control: 2px;
 
-  /* --- Elevation: thermocline-tinted, never black (CLAUDE.md Step 6).
-         Only the floating profile panel is allowed to use this. --- */
+  /* --- Elevation: tinted shadow, not black. Only for the floating profile panel. --- */
   --shadow-floating:
     0 1px 0 rgb(var(--thermocline-rgb) / 0.9),
     0 8px 24px -6px rgb(var(--thermocline-rgb) / 0.7),
     0 2px 8px -2px rgb(var(--abyss-rgb) / 0.8);
 
-  /* --- Z-planes. Exactly three. Nothing introduces a fourth (CLAUDE.md
-         Step 6): the viewport is base, docked panels are one level up, the
-         profile panel is the floating layer. --- */
+  /* --- Z layers: viewport, docked panels, floating panel. --- */
   --z-viewport: 0;
   --z-console: 10;
   --z-floating: 20;
 
-  /* --- Type. IBM Plex Sans for UI, IBM Plex Mono for literal readouts ONLY
-         (depth, lat/lon, timestamps, values, platform IDs). §5.1. --- */
+  /*
+   * --- Type: IBM Plex Sans for UI, IBM Plex Mono for readouts (depth, lat/lon,
+   * times, values, platform IDs). ---
+   */
   --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-readout: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas,
@@ -159,25 +138,24 @@
   --weight-medium: 500;
   --weight-semibold: 600;
 
-  /* Type scale. Small and dense: this is a console, not a landing page. */
+  /* Type sizes, small and dense. */
   --size-readout-lg: 1.25rem;
-  /* 20px — the one big number, e.g. live depth  */
+  /* 20px, the one big number (e.g. live depth) */
   --size-title: 0.9375rem;
-  /* 15px — app title                            */
+  /* 15px, app title */
   --size-label: 0.8125rem;
-  /* 13px — control labels                       */
+  /* 13px, control labels */
   --size-readout: 0.75rem;
-  /* 12px — tick labels, values, platform IDs    */
+  /* 12px, ticks, values, platform IDs */
   --size-caption: 0.6875rem;
-  /* 11px — Explore-mode captions, units         */
+  /* 11px, captions and units */
 
   --leading-tight: 1.2;
   --leading-body: 1.5;
-  /* Mono readouts get slight negative tracking so columns of digits align
-     optically at small sizes. Sans gets none — no tracked-out eyebrows. */
+  /* Slight negative tracking on mono readouts so digits line up at small sizes. */
   --tracking-readout: -0.01em;
 
-  /* --- Spacing. 4px base; instrument panels are dense, the viewport is not. */
+  /* --- Spacing, 4px base. --- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -185,15 +163,15 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  /* --- Motion. Exactly one orchestrated moment: the globe→dive entry
-         (§5.1, Principle 3). Everything else is instant. These durations are
-         for state feedback only — never for entrances. --- */
+  /*
+   * --- Motion: short state transitions only. The entry camera move is the only
+   * real animation. ---
+   */
   --transition-state: 90ms ease-out;
   --entry-duration: 4200ms;
 }
 
-/* The single bold gesture is the only animation in the product, and it is
-   fully skipped for users who ask for reduced motion (§5.4). */
+/* The entry animation is skipped entirely with reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-state: 0ms;
@@ -210,9 +188,7 @@
   }
 }
 
-/* ============================================================================
-   Base
-   ========================================================================== */
+/* --- Base --- */
 
 *,
 *::before,
@@ -237,11 +213,10 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
-  /* the console owns the viewport; the page never scrolls */
+  /* the console fills the viewport; the page doesn't scroll */
 }
 
-/* Every focusable control shows a bioluminescence ring on the dark ground
-   (§5.4). Applied globally so no control can ship without it. */
+/* Focus ring on every focusable control, applied globally. */
 :focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
@@ -251,8 +226,7 @@ body {
   outline: none;
 }
 
-/* Utility classes for the two type roles. A readout reads out; a label
-   labels; nothing does double duty (§5.3). */
+/* Utility classes for the two text roles: readouts and labels. */
 .readout {
   font-family: var(--font-readout);
   font-size: var(--size-readout);
@@ -267,8 +241,7 @@ body {
   color: var(--text-muted);
 }
 
-/* Screen-reader-only, for pairing icons/labels with color-coded hazard state
-   so color is never the sole encoding (§5.4). */
+/* Screen-reader-only text, so hazard states aren't shown by colour alone. */
 .sr-only {
   position: absolute;
   width: 1px;

@@ -1,26 +1,11 @@
 /**
- * ToolDock Component.
- *
- * Right-hand floating tool dock matching modern oceanographic GIS tools:
- * - Points Tool (Functional): Lists real in-situ Argo float profiles with coordinates, depth, and 1-click Graph inspection
- * - Lines Tool (Representational): Ocean transects cross-section analysis
- * - Areas Tool (Representational): Marine bounding box spatial averages
- * - Import Tool (Representational): Custom dataset dropzone (.nc / .csv / .geojson)
- * - Settings Tool (Representational): Display settings and 2D/3D projection toggle
- * - Projection Toggle: Quick 2D/3D toggle
+ * Right-hand tool dock (not currently rendered). Only the Points tool works: it
+ * lists the Argo floats with a button to open the profile graph.
  */
 
 import { useEffect, useRef, useState } from "react";
 import {
   MapPin,
-  /*
-  Ruler,
-  Square,
-  UploadCloud,
-  Settings2,
-  Clock,
-  FlaskConical,
-  */
   Globe2,
   Map,
   Activity,
@@ -65,7 +50,7 @@ export function ToolDock({
   showGrid: _externalShowGrid,
   onToggleGrid: _onToggleGrid,
 }: ToolDockProps) {
-  // Internal state fallbacks if not supplied externally
+  // Internal state when not controlled from outside.
   const [internalTool, setInternalTool] = useState<ToolMode>("none");
   const [internalProj, setInternalProj] = useState<ProjectionMode>("3d");
   const autoCloseTimerRef = useRef<number | null>(null);
@@ -80,7 +65,7 @@ export function ToolDock({
     }
   }, [activeTool]);
 
-  // Clear auto-close timer on unmount
+  // Clear the auto-close timer on unmount.
   useEffect(() => {
     return () => {
       if (autoCloseTimerRef.current !== null) {
@@ -90,7 +75,6 @@ export function ToolDock({
   }, []);
 
   const handleSelectTool = (tool: ToolMode) => {
-    // Clear any running auto-close timer
     if (autoCloseTimerRef.current !== null) {
       window.clearTimeout(autoCloseTimerRef.current);
       autoCloseTimerRef.current = null;
@@ -104,7 +88,7 @@ export function ToolDock({
       setInternalTool(next);
     }
 
-    // Auto-close representational tools after 2 seconds (lines, areas, import, settings)
+    // Placeholder tools close again after 2 seconds.
     if (next === "lines" || next === "areas" || next === "import" || next === "settings") {
       autoCloseTimerRef.current = window.setTimeout(() => {
         if (externalOnSelectTool) {
@@ -128,7 +112,7 @@ export function ToolDock({
   return (
     <div id="ocean3d-tool-dock">
       <div className="tool-dock-bar">
-        {/* Points Tool (Functional for Argo float points) */}
+        {/* points tool */}
         <button
           type="button"
           id="btn-tool-points"
@@ -143,56 +127,10 @@ export function ToolDock({
           )}
         </button>
 
-        {/* Temporarily commented out: lines, areas, import, settings */}
-        {/*
-        <button
-          type="button"
-          id="btn-tool-lines"
-          onClick={() => handleSelectTool("lines")}
-          className={`tool-dock-btn ${activeTool === "lines" ? "tool-dock-btn--active" : ""}`}
-          title="Transect Line Tool (draw ocean cross-sections)"
-        >
-          <Ruler className="w-5 h-5" style={{ width: 20, height: 20 }} />
-          <span className="tool-dock-btn-label">Lines</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-tool-areas"
-          onClick={() => handleSelectTool("areas")}
-          className={`tool-dock-btn ${activeTool === "areas" ? "tool-dock-btn--active" : ""}`}
-          title="Area Polygon Tool (calculate regional marine averages)"
-        >
-          <Square className="w-5 h-5" style={{ width: 20, height: 20 }} />
-          <span className="tool-dock-btn-label">Areas</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-tool-import"
-          onClick={() => handleSelectTool("import")}
-          className={`tool-dock-btn ${activeTool === "import" ? "tool-dock-btn--active" : ""}`}
-          title="Import custom GeoJSON, NetCDF or CSV"
-        >
-          <UploadCloud className="w-5 h-5" style={{ width: 20, height: 20 }} />
-          <span className="tool-dock-btn-label">Import</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-tool-settings"
-          onClick={() => handleSelectTool("settings")}
-          className={`tool-dock-btn ${activeTool === "settings" ? "tool-dock-btn--active" : ""}`}
-          title="Display settings, 2D/3D projection, grid lines"
-        >
-          <Settings2 className="w-5 h-5" style={{ width: 20, height: 20 }} />
-          <span className="tool-dock-btn-label">Settings</span>
-        </button>
-        */}
 
         <div className="tool-dock-divider" />
 
-        {/* Quick Projection Mode Toggle (2D / 3D Globe) */}
+        {/* 2D / 3D toggle */}
         <button
           type="button"
           onClick={handleToggleProj}
@@ -210,11 +148,11 @@ export function ToolDock({
         </button>
       </div>
 
-      {/* Floating Side Drawer for Active Tool */}
+      {/* tool drawer */}
       <div
         className={`tool-dock-drawer ${displayedTool === "points" ? "tool-dock-drawer--points" : ""} ${activeTool !== "none" ? "tool-dock-drawer--open" : "tool-dock-drawer--closed"}`}
       >
-        {/* POINTS DRAWER (FUNCTIONAL & EXPANDED) */}
+        {/* points drawer */}
         {displayedTool === "points" && (
             <div>
               <div className="tool-dock-drawer-header">
@@ -270,173 +208,6 @@ export function ToolDock({
             </div>
           )}
 
-          {/* Commented out drawers: lines, areas, import, settings */}
-          {/*
-          {activeTool === "lines" && (
-            <div>
-              <div className="tool-dock-drawer-header">
-                <span className="tool-dock-drawer-title">
-                  <Ruler className="w-4 h-4" style={{ width: 16, height: 16, color: "#22d3ee" }} />
-                  Ocean Transects
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tool-dock-testing-badge">
-                    <FlaskConical style={{ width: 11, height: 11, color: "#f59e0b" }} />
-                    Under Testing
-                  </span>
-                  <span className="tool-dock-timer-badge">
-                    <Clock style={{ width: 10, height: 10 }} /> 2s
-                  </span>
-                </div>
-              </div>
-              <p className="tool-dock-drawer-desc">
-                Draw a cross-section line across ocean basins (e.g. Bay of Bengal equatorial transect) to inspect vertical depth profiles.
-              </p>
-              <div className="tool-dock-stat-card">
-                <div>Sample Transect: Bay of Bengal 15°N</div>
-                <div>Length: 1,240 km</div>
-                <div>Thermocline Depth: ~85 m</div>
-              </div>
-            </div>
-          )}
-
-          {activeTool === "areas" && (
-            <div>
-              <div className="tool-dock-drawer-header">
-                <span className="tool-dock-drawer-title">
-                  <Square className="w-4 h-4" style={{ width: 16, height: 16, color: "#22d3ee" }} />
-                  Regional Bounding Box
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tool-dock-testing-badge">
-                    <FlaskConical style={{ width: 11, height: 11, color: "#f59e0b" }} />
-                    Under Testing
-                  </span>
-                  <span className="tool-dock-timer-badge">
-                    <Clock style={{ width: 10, height: 10 }} /> 2s
-                  </span>
-                </div>
-              </div>
-              <p className="tool-dock-drawer-desc">
-                Select a bounding box area to compute spatial mean, heat content anomalies, and cold wake signatures.
-              </p>
-              <div className="tool-dock-stat-card">
-                <div>Selected: Cyclone Phailin Box</div>
-                <div>Extents: 5.0–23.0°N, 78.0–95.0°E</div>
-                <div>Area: ~3,180,000 km²</div>
-              </div>
-            </div>
-          )}
-
-          {activeTool === "import" && (
-            <div>
-              <div className="tool-dock-drawer-header">
-                <span className="tool-dock-drawer-title">
-                  <UploadCloud className="w-4 h-4" style={{ width: 16, height: 16, color: "#22d3ee" }} />
-                  Import Marine Data
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tool-dock-testing-badge">
-                    <FlaskConical style={{ width: 11, height: 11, color: "#f59e0b" }} />
-                    Under Testing
-                  </span>
-                  <span className="tool-dock-timer-badge">
-                    <Clock style={{ width: 10, height: 10 }} /> 2s
-                  </span>
-                </div>
-              </div>
-              <p className="tool-dock-drawer-desc">
-                Upload in situ drifter tracks, glider profiles, or NetCDF/GeoJSON rasters.
-              </p>
-              <label className="tool-dock-dropzone">
-                <UploadCloud className="w-6 h-6" style={{ width: 24, height: 24, color: "#94a3b8", marginBottom: 4 }} />
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "#22d3ee" }}>
-                  Click or Drag NetCDF / GeoJSON / CSV
-                </span>
-                <span style={{ fontSize: "9px", color: "#64748b", marginTop: 2, fontFamily: "var(--font-readout, monospace)" }}>
-                  Supports Argo floats, CTD casts, satellite tracks
-                </span>
-                <input
-                  type="file"
-                  style={{ display: "none" }}
-                  accept=".csv,.geojson,.json,.nc"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      alert(`Imported "${e.target.files[0].name}" successfully! Processed spatial coordinates.`);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          )}
-
-          {activeTool === "settings" && (
-            <div>
-              <div className="tool-dock-drawer-header">
-                <span className="tool-dock-drawer-title">
-                  <Settings2 className="w-4 h-4" style={{ width: 16, height: 16, color: "#22d3ee" }} />
-                  Visualization Settings
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tool-dock-testing-badge">
-                    <FlaskConical style={{ width: 11, height: 11, color: "#f59e0b" }} />
-                    Under Testing
-                  </span>
-                  <span className="tool-dock-timer-badge">
-                    <Clock style={{ width: 10, height: 10 }} /> 2s
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ color: "#cbd5e1" }}>Map Projection:</span>
-                  <button
-                    type="button"
-                    onClick={handleToggleProj}
-                    style={{
-                      padding: "4px 10px",
-                      background: "#1e293b",
-                      border: "1px solid #334155",
-                      color: "#22d3ee",
-                      borderRadius: 4,
-                      fontFamily: "var(--font-readout, monospace)",
-                      fontWeight: 700,
-                      fontSize: 11,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {projectionMode === "2d" ? "2D Flat Map" : "3D Spherical Globe"}
-                  </button>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ color: "#cbd5e1" }}>Grid Lines:</span>
-                  <button
-                    type="button"
-                    onClick={handleToggleGridInternal}
-                    style={{
-                      padding: "3px 8px",
-                      borderRadius: 4,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      border: 0,
-                      cursor: "pointer",
-                      background: showGrid ? "#06b6d4" : "#1e293b",
-                      color: showGrid ? "#020617" : "#94a3b8",
-                    }}
-                  >
-                    {showGrid ? "ON" : "OFF"}
-                  </button>
-                </div>
-
-                <div style={{ paddingTop: 8, borderTop: "1px solid #1e293b", fontSize: 10, color: "#64748b" }}>
-                  Ocean 3D Platform · INCOIS MoES SIH 2026
-                </div>
-              </div>
-            </div>
-          )}
-          */}
         </div>
     </div>
   );

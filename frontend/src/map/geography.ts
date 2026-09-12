@@ -1,20 +1,11 @@
 /**
  * Coastlines and national borders.
  *
- * These are the only lines on the map that are not measured. They are reference
- * geography — the thing that lets a reader say "that warm tongue is off Somalia"
- * rather than "that warm tongue is somewhere". context.md §5.1 Principle 7 bars
- * *decoration* on a data surface, not orientation; a coastline is the same class
- * of mark as the graticule, which the map already draws.
+ * Only for orientation (so you can say "that warm patch is off Somalia"). They're
+ * strokes only; the land fill still comes from the data's no-data mask, so a
+ * coastline can never hide or invent an ocean cell.
  *
- * They are strokes only. The filled land still comes from the data's own no-data
- * mask (§10), so a coastline can never hide an ocean pixel or invent one: the
- * mask governs what is true, these lines govern what is legible. Where the two
- * disagree by a fraction of a cell, the fill wins and the line sits just inside
- * or outside it — visible only when zoomed well in.
- *
- * Natural Earth, public domain, bundled in `public/` by
- * `scripts/fetch-geography.mjs` because the deployment target cannot call out.
+ * Natural Earth (public domain), bundled in public/ by scripts/fetch-geography.mjs.
  */
 
 import type { MapTransform } from "./projection";
@@ -31,11 +22,8 @@ const cache = new Map<GeographyScale, Geography>();
 const inflight = new Map<GeographyScale, Promise<Geography | null>>();
 
 /**
- * Which level of detail the current zoom can actually resolve.
- *
- * 110m is right until a coastline starts looking angular; past that the extra
- * 1.1 MB buys real detail. Below the threshold it would just be more segments
- * than the screen has pixels to show.
+ * Level of detail for the current zoom: 110m until coastlines start looking
+ * angular, then 50m.
  */
 export function scaleFor(zoom: number, worldFitZoom: number): GeographyScale {
   return zoom > worldFitZoom * 2.5 ? "50m" : "110m";
@@ -55,7 +43,7 @@ export async function loadGeography(scale: GeographyScale): Promise<Geography | 
       cache.set(scale, geo);
       return geo;
     } catch {
-      // The map is entirely usable without it; the field is the subject.
+      // The map works fine without it.
       return null;
     } finally {
       inflight.delete(scale);
@@ -71,15 +59,11 @@ function strokeLines(
   t: MapTransform,
   shift: number,
 ): void {
-  // CSS pixels, from the transform — NOT `ctx.canvas.width`, which is the
-  // device-pixel backing store. The context is scaled by devicePixelRatio, so
-  // every coordinate below is a CSS pixel; mixing the two made `tear` twice as
-  // large as the frame on a HiDPI display, so a coastline crossing the
-  // antimeridian was never split and drew a stripe straight across the map.
-  // `t.size` is the same value `lonToX`/`latToY` project into, by construction.
+  // Use CSS pixels from the transform, not ctx.canvas.width (device pixels). The
+  // context is scaled by devicePixelRatio, so mixing them broke the antimeridian
+  // check on HiDPI screens and coastlines drew straight across the map.
   const { width, height } = t.size;
-  // A line that jumps most of the frame in one step has crossed the
-  // antimeridian; drawing it would put a stripe straight across the map.
+  // A jump across most of the frame means it crossed the antimeridian; don't draw it.
   const tear = width * 0.5;
 
   for (const line of lines) {
@@ -89,7 +73,7 @@ function strokeLines(
       const x = t.lonToX(line[i]! + shift);
       const y = t.latToY(line[i + 1]!);
 
-      // Cheap reject: both this point and the last off the same edge.
+      // Skip segments where both points are off the same edge.
       const outside = x < -40 || x > width + 40 || y < -40 || y > height + 40;
       if (outside && (!pen || (prevX < -40 && x < -40) || (prevX > width + 40 && x > width + 40))) {
         pen = false;
@@ -111,24 +95,15 @@ function strokeLines(
 }
 
 export interface GeographyStyle {
-  /** Coastline: the boundary between the field and the land it stops at. */
+  /** Coastline colour. */
   coast: string;
   /**
-   * A dark sheath drawn under the coastline, one step wider.
-   *
-   * This is §5.1 Principle 8's casing, inverted. There the problem was a dark
-   * data mark lost against dark water, so the casing was `foam`. Here it is a
-   * light line lost against the bright end of a cmocean ramp — the tropics are
-   * near-yellow, and a 46% white stroke disappears into them while reading
-   * perfectly against the poles. A dark sheath separates the line from bright
-   * ocean; the light core separates it from near-black land. Together they hold
-   * on every background the field can produce.
-   *
-   * The casing encodes nothing, and it never tints the field: it is drawn on the
-   * basemap canvas, under the data, not over it.
+   * Dark casing drawn under the coastline, a bit wider. A light line alone vanishes
+   * against the bright (tropical) end of a colormap; with the casing it shows on
+   * any background. Drawn on the basemap canvas, under the data.
    */
   coastCasing: string;
-  /** National borders: fainter, so they never compete with the coast. */
+  /** National borders, fainter than the coast. */
   border: string;
   coastWidth: number;
   borderWidth: number;
@@ -140,12 +115,11 @@ export function drawGeography(
   t: MapTransform,
   style: GeographyStyle,
 ): void {
-  // The world repeats every 360 degrees, so each set is drawn three times; the
-  // copies that fall outside the frame are rejected per-point above.
+  // Draw each set three times (±360) for the wrapped world; off-screen copies are
+  // skipped above.
   const shifts = t.showsWholeWorld() ? [0] : [-360, 0, 360];
 
-  // Borders first, so a coastline is never overdrawn by a boundary that runs
-  // along it — many national borders follow rivers to the sea.
+  // Borders first so they don't draw over coastlines (many follow rivers to the sea).
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
@@ -157,7 +131,7 @@ export function drawGeography(
   ctx.setLineDash([4, 3.5]);
   ctx.stroke();
 
-  // The coast is stroked twice over one path: casing first, then core.
+  // Stroke the coast twice: casing, then core.
   ctx.beginPath();
   for (const shift of shifts) strokeLines(ctx, geo.coast, t, shift);
   ctx.setLineDash([]);

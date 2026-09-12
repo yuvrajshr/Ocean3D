@@ -1,16 +1,13 @@
-/**
- * Build identity — context.md §5.1 Principle 14.
- *
- * Theme C tokens only. The commit ids are literal readouts, so they are IBM
- * Plex Mono wherever they appear (§5.1), the same rule a platform id follows.
- * The alert's stripe is `advisory`, and it is never the only signal: the
- * sentence says what happened, and the stamp says "stale" in words.
+/*
+ * Build stamp and stale-build alert. Commit ids are mono. The alert has an
+ * amber stripe but always says what happened in words too.
  */
 
-/* ── The stamp ────────────────────────────────────────────────────────────
-   Bottom-right of the viewport, mirroring the map's pan/zoom readout on the
-   left. Beneath every panel in z-order: it is the least important thing on
-   the screen until someone asks which build they are on. */
+/*
+ * --- Stamp ---
+ * Bottom right of the viewport (the map's pan/zoom readout is bottom left).
+ * Below every panel.
+ */
 .build-stamp {
   position: absolute;
   right: var(--rt-space-4, 16px);
@@ -25,7 +22,7 @@
   pointer-events: auto;
 }
 
-/* One click selects the whole id, so it can be pasted into a message as-is. */
+/* Click selects the whole id so it can be copied. */
 .build-sha {
   user-select: all;
 }
@@ -34,9 +31,10 @@
   color: rgb(var(--advisory-rgb, 245 158 11));
 }
 
-/* ── The alert ────────────────────────────────────────────────────────────
-   A status line in the right-hand system corner, beside the Ask dock and
-   under the provenance chip. Above the map, below the assistant panel. */
+/*
+ * --- Alert ---
+ * Top right, next to the Ask dock. Above the map, below the assistant panel.
+ */
 .build-alert {
   position: absolute;
   top: var(--rt-space-4, 16px);
@@ -67,7 +65,7 @@
 .build-alert__text kbd {
   font-family: var(--rt-font-mono, var(--font-readout, ui-monospace, monospace));
   font-size: 0.92em;
-  /* A command or a commit id broken across lines stops being copyable as one. */
+  /* Keep commands and commit ids on one line so they copy cleanly. */
   white-space: nowrap;
 }
 
@@ -100,12 +98,12 @@
   outline-offset: -2px;
 }
 
-/* ── In the chunk view ─────────────────────────────────────────────────────
-   Both elements live in `.assistant-layer`, which spans the whole window in
-   that view (the console is concealed there). Unlike the console, the chunk
-   view's chrome is fixed rather than content-sized: `.chunk-time` is 20px off
-   the bottom and ~55px tall, and the header chips and camera tabs leave a clear
-   band across the top centre. */
+/*
+ * --- Chunk view ---
+ * Both elements are in .assistant-layer, which covers the whole window here.
+ * .chunk-time is 20px from the bottom and ~55px tall, and there's free space
+ * across the top centre.
+ */
 .assistant-layer--chunk .build-stamp {
   right: 20px;
   bottom: 84px;

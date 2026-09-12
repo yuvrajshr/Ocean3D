@@ -1,23 +1,15 @@
 /**
- * Download coastlines and national borders, and pack them small.
+ * Download coastlines and national borders and pack them small.
  *
- * Bundled into `public/` rather than fetched at runtime, for the same reason the
- * Blue Marble basemaps are: the deployment target cannot depend on outside
- * hosts. Run once; the output is committed.
+ * Bundled into public/ (committed) so the app doesn't depend on outside hosts.
  *
  *   node scripts/fetch-geography.mjs
  *
- * Two levels of detail. 110m is what the world view can actually resolve; 50m
- * is loaded only once you zoom past the point where 110m turns visibly angular.
- * Shipping only the fine one would mean drawing far more segments than the
- * screen can show on every pan.
+ * Two levels of detail: 110m for the world view, 50m once you zoom in. The output
+ * isn't GeoJSON: each line is a flat [lon, lat, lon, lat, ...] array rounded to 3
+ * decimals (~110 m), about a third of the size.
  *
- * The output is NOT GeoJSON. Each line becomes a flat [lon, lat, lon, lat, ...]
- * array with coordinates rounded to 3 decimals (~110 m, far finer than either
- * source), which drops the file to roughly a third of the GeoJSON size and needs
- * no parsing beyond JSON.parse.
- *
- * Source: Natural Earth via nvkelso/natural-earth-vector. Public domain.
+ * Source: Natural Earth (nvkelso/natural-earth-vector), public domain.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -40,7 +32,7 @@ const LEVELS = [
   },
 ];
 
-/** GeoJSON line geometries → flat coordinate arrays, rounded. */
+/** GeoJSON line geometries to flat, rounded coordinate arrays. */
 function flatten(geojson) {
   const out = [];
   const push = (coords) => {

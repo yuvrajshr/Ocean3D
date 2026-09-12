@@ -1,9 +1,7 @@
 """Integration tests against INCOIS ERDDAP.
 
-These deliberately hit the real server on first run and the local cache
-afterwards. They assert against values that were verified by hand before this
-code existed, so a silent change in shape, units or quality control fails here
-rather than in front of judges.
+These hit the real server on the first run and the local cache after that.
+The expected values were checked by hand.
 """
 
 from __future__ import annotations
@@ -17,9 +15,7 @@ from app.ingestion import erddap_argo, erddap_grid
 BAY_OF_BENGAL = {"lat_range": (5.0, 22.0), "lon_range": (80.0, 95.0)}
 
 
-# --------------------------------------------------------------------------
-# Gridded analysis
-# --------------------------------------------------------------------------
+# --- Gridded analysis ---
 
 def test_volume_has_expected_shape_and_axes() -> None:
     v = erddap_grid.fetch_volume(variable="TEMP", time="2013-10-10", **BAY_OF_BENGAL)
@@ -32,7 +28,7 @@ def test_volume_has_expected_shape_and_axes() -> None:
 
 
 def test_surface_temperature_is_physically_plausible() -> None:
-    """Bay of Bengal, October, 5 m: verified by hand as 28.23-29.87 C."""
+    """Bay of Bengal, October, 5 m: checked by hand as 28.23-29.87 C."""
     v = erddap_grid.fetch_volume(variable="TEMP", time="2013-10-10", **BAY_OF_BENGAL)
     surface = v.values[0]
     finite = surface[np.isfinite(surface)]
@@ -42,7 +38,7 @@ def test_surface_temperature_is_physically_plausible() -> None:
 
 
 def test_land_and_nodata_are_nan_not_zero() -> None:
-    """A fill value leaking through as 0.0 would render as ice-cold ocean."""
+    """A fill value showing up as 0.0 would look like ice-cold ocean."""
     v = erddap_grid.fetch_volume(variable="TEMP", time="2013-10-10", **BAY_OF_BENGAL)
     assert np.isnan(v.values).any(), "expected NaN where the analysis has no data"
     finite = v.values[np.isfinite(v.values)]
@@ -56,13 +52,11 @@ def test_deep_water_is_colder_than_surface() -> None:
     assert deep < surface - 15.0, f"surface {surface:.2f} vs 2000 m {deep:.2f}"
 
 
-# --------------------------------------------------------------------------
-# Pressure -> depth
-# --------------------------------------------------------------------------
+# --- Pressure -> depth ---
 
 def test_pressure_to_depth_conversion() -> None:
     depth = erddap_argo.pressure_to_depth(np.array([1000.0]), latitude=15.0)[0]
-    # At 1000 db, ~15 N, depth is about 993 m: close to pressure but not equal.
+    # At 1000 dbar and ~15 N, depth is about 993 m.
     assert 985.0 < depth < 1000.0, depth
     assert depth < 1000.0, "depth in metres must be less than pressure in decibar"
 
@@ -73,16 +67,11 @@ def test_pressure_to_depth_is_monotonic() -> None:
     assert np.all(np.diff(d) > 0)
 
 
-# --------------------------------------------------------------------------
-# Argo quality control — the trap that produced a fake result once already
-# --------------------------------------------------------------------------
+# --- Argo quality control ---
 
 def test_bad_qc_float_is_rejected_entirely() -> None:
-    """Float 2900757 looks like a -4 C cold wake but is entirely QC=4.
-
-    Every level is at 0 db with a salinity of 0.014 PSU: an instrument failure.
-    If this ever returns a profile, the QC filter has regressed and the demo is
-    showing a fabricated signal.
+    """Float 2900757 looks like a -4 C cold wake, but every level is QC 4 (all at
+    0 dbar, salinity 0.014 PSU). If it ever returns a profile, the QC filter broke.
     """
     profile = erddap_argo.fetch_profile(
         platform_id="2900757",
@@ -113,16 +102,11 @@ def test_featured_float_profile_is_deep_and_ordered() -> None:
     assert profile.max_depth is not None and profile.max_depth > 1000
 
 
-# --------------------------------------------------------------------------
-# The demo narrative itself
-# --------------------------------------------------------------------------
+# --- Demo scenario ---
 
 def test_phailin_cold_wake_is_present_in_float_2901335() -> None:
-    """The headline result: ~2.6 C of surface cooling as Phailin passed.
-
-    Verified by hand: 28.96 C on 10 Oct falling to 26.38 C on 11 Oct. If this
-    fails, either QC handling changed or the narrative is wrong — and the
-    narrative must never outrun the data.
+    """~2.6 C of surface cooling as Phailin passed: 28.96 C on 10 Oct, 26.38 C on
+    11 Oct (checked by hand).
     """
     platforms, _, _ = erddap_argo.list_platforms(
         time_start="2013-10-09", time_end="2013-10-16",

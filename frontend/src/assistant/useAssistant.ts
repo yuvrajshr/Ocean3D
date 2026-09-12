@@ -1,15 +1,10 @@
 /**
- * The assistant's client: one POST, an SSE stream back.
+ * Assistant client: one POST, with an SSE stream back.
  *
- * `EventSource` cannot POST, and the request carries a state snapshot far too
- * large for a query string, so this reads the response body as a stream and
- * parses the SSE framing by hand. That is a small amount of code for a real
- * gain: status lines arrive while the tool phase runs, so the panel can say
- * "Reading the analysis at 15°, 88°…" instead of showing a spinner for eight
- * seconds (§5.3 — name what is loading).
- *
- * Actions arrive only in the final `done` event, never mid-stream, so the
- * viewport changes after the prose has landed rather than during it.
+ * EventSource can't POST and the state snapshot is too big for a query string,
+ * so we read the response body as a stream and parse SSE ourselves. That way
+ * status lines ("Reading the analysis at 15°, 88°…") show up while tools run.
+ * Actions only come in the final ``done`` event, after the text.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,17 +16,17 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   citations?: Citation[];
-  /** Set on an assistant message that changed the app, so it can offer Undo. */
+  /** Set when an assistant message changed the app, so it can offer Undo. */
   snapshot?: AppSnapshot;
   failed?: boolean;
 }
 
-// Every view's state, every turn — defined beside the bridge that builds it.
+// State of every view, sent each turn (defined next to the bridge).
 export type { ScreenStatePayload } from "./useAssistantBridge";
 import type { ScreenStatePayload } from "./useAssistantBridge";
 
 interface Options {
-  /** Applied after the answer lands. Returns the snapshot taken before applying. */
+  /** Called after the answer arrives. Returns the snapshot taken before applying. */
   onActions: (actions: AssistantAction[]) => AppSnapshot | undefined;
   getState: () => ScreenStatePayload;
 }
@@ -72,8 +67,7 @@ export function useAssistant({ onActions, getState }: Options) {
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      // Single-flight. Free-tier quota is per project and per day, so a second
-      // in-flight request is spend with nothing to show for it.
+      // One request at a time; a second one would just burn quota.
       if (!trimmed || streaming) return;
 
       setMessages((m) => [...m, { id: nextId(), role: "user", text: trimmed }]);
@@ -113,8 +107,7 @@ export function useAssistant({ onActions, getState }: Options) {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
-          // SSE frames are separated by a blank line; a partial frame stays in
-          // the buffer until the rest of it arrives.
+          // SSE frames are separated by a blank line; partial frames wait in the buffer.
           let split: number;
           while ((split = buffer.indexOf("\n\n")) !== -1) {
             const frame = buffer.slice(0, split);

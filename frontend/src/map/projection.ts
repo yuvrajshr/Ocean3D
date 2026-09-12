@@ -1,27 +1,22 @@
 /**
  * Equirectangular (plate carrée) projection with pan and zoom.
  *
- * Pure geometry — no DOM, no canvas, no React. Every upstream this map draws is
- * a regular lat/lon grid, and plate carrée maps such a grid to pixels with a
- * linear scale on both axes, so a data row is a pixel row. That is the whole
- * reason the raster path can be a memcpy-shaped loop instead of a resampler.
- *
- * `viz/geo.ts` already does the same thing for the 3D scene (`x(lon)`, `z(lat)`
- * are a plate carrée pair). This is not a second projection, it is the same one
- * expressed in screen pixels rather than world units.
+ * No DOM or canvas here. Every dataset on the map is a regular lat/lon grid, and
+ * plate carrée maps that linearly to pixels, so a data row is a pixel row. It's
+ * the same projection viz/geo.ts uses, just in screen pixels.
  */
 
-/** Degrees of longitude spanned by the whole world. */
+/** Degrees of longitude in the whole world. */
 const WORLD_LON = 360;
-/** Latitude is clamped rather than wrapped: there is no pole to pan past. */
+/** Latitude is clamped, not wrapped. */
 export const LAT_LIMIT = 90;
 
 export interface Viewport {
-  /** Longitude at the centre of the canvas, in [-180, 180). */
+  /** Longitude at the canvas centre, in [-180, 180). */
   lonCentre: number;
-  /** Latitude at the centre of the canvas. */
+  /** Latitude at the canvas centre. */
   latCentre: number;
-  /** CSS pixels per degree. Equal on both axes — that is what makes it plate carrée. */
+  /** CSS pixels per degree, the same on both axes. */
   zoom: number;
 }
 
@@ -36,14 +31,13 @@ export function wrapLon(lon: number): number {
   return x - 180;
 }
 
-/** The zoom at which the world just COVERS the canvas — never smaller than it.
+/**
+ * Zoom at which the world just covers the canvas.
  *
- * `max`, not `min`. Fitting the world *inside* the frame was only safe while
- * longitude wrapped: on a canvas wider than 2:1 the world is narrower than the
- * frame at that zoom, and the repeated copies filled what was left over. Now
- * that longitude is clamped (see `clampViewport`) nothing fills it, so fitting
- * would leave real empty bands either side. Covering crops the far polar caps
- * instead on such a canvas, and vertical panning still reaches them. */
+ * Uses max, not min: longitude is clamped now, so fitting the world inside a
+ * wide canvas would leave empty bands on the sides. Covering crops the poles a
+ * bit instead, and you can still pan to them.
+ */
 export function worldFitZoom(size: Size): number {
   return Math.max(size.width / WORLD_LON, size.height / (2 * LAT_LIMIT));
 }
@@ -52,21 +46,14 @@ export function clampViewport(v: Viewport, size: Size): Viewport {
   const minZoom = worldFitZoom(size);
   const zoom = Math.max(minZoom, Math.min(minZoom * 512, v.zoom));
 
-  // Vertical panning stops where the poles reach the frame edge, so the map
-  // never floats in empty space. When the whole height fits, it stays centred.
+  // Stop vertical panning when the poles reach the edge; centre if it all fits.
   const halfLat = size.height / 2 / zoom;
   const latCentre =
     halfLat >= LAT_LIMIT ? 0 : Math.max(-LAT_LIMIT + halfLat, Math.min(LAT_LIMIT - halfLat, v.latCentre));
 
-  // Longitude is clamped exactly like latitude, NOT wrapped. Wrapping let the
-  // map slide sideways for ever, redrawing the same ocean past the date line;
-  // at world zoom that moved the seam around the frame and bought nothing,
-  // because every degree was already on screen.
-  //
-  // The cost is stated rather than hidden: the antimeridian can no longer be
-  // brought to the centre, so the Pacific stays split between the left and
-  // right edges. That is the honest trade for an Earth that ends where it
-  // really ends.
+  // Longitude is clamped like latitude, not wrapped. Wrapping let the map scroll
+  // sideways forever for no benefit. The downside is the Pacific stays split
+  // between the left and right edges.
   const halfLon = size.width / 2 / zoom;
   const lonCentre =
     halfLon >= WORLD_LON / 2
@@ -85,13 +72,15 @@ export class MapTransform {
     this.size = size;
   }
 
-  /** Longitude to canvas x. Not wrapped — callers that need the nearest copy of
-   *  a feature across the antimeridian use `lonToXNearest`. */
+  /**
+   * Longitude to canvas x. Not wrapped; use lonToXNearest for the nearest copy
+   * across the antimeridian.
+   */
   lonToX(lon: number): number {
     return this.size.width / 2 + (lon - this.viewport.lonCentre) * this.viewport.zoom;
   }
 
-  /** Latitude to canvas y. North is up, so y decreases as latitude increases. */
+  /** Latitude to canvas y. North is up. */
   latToY(lat: number): number {
     return this.size.height / 2 - (lat - this.viewport.latCentre) * this.viewport.zoom;
   }
@@ -105,17 +94,15 @@ export class MapTransform {
   }
 
   /**
-   * x for the copy of `lon` nearest the centre of the frame.
-   *
-   * The world repeats every 360 degrees. Without this a feature at 179E vanishes
-   * when the view is centred at 179W, even though it is one pixel away.
+   * x for the copy of ``lon`` nearest the centre. Without it, a feature at 179E
+   * disappears when the view is centred at 179W.
    */
   lonToXNearest(lon: number): number {
     const delta = wrapLon(lon - this.viewport.lonCentre);
     return this.size.width / 2 + delta * this.viewport.zoom;
   }
 
-  /** The geographic window currently visible, latitude clamped to the poles. */
+  /** Visible lat/lon window, latitude clamped to the poles. */
   bounds(): { latRange: [number, number]; lonRange: [number, number] } {
     const halfLon = this.size.width / 2 / this.viewport.zoom;
     const halfLat = this.size.height / 2 / this.viewport.zoom;
@@ -128,19 +115,19 @@ export class MapTransform {
     };
   }
 
-  /** True when the visible longitude span covers the whole world. */
+  /** True when the whole world's longitude is visible. */
   showsWholeWorld(): boolean {
     return this.size.width / this.viewport.zoom >= WORLD_LON;
   }
 
-  /** Zoom about a fixed screen point, so the geography under the cursor stays put. */
+  /** Zoom around a screen point, keeping the spot under the cursor in place. */
   zoomAbout(x: number, y: number, factor: number): MapTransform {
     const lon = this.xToLon(x);
     const lat = this.yToLat(y);
     const zoom = this.viewport.zoom * factor;
     const next = clampViewport({ ...this.viewport, zoom }, this.size);
     const after = new MapTransform(next, this.size);
-    // Re-centre so (lon, lat) lands back under (x, y).
+    // Re-centre so (lon, lat) is back under (x, y).
     return new MapTransform(
       {
         ...next,
@@ -163,11 +150,7 @@ export class MapTransform {
   }
 }
 
-/** Graticule spacing that steps at real breakpoints rather than sliding.
- *
- *  A grid whose spacing changes continuously is a texture; one that holds a
- *  round interval until it must change is a ruler. §5.1 makes the same argument
- *  for the depth ruler and the colorbar. */
+/** Graticule spacing snaps to round values instead of changing smoothly. */
 const GRATICULE_STEPS = [30, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
 
 export function graticuleStep(zoom: number, targetPx = 110): number {
@@ -178,7 +161,7 @@ export function graticuleStep(zoom: number, targetPx = 110): number {
   return GRATICULE_STEPS[GRATICULE_STEPS.length - 1]!;
 }
 
-/** Format a latitude or longitude the way a chart labels it. */
+/** Format a lat/lon like a chart label. */
 export function formatLat(lat: number, step = 1): string {
   const digits = step < 1 ? 1 : 0;
   if (Math.abs(lat) < 1e-9) return "0°";

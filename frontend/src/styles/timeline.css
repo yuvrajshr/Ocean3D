@@ -1,7 +1,4 @@
-/* ============================================================================
-   timeline.css — Ratio Design System Timeline Scrubber (Grid Columns 1–12)
-   Theme C: Warm Maritime Chronometer & Copper
-   ========================================================================== */
+/* timeline.css: the timeline scrubber. */
 
 .timeline-scrubber-wrapper {
   position: relative;
@@ -28,7 +25,7 @@
   max-width: 520px;
 }
 
-/* Scrubber Bar Container */
+/* Scrubber bar */
 .timeline-scrubber__bar {
   position: relative;
   width: 100%;
@@ -44,7 +41,7 @@
   transition: max-width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Alert Toast */
+/* Toast */
 .timeline-scrubber__toast {
   position: absolute;
   top: -38px;
@@ -72,7 +69,7 @@
   background: var(--rt-copper, #e59858);
 }
 
-/* Left Section: Date Readout & Controls */
+/* Left: date readout and controls */
 .timeline-scrubber__left {
   display: flex;
   align-items: center;
@@ -160,7 +157,7 @@
   line-height: 1.2;
 }
 
-/* Playback Controls */
+/* Playback controls */
 .timeline-scrubber__transport {
   display: flex;
   align-items: center;
@@ -202,14 +199,14 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* Playing active state: copper inversion */
+/* Playing: copper background */
 .timeline-scrubber__ctrl-btn--play.active {
   background: var(--rt-copper, #e59858) !important;
   color: #15161a !important;
   border-color: var(--rt-copper, #e59858) !important;
 }
 
-/* Center Scrubber Ruler Section */
+/* Centre: ruler */
 .timeline-scrubber__center {
   flex: 1 1 auto;
   position: relative;
@@ -276,7 +273,7 @@
   width: 1.5px;
 }
 
-/* Signature Ratio 2px Copper Needle Playhead with 8×8px Square Head */
+/* Playhead: 2px copper line with a square head */
 .timeline-scrubber__cursor-line {
   position: absolute;
   top: 0;
@@ -331,7 +328,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* Date range labels beneath ruler (Start, optional Mid, End) */
+/* Date labels under the ruler (start, optional middle, end) */
 .timeline-scrubber__labels {
   display: flex;
   align-items: center;
@@ -370,7 +367,7 @@
   font-weight: 700 !important;
 }
 
-/* Right Section: Cadence Selector + Expand/Shrink */
+/* Right: cadence and expand/collapse */
 .timeline-scrubber__right {
   display: flex;
   align-items: center;
@@ -382,7 +379,7 @@
   flex-shrink: 0;
 }
 
-/* Step Cadence Button */
+/* Step size button */
 .timeline-scrubber__unit-btn {
   display: inline-flex;
   align-items: center;
@@ -419,7 +416,7 @@
   font-weight: 800;
 }
 
-/* Expand / Shrink Timeline Toggle Button */
+/* Expand / collapse button */
 .timeline-scrubber__collapse-btn {
   display: inline-flex;
   align-items: center;

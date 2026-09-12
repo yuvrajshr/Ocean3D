@@ -1,15 +1,6 @@
 /**
- * AssistantDock — the assistant's entry point on the right edge.
- *
- * `designTest` moved the old ToolDock's jobs into `CommandPill` (points, the
- * view control) and stopped rendering ToolDock at all. The assistant's button
- * lived inside that file, so the merge would have compiled with no way to open
- * the panel — the feature present in the bundle and absent from the screen.
- *
- * Rather than restore the whole dock for one control, this is the slim version:
- * one button, in the lane §5.1 Principle 11 reserves for right-hand tools, clear
- * of the depth ruler's vertically-centred 240px track. Theme C, 0px radius, with
- * the 3px copper stripe designTest uses everywhere to mean "active".
+ * The assistant's button on the right edge. Sits in the right-hand tool lane,
+ * clear of the depth ruler. Uses the copper stripe for the active state.
  */
 
 import { Sparkles } from "lucide-react";

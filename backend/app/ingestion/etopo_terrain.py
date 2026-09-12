@@ -1,14 +1,7 @@
-"""Seafloor and land relief from NOAA ETOPO1.
+"""Seafloor and land elevation from NOAA ETOPO1.
 
-A second upstream, on a different server, behind the same `DataSource` shape as
-the INCOIS sources. That is the point as much as the pixels are: the problem
-statement asks for an architecture that accepts new sensors and products with
-minimal change, and this is the first chance to show that rather than claim it.
-
-Physically this is one surface. ETOPO's `altitude` is positive on land and
-negative at sea, so the Eastern Ghats, the Indian coastline and the floor of the
-Bay of Bengal all come from a single grid and render as a single mesh — which is
-what they are.
+A second upstream behind the same DataSource shape as INCOIS. Elevation is
+positive on land and negative at sea, so land and seabed come from one grid.
 """
 
 from __future__ import annotations
@@ -30,7 +23,7 @@ from ..models.schemas import SourceStatus
 
 
 class TerrainResult:
-    """Elevation in metres on a regular lat/lon grid, C order (lat, lon)."""
+    """Elevation in metres on a regular lat/lon grid, (lat, lon)."""
 
     __slots__ = ("elevation", "lats", "lons", "source")
 
@@ -47,9 +40,8 @@ class TerrainResult:
         self.source = source
 
 
-# ArcGIS returns an uncompressed, tiled, single-band Float32 GeoTIFF. That is a
-# narrow enough shape to read with struct + numpy, which is why this adds no
-# dependency: Pillow/rasterio would be a large install for ~40 lines of header.
+# ArcGIS returns an uncompressed tiled single-band Float32 GeoTIFF, simple enough
+# to read with struct + numpy instead of pulling in Pillow or rasterio.
 _TIFF_TYPE_SIZE = {1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8}
 _TIFF_TYPE_CODE = {1: "B", 3: "H", 4: "I", 6: "b", 8: "h", 9: "i", 11: "f", 12: "d"}
 
@@ -75,7 +67,7 @@ def _tiff_tags(payload: bytes, endian: str) -> dict[int, list[int]]:
 
 
 def _decode_geotiff(payload: bytes) -> np.ndarray:
-    """Single-band Float32 GeoTIFF to a (row, col) array, north-up as stored."""
+    """Read a single-band Float32 GeoTIFF into a (row, col) array, north-up."""
     if payload[:2] not in (b"II", b"MM"):
         raise ValueError("terrain response is not a TIFF (upstream may have returned an error page)")
     endian = "<" if payload[:2] == b"II" else ">"
@@ -116,9 +108,8 @@ def fetch_relief(
     lat0, lat1 = sorted(lat_range)
     lon0, lon1 = sorted(lon_range)
 
-    # The old ERDDAP transport subsampled with a stride; ArcGIS resamples to a
-    # requested pixel size instead. Deriving the size from the stride keeps the
-    # callers' units unchanged: stride 4 over a 25 deg box is still ~376 px.
+    # Pick the pixel size from the stride so callers don't change (stride 4 over
+    # 25 deg is ~376 px).
     n_lon = max(2, round((lon1 - lon0) * TERRAIN_ARCMIN_PER_DEG / max(1, stride)))
     n_lat = max(2, round((lat1 - lat0) * TERRAIN_ARCMIN_PER_DEG / max(1, stride)))
 
@@ -131,16 +122,13 @@ def fetch_relief(
     payload, source = client.fetch(url)
     image = _decode_geotiff(payload)
 
-    # ArcGIS returns the image north-up (row 0 is the northern edge). Every
-    # consumer here expects latitude ascending, as ERDDAP served it, so flip
-    # once at the boundary rather than making the mesh builder care.
+    # ArcGIS is north-up; everything else expects latitude ascending, so flip here.
     elevation = np.flipud(image).astype(np.float32)
     lats = np.linspace(lat0, lat1, elevation.shape[0], dtype=np.float32)
     lons = np.linspace(lon0, lon1, elevation.shape[1], dtype=np.float32)
 
-    # ETOPO has no gaps, but a NaN reaching the vertex shader would tear a hole
-    # in the mesh, so anything non-finite is pinned to sea level. ArcGIS also
-    # marks no-data with a large negative sentinel rather than NaN.
+    # NaN would tear holes in the mesh, and ArcGIS uses a big negative number for
+    # no data, so both become sea level.
     elevation = np.where(np.isfinite(elevation) & (elevation > -1e30), elevation, 0.0)
     return TerrainResult(
         elevation=np.ascontiguousarray(elevation, dtype=np.float32),
@@ -151,7 +139,7 @@ def fetch_relief(
 
 
 def summarize(result: TerrainResult) -> dict[str, float | int]:
-    """Numbers the frontend needs to scale and shade the mesh."""
+    """Stats the frontend uses to scale and shade the mesh."""
     elevation = result.elevation
     land = elevation > 0
     return {

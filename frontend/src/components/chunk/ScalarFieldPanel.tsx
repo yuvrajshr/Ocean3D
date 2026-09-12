@@ -1,9 +1,6 @@
 /**
- * The scalar field's own console — display mode, cut plane and iso value.
- *
- * Split out of the layer stack: this is the layer a forecaster reaches for
- * first and most often, so it sits fixed under the camera presets rather than
- * competing for room with currents, bathymetry and instrument traces below.
+ * Controls for the scalar field: display mode, cut plane and isovalue. Kept
+ * separate from the layer list since it's the one people use most.
  */
 
 import { VARIABLES, type VariableKey } from "../../viz/chunk/model";
@@ -13,7 +10,7 @@ import { cutFor, fmt } from "./util";
 
 interface Props {
   spec: SceneSpec;
-  /** The loaded chunk. Its grid, not a constant, bounds every control here. */
+  /** The loaded chunk; its grid sets the limits for every control here. */
   source: ChunkSource;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -27,10 +24,8 @@ export function ScalarFieldPanel({ spec, source, expanded, onToggleExpand, onCom
   const variable: VariableKey = spec.field.variable;
   const info = VARIABLES[variable];
 
-  // A variable with one level is not a volume, and the controls that cut
-  // through one have nothing to cut. Disabled and explained rather than
-  // hidden: the reader should be able to see that the mode exists and why it
-  // is not available here.
+  // A single-level variable has nothing to cut through. Those modes are disabled
+  // with an explanation rather than hidden.
   const flat = source.grid.nz <= 1;
   const flatNote = `${source.meta.label} is a surface product (${source.meta.provider}). There is no depth axis to slice, stack or contour.`;
 

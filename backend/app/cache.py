@@ -1,8 +1,5 @@
-"""Disk cache with honest provenance.
-
-Demo-day rule: the app must keep working when the venue wifi does not. So every
-upstream response is written to disk, and if INCOIS is unreachable we serve the
-stale copy and *say so* rather than pretending it is live.
+"""Disk cache. Every upstream response is saved, and if the server is down we serve
+the old copy and mark it as cached.
 """
 
 from __future__ import annotations
@@ -33,11 +30,8 @@ def _paths(url: str) -> tuple[Path, Path]:
 
 
 def read(url: str, *, ttl: int = CACHE_TTL_SECONDS) -> CacheEntry | None:
-    """Return a cached response, or None if we have never seen this URL.
-
-    A hit past its TTL is still returned, flagged ``stale``. The caller decides
-    whether to try the network first — but it always has something to fall back
-    on.
+    """Return the cached response, or None if we don't have it.
+    Old entries come back flagged as stale.
     """
     blob, meta = _paths(url)
     if not blob.exists() or not meta.exists():

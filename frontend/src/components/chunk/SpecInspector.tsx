@@ -1,11 +1,7 @@
 /**
- * The live scene spec, editable.
- *
- * The view has no scene state outside this object, so showing it is not a debug
- * affordance — it is the honest statement of what is on screen, and editing it
- * is the same operation every control performs. It also makes the registry's
- * contract visible: name a layer type this build has no module for and the
- * message says so instead of the scene failing silently.
+ * The live scene spec, editable. The view has no other scene state, so this is
+ * exactly what's on screen, and editing it does what the controls do. Unknown
+ * layer types get a message instead of failing silently.
  */
 
 interface Props {

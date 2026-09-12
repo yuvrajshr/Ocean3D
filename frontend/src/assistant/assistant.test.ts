@@ -1,14 +1,9 @@
 /**
- * Applying an assistant action to the layer stack.
+ * Applying assistant actions to the layer stack.
  *
- * This is the pure half of the seam. `layerStack` in App.tsx is the source of
- * truth for layers — an effect pushes it into the map reducer via
- * `layers/sync`, which derives `map.layers` — so an assistant action has to
- * produce a NEW stack rather than dispatching at the reducer, where the next
- * sync would silently overwrite it.
- *
- * Keeping the transformation pure is what makes that testable at all: no
- * React, no reducer, no network.
+ * layerStack in App.tsx is the source of truth; an effect pushes it to the map
+ * reducer via layers/sync. So an action has to produce a new stack instead of
+ * dispatching to the reducer. Pure, so it's easy to test.
  */
 
 import { describe, expect, it } from "vitest";
@@ -45,8 +40,7 @@ describe("applyLayerAction", () => {
   });
 
   it("puts a newly added layer on top", () => {
-    // Draw order: index 0 is the TOP of the stack (map/state.ts). A layer the
-    // reader just asked for should be the one they see.
+    // Index 0 is the top of the stack; a newly requested layer should be visible.
     const next = applyLayerAction(base, {
       type: "set_layers", add: ["chlorophyll"], remove: [], show: [], hide: [], opacity: {},
     });

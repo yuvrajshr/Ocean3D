@@ -1,17 +1,14 @@
 /**
- * Chunk view — one 5°×5° block of ocean, 0–2000 m, opened from the globe.
+ * Chunk view: one 5°×5° block of ocean, 0-2000 m, opened from the globe.
  *
- * The globe answers "where"; this answers "what is in there". It is a full
- * screen of its own rather than a panel in the console because the question it
- * serves is different: not "what does the model say at this depth today" but
- * "what is the structure of this block of water, and does the instrument in it
- * agree". Everything on screen is derived from one scene spec, which the
- * inspector at the bottom right shows and edits live.
+ * The globe shows where; this shows what's in the water there, and whether the
+ * float in it agrees with the model. It's full screen instead of a panel, and
+ * everything on screen comes from one scene spec (shown and editable in the
+ * inspector at the bottom right).
  *
- * React owns the spec and the chrome; ChunkEngine owns the renderer, the camera
- * and the picking. The two meet at exactly two places: the component mutates
- * the spec and calls commit, and the engine calls back with frame rate, hover
- * readouts and instrument picks.
+ * React owns the spec and the UI; ChunkEngine owns the renderer, camera and
+ * picking. The component edits the spec and calls commit, and the engine calls
+ * back with frame rate, hover readouts and instrument picks.
  */
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -46,28 +43,26 @@ const PRESET_LABELS: [PresetName, string][] = [
 const SPEC_HINT = "Edit and press Apply. Layer types resolve through the registry.";
 
 /**
- * The window the chunk opens on: thirty daily steps centred on Cyclone Phailin.
- *
- * HYCOM is daily and runs 1994-2015, so this is inside its coverage, and it is
- * where the Argo floats the comparison needs actually are.
+ * Opens on thirty daily steps around Cyclone Phailin (inside HYCOM's 1994-2015
+ * range, and where the Argo floats are).
  */
 const FOCUS_DATE = CHUNK_FOCUS_DATE;
 const WINDOW_STEPS = CHUNK_WINDOW_STEPS;
 
 interface Props {
-  /** Renders the breadcrumb's back control. Omitted, the crumb is read-only. */
+  /** Shows the breadcrumb's back button. Without it the breadcrumb is read-only. */
   onBack?: () => void;
-  /** The tile to open, already snapped. Defaults to the Bay of Bengal chunk. */
+  /** Tile to open, already snapped. Defaults to the Bay of Bengal chunk. */
   bbox?: Bbox;
-  /** Set when the click's own tile had no coverage and we stepped outward. */
+  /** Set when the clicked tile had no data and we used a neighbour. */
   movedFrom?: string | null;
   /**
-   * Receives the assistant's handle on this view once the engine is ready, and
-   * null on unmount. Through it the assistant reads and changes THIS view's
-   * scene, by the same rules the panels use (assistant/chunkActions.ts).
+   * Gets the assistant's controller for this view once the engine is ready, and
+   * null on unmount. It changes the scene using the same rules as the panels
+   * (assistant/chunkActions.ts).
    */
   onAssistantController?: (controller: ChunkController | null) => void;
-  /** Open the tile containing a point: the assistant's "move north" and friends. */
+  /** Open the tile containing a point (for "move north" etc.). */
   onMove?: (lat: number, lon: number) => void;
 }
 
@@ -112,14 +107,11 @@ export function ChunkView({
 
   const spec = engineRef.current?.spec ?? DEFAULT_SPEC;
 
-  /* ---------------- engine lifecycle ---------------- */
+  /* --- engine lifecycle --- */
 
   /**
-   * Fetch one float's cast and pair it with the model column beside it.
-   *
-   * The cast is a request, not a lookup — the platform list carries positions
-   * and level counts, but the measured levels themselves only come when someone
-   * asks for one float.
+   * Fetch one float's profile and pair it with the model column next to it.
+   * The platform list only has positions, so the levels are fetched on demand.
    */
   const openProfile = useCallback(
     (id: string) => {
@@ -149,8 +141,7 @@ export function ChunkView({
             built
               ? { ...built, variable }
               : {
-                // Nothing to compare is a real answer, not a failure: a core
-                // Argo float measures temperature and salinity and nothing else.
+                // Not a failure: core Argo floats only measure temperature and salinity.
                 unavailable: `${VARIABLES[variable].label} is not measured by ${id}. Argo core floats report temperature and salinity.`,
                 id,
                 variable,
@@ -181,8 +172,8 @@ export function ChunkView({
       engine = new ChunkEngine(host, ruler);
       engine.start();
     } catch (err) {
-      // WebGL is the whole view here; say what happened and what to do rather
-      // than leaving an empty black rectangle.
+      // Without WebGL this view can't work, so say what happened instead of showing
+      // a black box.
       console.error("chunk view failed to start", err);
       setError(
         "This browser cannot draw the chunk. The view needs WebGL2 — recent Chrome, Edge, " +
@@ -195,11 +186,9 @@ export function ChunkView({
     engine.onFps = setFps;
     engine.onHover = setHover;
     engine.onPickInstrument = (id) => {
-      // Called through a ref, not captured directly. `openProfile` changes
-      // identity whenever the platform list does, and holding it as a dependency
-      // of this effect tore the WebGL context down and rebuilt it the moment the
-      // instrument fetch returned — which aborted the chunk request in flight
-      // and left the view empty. The engine is created once and disposed once.
+      // Called through a ref: openProfile changes whenever the platform list does,
+      // and depending on it rebuilt the WebGL context mid-load. The engine is created
+      // and disposed once.
       if (id) openProfileRef.current(id);
       else setProf(null);
     };
@@ -218,9 +207,9 @@ export function ChunkView({
     openProfileRef.current = openProfile;
   }, [openProfile]);
 
-  /* ---------------- spec edits ---------------- */
+  /* --- spec edits --- */
 
-  /** Push spec changes into the scene, then re-render the chrome around it. */
+  /** Push spec changes into the scene, then re-render the UI around it. */
   const commit = useCallback((rebuildAxis = false) => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -250,15 +239,14 @@ export function ChunkView({
       spec.colorRange.min = range[0];
       spec.colorRange.max = range[1];
       spec.colorRange.scale = "linear";
-      // An isovalue carried over from another variable is meaningless — 20 °C
-      // is not 20 PSU — so it re-centres in the new variable's range.
+      // An isovalue from another variable makes no sense (20 °C isn't 20 PSU), so
+      // re-centre it in the new range.
       const scalar = spec.layers.find((l) => l.id === "scalar");
       if (scalar?.props && scalar.props.mode === "isosurface") {
         scalar.props.isoValue = range[0] + (range[1] - range[0]) * 0.55;
       }
       commit();
-      // The open cast is re-paired against the new variable, which may well be
-      // one the instrument does not measure.
+      // Re-pair the open profile with the new variable (which it may not measure).
       setProf((p) => (p ? { ...p, variable: key } : null));
       if (prof) openProfile(prof.id);
     },
@@ -270,7 +258,7 @@ export function ChunkView({
       const engine = engineRef.current;
       if (!engine) return;
       engine.spec.view.exaggeration = value;
-      // A group scale, so no geometry has to be rebuilt while the slider moves.
+      // Just a group scale, no geometry rebuild while the slider moves.
       engine.applyExaggeration();
       if (specOpenRef.current) setSpecText(JSON.stringify(engine.spec, null, 2));
       bump();
@@ -298,14 +286,11 @@ export function ChunkView({
     [],
   );
 
-  /* ---------------- loading ---------------- */
+  /* --- loading --- */
 
   /**
-   * The chunk itself: one variable at one step.
-   *
-   * Re-runs on every scrub, and the store answers from memory when the step was
-   * already warmed. `setData` is what actually puts it on screen — until the
-   * first one lands the engine draws nothing at all, rather than an empty box.
+   * Load one variable at one step. Runs on every scrub; already loaded steps come
+   * from memory. Nothing is drawn until the first setData.
    */
   useEffect(() => {
     if (!ready) return;
@@ -351,20 +336,15 @@ export function ChunkView({
       }
     })();
     return () => controller.abort();
-    // `spec` is mutated in place by the engine, so the primitives it turns on
-    // are the dependencies — the object identity never changes. `platforms` is
-    // read through a ref rather than depended on: floats arriving must not
-    // restart a field request that is already in flight.
+    // The engine mutates spec in place, so depend on the primitives. platforms is
+    // read via a ref so floats arriving don't restart a field request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, bbox, times, spec.field.variable, spec.time.index]);
 
   /**
-   * Argo platforms in this tile and window.
-   *
-   * One request for the whole window rather than one per step: `/api/instruments`
-   * returns a row per platform *and* cycle, which is exactly the surfacing track
-   * the layer draws. The measured levels behind each fix are fetched only when
-   * someone opens one.
+   * Argo floats in this tile and window. One request for the whole window;
+   * /api/instruments returns a row per float and cycle, which is the track. The
+   * measured levels are only fetched when a float is opened.
    */
   useEffect(() => {
     const first = times[0];
@@ -388,7 +368,7 @@ export function ChunkView({
         const byId = new Map<string, ChunkPlatform>();
         for (const row of list.platforms) {
           const day = row.time.slice(0, 10);
-          // Resolve each fix to a step once, here, where the window is known.
+          // Map each fix to a step here, where the window is known.
           let step = 0;
           let best = Infinity;
           for (let i = 0; i < times.length; i++) {
@@ -421,14 +401,12 @@ export function ChunkView({
         const resolved = [...byId.values()];
         platformsRef.current = resolved;
         setPlatforms(resolved);
-        // Push them into the scene directly. The field is unaffected, so this
-        // must not go through the load effect.
+        // Push them straight into the scene; the field doesn't need reloading.
         const engine = engineRef.current;
         const data = engine?.chunk;
         if (engine && data) engine.setData(data, resolved);
       } catch {
-        // Markers are additive: the chunk still stands without them, exactly as
-        // the water column already treats a failed instrument fetch.
+        // Markers are optional; the chunk works without them.
         if (!controller.signal.aborted) {
           platformsRef.current = [];
           setPlatforms([]);
@@ -438,7 +416,7 @@ export function ChunkView({
     return () => controller.abort();
   }, [bbox, times]);
 
-  /* ---------------- playback ---------------- */
+  /* --- playback --- */
 
   useEffect(() => {
     if (!playing) return;
@@ -447,9 +425,8 @@ export function ChunkView({
       if (!engine) return;
       const variable = engine.spec.field.variable;
       const store = storeRef.current;
-      // Advance onto the next step that can actually be drawn. A step still in
-      // flight is worth waiting for; one the upstream cannot build is not, and
-      // stalling on it would freeze playback for good.
+      // Move to the next step that can be drawn. Wait for steps still loading, but
+      // skip ones the upstream can't serve, or playback would get stuck.
       for (let d = 1; d <= times.length; d++) {
         const next = (engine.spec.time.index + d) % times.length;
         const time = times[next];
@@ -467,14 +444,14 @@ export function ChunkView({
     specOpenRef.current = specOpen;
   }, [specOpen]);
 
-  /* ---------------- derived ---------------- */
+  /* --- derived --- */
 
   const hist = useMemo(() => source?.histogram() ?? null, [source]);
 
-  /* ---------------- the assistant's handle ---------------- */
+  /* --- assistant controller --- */
 
-  // Latest values, read by the controller rather than captured: it is created
-  // once per engine and called seconds after the render that made it.
+  // Latest values, read by the controller (it's created once per engine and
+  // called well after the render that made it).
   const profRef = useRef(prof);
   const histRef = useRef(hist);
   const onMoveRef = useRef(onMove);
@@ -509,12 +486,12 @@ export function ChunkView({
         if (effect.preset) engine.goPreset(effect.preset);
         commit();
         if (effect.variableChanged) {
-          // Re-pair an open cast against the new field, as the panel does.
+          // Re-pair an open profile with the new field, like the panel does.
           const open = profRef.current;
           setProf((p) => (p ? { ...p, variable: effect.variableChanged! } : null));
           if (open) openProfileRef.current(open.id);
         }
-        // The same path a click on a float's track takes.
+        // Same path as clicking a float's track.
         if (effect.openFloat) openProfileRef.current(effect.openFloat);
         if (effect.move) onMoveRef.current?.(effect.move.lat, effect.move.lon);
       },
@@ -544,7 +521,7 @@ export function ChunkView({
       <div className="chunk-view__vignette" />
       <div className="chunk-ruler" ref={rulerRef} />
 
-      {/* -------------------------------------------------------- breadcrumb */}
+      {/* breadcrumb */}
       <div className="chunk-crumb">
         <div className="chunk-crumb__body chunk-panel chunk-panel--strong">
           {onBack ? (
@@ -568,7 +545,7 @@ export function ChunkView({
 
       </div>
 
-      {/* ---------------------------------------------------- presets + map */}
+      {/* presets and minimap */}
       <div className="chunk-corner">
         <div className="chunk-presets chunk-panel chunk-panel--lifted" role="group" aria-label="Camera preset">
           {PRESET_LABELS.map(([id, label]) => {
@@ -591,13 +568,13 @@ export function ChunkView({
         ) : null}
       </div>
 
-      {/* --------------------------------------------------- region label */}
+      {/* region label */}
       <div className="chunk-region">
         <div className="chunk-region__name">{regionName}</div>
         <div className="chunk-region__coords">{extent}</div>
       </div>
 
-      {/* --------------------------------------------- scalar field + layers */}
+      {/* scalar field and layers */}
       <div className="chunk-stack">
         {ready && source ? (
           <ScalarFieldPanel

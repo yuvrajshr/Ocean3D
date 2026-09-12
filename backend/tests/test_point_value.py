@@ -1,7 +1,5 @@
-"""One value at one cell and one level — the assistant's readout.
-
-The old path read the map panel's 40-level x month block to answer one number.
-Live HYCOM for the Phailin date; Copernicus only when credentials exist.
+"""Single value at one cell and level (used by the assistant). Uses live HYCOM for
+the Phailin date; Copernicus only if credentials are set.
 """
 import pytest
 
@@ -21,7 +19,7 @@ def test_speed_and_bearing_from_u_and_v():
 def test_hycom_surface_value_matches_the_panel_block():
     ds = MAP_DATASETS_BY_ID["hycom_temperature"]
     pv = erddap_map.fetch_point_value(ds=ds, lat=15.0, lon=88.0, time="2013-10-12")
-    # 27.79 °C is what the 40-level block's surface row reads for this cell.
+    # Same value the 40-level block's surface row gives for this cell.
     assert pv.value == pytest.approx(27.79, abs=0.05)
     assert abs(pv.lat - 15.0) < 0.1 and abs(pv.lon - 88.0) < 0.1
     assert pv.depth == 0.0

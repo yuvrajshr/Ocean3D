@@ -1,15 +1,13 @@
 /**
- * Layer registry: a scene-spec `type` resolves to a renderer module.
+ * Layer registry: maps a scene-spec ``type`` to a renderer module.
  *
- * A new sensor or model variable is a descriptor in the spec plus a factory
- * here. The view never changes — it only iterates the spec, asks the registry
- * for a module per descriptor, and calls `update` with the global context. A
- * type with no module is reported, not fatal.
+ * Adding a sensor or model variable means a descriptor in the spec plus a factory
+ * here; the view just loops over the spec and calls ``update``. Unknown types are
+ * reported, not fatal.
  *
- * Each factory returns a handle owning exactly one THREE.Group, and is
- * responsible for disposing every geometry, material and texture it made. The
- * view rebuilds a handle whenever its type or the depth axis changes, so a
- * factory may bake the axis into its geometry.
+ * Each factory returns a handle with one THREE.Group and disposes everything it
+ * created. Handles are rebuilt when their type or the depth axis changes, so a
+ * factory can bake the axis into its geometry.
  */
 
 import * as THREE from "three";
@@ -18,9 +16,9 @@ import { CMAPS, type CmapName, type VariableKey } from "./model";
 import type { ChunkPlatform, ChunkSource } from "./source";
 import type { DepthAxis, LayerDesc, ScalarMode } from "./spec";
 
-/* ---------------- colormaps ---------------- */
+/* --- colormaps --- */
 
-/** A cmocean ramp as a 256×1 GPU lookup texture. */
+/** A cmocean ramp as a 256×1 lookup texture. */
 export function makeCmapTexture(stops: string[]): THREE.DataTexture {
   const n = 256;
   const data = new Uint8Array(n * 4);
@@ -45,7 +43,7 @@ export function makeCmapTexture(stops: string[]): THREE.DataTexture {
   return tex;
 }
 
-/** The same ramp on the CPU, for the histogram bars and the swatches. */
+/** Same ramp on the CPU, for the histogram and swatches. */
 export function sampleCmap(stops: string[], t: number): [number, number, number] {
   const rgb = stops.map((h) => [
     parseInt(h.slice(1, 3), 16),
@@ -63,9 +61,9 @@ export function sampleCmap(stops: string[], t: number): [number, number, number]
   ];
 }
 
-/* ---------------- context and handles ---------------- */
+/* --- context and handles --- */
 
-/** Grid fraction (0..1) to world position, and depth to normalized height. */
+/** Grid fraction (0..1) to world position, and depth to normalised height. */
 export interface GeoMap {
   x(f: number): number;
   z(f: number): number;
@@ -89,24 +87,22 @@ export interface LayerContext {
   geo: GeoMap;
   global: GlobalContext;
   /**
-   * The chunk as fetched: one variable at one instant, plus this tile's relief.
-   *
-   * A layer reads the field through this and never imports data of its own, so
-   * two layers in one frame cannot be showing two different days.
+   * The loaded chunk: one variable at one time, plus the tile's seabed. Layers read
+   * the field only through this, so they always show the same day.
    */
   data: ChunkSource;
-  /** Argo platforms in this tile and window. Empty until they land, or if none. */
+  /** Argo floats in this tile and window (empty until loaded, or if there are none). */
   platforms: ChunkPlatform[];
 }
 
-/** A descriptor with its optional fields resolved, as the view passes it down. */
+/** A descriptor with its optional fields filled in. */
 export type ResolvedDesc = LayerDesc & { opacity: number };
 
 export interface LayerHandle {
   group: THREE.Group;
   pickables?: THREE.Object3D[];
   update(ctx: LayerContext, desc: ResolvedDesc): void;
-  /** Per-frame advance. Only the currents module has one. */
+  /** Per-frame update. Only the currents layer uses it. */
   tick?(dt: number, ctx: LayerContext): void;
   dispose(): void;
 }
@@ -114,15 +110,14 @@ export interface LayerHandle {
 export type LayerFactory = (ctx: LayerContext) => LayerHandle;
 export type Registry = Record<string, LayerFactory>;
 
-/* ---------------- field shading ---------------- */
+/* --- field shading --- */
 
 const FIELD_VERT = `
 varying vec2 vUv;
 void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`;
 
-// Colormap lookup, range clamp and log scaling, all on the GPU. The G channel
-// is the water mask: discarding on it stops the field exactly at the seabed
-// instead of smearing the last wet value through rock.
+// Colormap lookup, range clamp and log scale on the GPU. G is the water mask, so
+// the field stops exactly at the seabed.
 const FIELD_FRAG = `
 precision highp float;
 uniform sampler2D uData, uCmap;
@@ -187,11 +182,11 @@ function fieldMaterial(tex: THREE.DataTexture, cmap: THREE.DataTexture, shade = 
   }) as FieldMaterial;
 }
 
-/** The payload behind a data texture, for in-place refills. */
+/** The data behind a DataTexture, for refilling in place. */
 const texData = (tex: THREE.DataTexture): Float32Array =>
   tex.image.data as unknown as Float32Array;
 
-/** Explicit quad so the uv ↔ (lon, lat) mapping is unambiguous for picking. */
+/** Hand-built quad so the uv to (lon, lat) mapping is exact for picking. */
 function horizontalQuad(geo: GeoMap): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const p: number[] = [];
@@ -209,9 +204,8 @@ function horizontalQuad(geo: GeoMap): THREE.BufferGeometry {
 }
 
 /**
- * Section quad, built at position 0 along its fixed axis; the mesh is then
- * translated. 2 columns × nz rows, with vertical positions following the depth
- * axis mapping — so a stretched axis bends the section's rows, not its texture.
+ * Section quad at position 0 on its fixed axis (the mesh is moved after).
+ * 2 columns × nz rows, with rows placed by the depth axis mapping.
  */
 function sectionQuad(geo: GeoMap, levels: number[], axis: "lon" | "lat"): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -237,7 +231,7 @@ function sectionQuad(geo: GeoMap, levels: number[], axis: "lon" | "lat"): THREE.
   return g;
 }
 
-/* ================================================================= registry */
+/* --- registry --- */
 
 export function createRegistry(): Registry {
   const applyRange = (mat: FieldMaterial, g: GlobalContext): void => {
@@ -247,14 +241,13 @@ export function createRegistry(): Registry {
     mat.uniforms.uCmap.value = g.cmapTex;
   };
 
-  /* ---------------- scalar-field ---------------- */
+  /* --- scalar-field --- */
 
   function scalarField(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
     const group = new THREE.Group();
-    // The grid is whatever the upstream returned for this tile, so geometry is
-    // sized at build time rather than from a constant. The view rebuilds this
-    // handle when the grid changes, which is what makes that safe.
+    // Geometry is sized from the grid the upstream returned; the handle is rebuilt
+    // if the grid changes.
     const G = ctx.data.grid;
     const LEVELS = G.levels;
     const spanLon = G.lon1 - G.lon0;
@@ -331,8 +324,7 @@ export function createRegistry(): Registry {
         pickables.push(slice, secLon, secLat);
       } else if (mode === "volume") {
         const idxs: number[] = [];
-        // Every other level, or every level when there are few enough that
-        // skipping would visibly thin the stack.
+        // Every other level, or every level if there aren't many.
         const step = G.nz > 24 ? 2 : 1;
         for (let k = 0; k < G.nz; k += step) idxs.push(k);
         stack = idxs.map((k) => {
@@ -404,7 +396,7 @@ export function createRegistry(): Registry {
           const { secLon, secLat, slice } = sliced;
           const active = p.activeAxis ?? "depth";
           const ctxOn = p.contextWalls !== false;
-          // Inactive planes retreat to the box faces and read as context.
+          // Inactive planes move to the box faces as context.
           const depth = active === "depth" ? p.sliceDepth ?? 0 : 0;
           const fLon = active === "lon" ? ((p.sliceLon ?? G.lon0) - G.lon0) / spanLon : 0;
           const fLat = active === "lat" ? ((p.sliceLat ?? G.lat0) - G.lat0) / spanLat : 1;
@@ -434,9 +426,8 @@ export function createRegistry(): Registry {
           for (const m of [secLon, secLat, slice]) {
             const isActive = m === activeMesh;
             applyRange(m.material, g);
-            // The depth wall faces the camera broadside, so it needs less than
-            // the edge-on sections. Deep water is near-black in most palettes,
-            // so context planes get a small ambient lift or the box reads empty.
+            // The depth wall faces the camera, so it needs less than the sections. Context
+            // planes get a small lift since deep water is near-black in most palettes.
             const ctxMul = m === slice ? 0.3 : 0.62;
             m.material.uniforms.uOpacity.value = desc.opacity * (isActive ? 1 : ctxMul);
             m.material.uniforms.uLift.value = isActive ? 0 : 0.16;
@@ -482,8 +473,8 @@ export function createRegistry(): Registry {
               col[n * 3 + 2] = (0.96 - 0.3 * f) * shade;
             }
           }
-          // A cell is only meshed where all four corners carry the surface;
-          // elsewhere the isovalue genuinely does not occur in the column.
+          // Only mesh cells where all four corners have the surface; elsewhere the
+          // isovalue doesn't occur in that column.
           for (let j = 0; j < G.ny - 1; j++) {
             for (let i = 0; i < G.nx - 1; i++) {
               const a = j * G.nx + i;
@@ -506,7 +497,7 @@ export function createRegistry(): Registry {
     };
   }
 
-  /* ---------------- currents ---------------- */
+  /* --- currents --- */
 
   const PART_VERT = `
 attribute float aAlpha;
@@ -530,34 +521,26 @@ void main(){
   type PartMaterial = THREE.ShaderMaterial & { uniforms: { uOpacity: { value: number } } };
 
   /**
-   * How the flow layer turns metres per second into something a person can see.
-   *
-   * A current of 0.3 m/s moves 2.7e-6 degrees in a wall-clock second, so drawn
-   * at true rate the traces would never appear to move and a trail built from
-   * frames would be far under a pixel long. Both numbers below are therefore
-   * time-lapse factors, and both are chosen so the result can be *stated*:
-   * the trail is `TRAIL` hours of drift, replayed at six ocean-hours a second.
+   * Real currents are far too slow to see (0.3 m/s is a tiny fraction of a
+   * degree per second), so the flow is time-lapsed. Each trail shows TRAIL hours
+   * of drift, played at six ocean-hours per second.
    */
   const DEG_PER_METRE = 1 / 111_000;
   const FLOW_TIME_LAPSE = 6 * 3600;
   const TRAIL_STEP_SECONDS = 3600;
-  /** Speed at which a trace reaches the top of its colour ramp, in m/s. */
+  /** Speed (m/s) at which a trace hits the top of its colour ramp. */
   const SPEED_REFERENCE = 0.9;
   /**
-   * How far above the cut plane the traces are drawn, in normalized depth.
-   *
-   * They describe the flow *at* that depth and belong on it, but both this and
-   * the scalar slice are transparent with `depthWrite: false`, so two exactly
-   * coplanar surfaces composite in whatever order the sort happens to pick —
-   * and the slice won, hiding the whole layer. A nudge toward the surface plus
-   * an explicit render order settles it, and reads correctly: flow over the cut.
+   * Traces are lifted slightly above the cut plane. Both are transparent without
+   * depth writes, so exactly coplanar surfaces draw in random order (and the slice
+   * was hiding the traces). The lift plus a render order fixes it.
    */
   const TRACE_LIFT = 0.004;
 
   function currents(ctx0: LayerContext): LayerHandle {
     const group = new THREE.Group();
-    // Seeding needs the tile's own bounds; advection needs the current step's
-    // vectors and reads them from the context handed to `tick`.
+    // Seeding uses the tile bounds; advection reads the current step's vectors from
+    // the context passed to tick.
     const G0 = ctx0.data.grid;
     const spanLon = G0.lon1 - G0.lon0;
     const spanLat = G0.lat1 - G0.lat0;
@@ -606,7 +589,7 @@ void main(){
           blending: THREE.AdditiveBlending,
         }) as PartMaterial,
       );
-      // The trails move every frame and their bounds are the whole box anyway.
+      // Trails move every frame and cover the whole box anyway.
       mesh.frustumCulled = false;
       mesh.renderOrder = 3;
       group.add(mesh);
@@ -623,10 +606,8 @@ void main(){
         seedDepth = ctx.global.sliceDepth;
         if (mesh) mesh.material.uniforms.uOpacity.value = desc.opacity;
         pspeed = p.speed ?? 1;
-        // No vector field means no direction, and a magnitude cannot be
-        // advected. Traces frozen in place would read as a still current
-        // rather than as an absent one, so the layer withdraws and the panel
-        // says why.
+        // No vector field, no direction. Hide the layer (the panel explains) rather than
+        // show frozen traces that look like still water.
         group.visible = ctx.data.hasVector;
       },
       tick(dt, ctx) {
@@ -640,7 +621,7 @@ void main(){
         const sp = mesh.geometry.attributes.aSpeed!.array as Float32Array;
         let w = 0;
         let wa = 0;
-        // How far the head advances this frame, in ocean-seconds.
+        // How far the head moves this frame, in ocean-seconds.
         const step = dt * FLOW_TIME_LAPSE * pspeed;
         for (let i = 0; i < N; i++) {
           const h = i * 3;
@@ -655,10 +636,7 @@ void main(){
           head[h + 2] = spd / SPEED_REFERENCE;
           life[i] = life[i]! + dt;
 
-          // Respawn on the field's own mask rather than on the relief: a
-          // particle that has drifted over land or under the seabed is one the
-          // analysis has no velocity for, and it would otherwise sit still for
-          // nine seconds looking like a rendering fault.
+          // Respawn particles that drift onto land or below the seabed (no velocity there).
           const dry = !Number.isFinite(ctx.data.value(lon, lat, depth));
           if (
             life[i]! > 9 ||
@@ -673,13 +651,8 @@ void main(){
             lat = head[h + 1]!;
           }
 
-          // Integrate BACKWARDS from the head to build the trail.
-          //
-          // The first version of this kept one frame of drift per trail segment,
-          // which made the whole trace a function of frame rate — and at any
-          // real frame rate it came out under a pixel long, so the layer drew
-          // 900 invisible specks. A trail is now a fixed span of ocean time, so
-          // it means something a reader can be told: TRAIL_HOURS of drift.
+          // Integrate backwards from the head to build the trail, so each trail is a fixed
+          // span of ocean time (TRAIL_HOURS) and doesn't depend on frame rate.
           const base = i * TRAIL * 3;
           let bx = lon;
           let by = lat;
@@ -724,15 +697,14 @@ void main(){
     };
   }
 
-  /* ---------------- bathymetry ---------------- */
+  /* --- bathymetry --- */
 
   function bathymetry(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
     const group = new THREE.Group();
     const G = ctx.data.grid;
-    // Sampled onto the field's grid rather than the relief's own: the two are
-    // within a cell of each other at this tile size, and one grid means the
-    // seabed cannot drift away from the water sitting on it.
+    // Sampled on the field's grid (within a cell of the relief grid at this size),
+    // so the seabed lines up with the water above it.
     const nx = G.nx;
     const ny = G.ny;
     const maxDepth = G.maxDepth;
@@ -745,17 +717,15 @@ void main(){
         const d = ctx.data.bathymetry(ctx.data.lonAt(i), ctx.data.latAt(j));
         depths[n] = d;
         pos[n * 3] = geo.x(i / (nx - 1));
-        // A NaN reaching the vertex buffer tears the whole mesh, so an unknown
-        // cell is parked at the floor and left out of the index below instead.
+        // NaN would break the mesh, so unknown cells go to the floor and are left out
+        // of the index.
         pos[n * 3 + 1] = -geo.yn(Number.isFinite(d) ? Math.min(d, maxDepth) : maxDepth);
         pos[n * 3 + 2] = geo.z(j / (ny - 1));
       }
     }
-    // Only cells whose seabed is actually inside this chunk are meshed. Much of
-    // the Bay of Bengal floor lies below 2000 m, and a surface clamped to the
-    // box floor would draw a flat plane that is not the seabed and invite it to
-    // be read as one — the same reason the isosurface leaves out columns where
-    // its value never occurs.
+    // Only mesh cells whose seabed is inside this chunk. Much of the Bay of Bengal
+    // is deeper than 2000 m, and a flat plane at the box floor would look like a
+    // seabed that isn't there.
     const inChunk = (n: number): boolean =>
       Number.isFinite(depths[n]!) && depths[n]! <= maxDepth;
     const idx: number[] = [];
@@ -772,10 +742,8 @@ void main(){
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(nx * ny * 3), 3));
     g.setIndex(idx);
-    // Float32BufferAttribute copies the array it is handed, so recolouring has
-    // to write through the attribute's own buffer. Writing to the array it was
-    // built from leaves the seabed at its initial black and makes the colormap
-    // picker below do nothing at all — which looks exactly like a design choice.
+    // Float32BufferAttribute copies its array, so write through the attribute's
+    // own buffer or the colours never change.
     const col = g.attributes.color!.array as Float32Array;
     const mesh = new THREE.Mesh(
       g,
@@ -788,9 +756,8 @@ void main(){
     );
     group.add(wire);
 
-    // Sediment skirt: extrude the four boundary runs down to the box floor, so
-    // the chunk reads as a solid block cut out of the basin rather than a sheet
-    // of terrain floating in an empty box.
+    // Extrude the four edges down to the box floor, so the chunk looks like a solid
+    // block cut out of the basin.
     const runs: number[][] = [
       Array.from({ length: nx }, (_, i) => i), // j = 0
       Array.from({ length: nx }, (_, i) => (ny - 1) * nx + i), // j = ny-1
@@ -829,8 +796,8 @@ void main(){
       let w = 0;
       for (const run of runs) {
         for (const n of run) {
-          // A fixed sediment ramp — never keyed to the bathymetry colormap,
-          // which goes near-white at the shallow end and would outshine the data.
+          // Fixed sediment colours, not the bathymetry colormap (its light end would
+          // outshine the data).
           const t = Math.min(1, (Number.isFinite(depths[n]!) ? depths[n]! : maxDepth) / maxDepth);
           c[w++] = 0.15 - 0.075 * t;
           c[w++] = 0.138 - 0.062 * t;
@@ -848,9 +815,8 @@ void main(){
       group,
       update(_ctx, desc) {
         const pal: CmapName = desc.props?.palette ?? "deep";
-        // Nothing meshed means either no relief was fetched or the whole floor
-        // lies below this chunk. Either way there is no seabed to show here, and
-        // the layer panel states which.
+        // Nothing meshed: no relief loaded, or the whole floor is below 2000 m. The
+        // layer panel says which.
         group.visible = idx.length > 0;
         mesh.material.opacity = desc.opacity;
         wire.material.opacity = desc.opacity * 0.07;
@@ -882,11 +848,7 @@ void main(){
     };
   }
 
-  /**
-   * Colormap sample darkened by the local slope, so the shelf break and the
-   * seamount read as relief. There is no light in this scene — this is the only
-   * thing giving the seabed a form.
-   */
+  /** Colormap colour darkened by slope so the relief has shape (there's no lighting here). */
   function shadeAt(
     stops: string[],
     t: number,
@@ -907,17 +869,14 @@ void main(){
     return [(rgb[0] / 255) * s, (rgb[1] / 255) * s, (rgb[2] / 255) * s];
   }
 
-  /* ---------------- instruments ---------------- */
+  /* --- instruments --- */
 
   /**
-   * Argo platforms, drawn as what they actually reported.
+   * Argo floats, drawn from what they actually reported.
    *
-   * A float fixes its position when it surfaces, roughly every ten days, and
-   * the path between two surfacings is not measured. So the track here is the
-   * polyline through real fixes at the surface, and the vertical stem at each
-   * one runs to the depth that cast actually reached. The synthetic model drew
-   * a continuous sawtooth dive; that shape was invented, and drawing it beside
-   * real measurements would be the one thing CONTRIBUTING §8 forbids.
+   * A float only gets a position fix when it surfaces (about every ten days), and
+   * the path between is unknown. So the track connects the surface fixes, and each
+   * fix has a vertical stem down to the depth that profile reached.
    */
   function instrumentsLayer(ctx: LayerContext): LayerHandle {
     const geo = ctx.geo;
@@ -933,12 +892,10 @@ void main(){
     const built = insts.map((inst) => {
       const sub = new THREE.Group();
       const isArgo = inst.type === "argo_float";
-      // Both branches are MEASURED platforms, so neither may take the model's
-      // amber — that hue means "model, not observation" in the profile chart
-      // and reusing it here would say a glider was a prediction. Copper is the
-      // measurement accent; `current` blue separates the second platform type.
+      // Both are measured platforms, so neither uses the model's amber. Copper for
+      // Argo, blue for other platform types.
       const color = isArgo ? 0xe59858 : 0x38bdf8;
-      // The track runs along the surface, because that is where the fixes are.
+      // The track runs along the surface, where the fixes are.
       const pts: number[] = [];
       for (const f of inst.fixes) {
         pts.push(px(f.lon), 0, pz(f.lat));
@@ -969,7 +926,7 @@ void main(){
       );
       sub.add(dots);
 
-      // One vertical stem per cast, run to the depth that cast actually reached.
+      // One stem per profile, down to the depth it reached.
       const stemGeom = new THREE.BufferGeometry();
       stemGeom.setAttribute(
         "position",
@@ -1027,9 +984,8 @@ void main(){
         const day = ctx.global.timeIndex;
         const H = ctx.global.height;
         for (const b of built) {
-          // The most recent surfacing at or before the cursor. A float that has
-          // not yet surfaced in this window has nowhere honest to be drawn, so
-          // it is not drawn.
+          // Latest surfacing at or before the current time. Floats that haven't surfaced
+          // yet in this window aren't drawn.
           let current = null as (typeof b.inst.fixes)[number] | null;
           for (const f of b.inst.fixes) {
             if (f.step <= day) current = f;
@@ -1038,8 +994,7 @@ void main(){
           if (!current) continue;
           const x = px(current.lon);
           const z = pz(current.lat);
-          // The group is scaled by the column height; the marker undoes that so
-          // it stays a sphere rather than a stretched egg at 200× exaggeration.
+          // Undo the group's vertical scale so the marker stays round.
           b.marker.position.set(x, 0.02 / H, z);
           b.marker.scale.set(1, 1 / H, 1);
           b.ring.position.set(x, 0.001, z);
@@ -1056,8 +1011,7 @@ void main(){
           b.dots.material.opacity = 0.9 * desc.opacity;
           b.ring.material.opacity = 0.55 * desc.opacity;
 
-          // Every surfacing up to the cursor, and how deep each of those casts
-          // went. Both are measured; nothing between them is drawn.
+          // All surfacings up to the current time, with each profile's depth.
           const arr = b.dots.geometry.attributes.position!.array as Float32Array;
           const stemPos = b.stems.geometry.attributes.position!.array as Float32Array;
           let n = 0;
@@ -1082,7 +1036,7 @@ void main(){
           b.stems.geometry.setDrawRange(0, n * 2);
           b.stems.geometry.attributes.position!.needsUpdate = true;
           b.stems.material.opacity = 0.3 * desc.opacity;
-          // The track only extends as far as the float has actually been.
+          // The track only goes as far as the float has been.
           b.line.geometry.setDrawRange(0, Math.max(2, n));
         }
       },
@@ -1106,16 +1060,14 @@ void main(){
     };
   }
 
-  /* ---------------- sea-surface ---------------- */
+  /* --- sea-surface --- */
 
   function seaSurface(ctx: LayerContext): LayerHandle {
     const group = new THREE.Group();
     const mesh = new THREE.Mesh(
       horizontalQuad(ctx.geo),
       new THREE.MeshBasicMaterial({
-        // The sea surface is water, not chrome: it keeps the six-token
-        // `current` blue for the same reason chunk-view.css keeps its depth
-        // ramp. Copper here would paint the sea the colour of a button.
+        // Water, not UI, so it keeps the ocean blue instead of the copper accent.
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.16,

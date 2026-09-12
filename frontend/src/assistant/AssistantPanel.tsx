@@ -1,18 +1,11 @@
 /**
  * The assistant panel.
  *
- * Two things here are not decoration and should not be simplified away.
- *
- * The **provenance line** under each answer is rendered from `citations`, which
- * the backend builds from the tool calls that actually ran — not from anything
- * the model wrote. That is what makes context.md §5.1's grounding rule
- * checkable: an answer that fetched nothing has no citations, and gets the
- * "general knowledge" marker instead of quietly reading as data.
- *
- * The **Undo** control restores the snapshot taken immediately before the
- * actions were applied. It exists because the assistant changes a forecaster's
- * workspace without asking first, which is only reasonable if putting it back
- * is one click.
+ * - The source line under each answer comes from ``citations``, which the backend
+ *   builds from the tool calls that actually ran, not from the model's text. An
+ *   answer that fetched nothing gets the "general knowledge" marker instead.
+ * - Undo restores the snapshot taken right before the actions ran, since the
+ *   assistant changes the workspace without asking first.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -23,7 +16,7 @@ import { useAssistant, type ScreenStatePayload } from "./useAssistant";
 import type { AssistantScopeLabel } from "./useAssistantBridge";
 import "../styles/assistant.css";
 
-/** What each view can do, said the way a reader would ask for it. */
+/** Example prompts for each view. */
 const EXAMPLES: Record<Props["view"], string[]> = {
   map: [
     "What is the sea surface temperature at 15°N 88°E?",
@@ -51,9 +44,9 @@ interface Props {
   onActions: (actions: AssistantAction[]) => AppSnapshot | undefined;
   onUndo: (snapshot: AppSnapshot) => void;
   getState: () => ScreenStatePayload;
-  /** The view on screen: what the assistant's actions apply to. */
+  /** The current view, which the assistant's actions apply to. */
   view: "map" | "globe" | "chunk";
-  /** Its name and the extent or date it shows, for the header's scope line. */
+  /** View name plus the extent or date it shows, for the header. */
   scope: AssistantScopeLabel;
 }
 
@@ -67,8 +60,7 @@ const describe = (c: Citation) =>
 function CitationLine({ citations }: { citations: Citation[] }) {
   const first = citations[0];
   if (!first) return null;
-  // A mixed answer names the measured source first: this is a data tool, and
-  // "Copernicus + 2 web sources" tells the reader more than the reverse would.
+  // List the data source first, then any web sources.
   const dataCount = citations.filter((c) => c.kind !== "web").length;
   const summary = describe(first);
   return (
@@ -154,8 +146,7 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState, vie
             />
             Ocean assistant
           </span>
-          {/* Which view the assistant's changes land on. A label, then a
-              readout — two jobs, two elements, no separator glyph (§5.2). */}
+          {/* Which view the changes apply to: a label, then a readout. */}
           <span className="assistant-panel__scope">
             <span className="assistant-panel__scope-view">{scope.view}</span>
             {scope.detail ? (
@@ -214,11 +205,7 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState, vie
               >
                 <div className="assistant-msg__body">{m.text}</div>
 
-                {/* The marker belongs on an unsourced *claim*, not on a report
-                    of an action. "Added chlorophyll and hid temperature" states
-                    nothing about the ocean, so labelling it general knowledge
-                    would be noise — and worse, it would train the reader to
-                    ignore the marker in the one place it matters. */}
+                {/* Only mark unsourced claims about the ocean, not reports of actions */}
                 {m.role === "assistant" && !m.failed ? (
                   m.citations && m.citations.length > 0 ? (
                     <CitationLine citations={m.citations} />
@@ -241,8 +228,7 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState, vie
               </div>
             ))}
 
-            {/* Names what is actually happening (§5.3): the backend's own status line
-                when it has sent one, otherwise just that the request is out. */}
+            {/* Show the backend's status line if we have one, otherwise just that it's working */}
             {streaming && (
               <div className="assistant-thinking" role="status" aria-live="polite">
                 <div className="assistant-thinking__header">
@@ -274,8 +260,7 @@ export function AssistantPanel({ open, onClose, onActions, onUndo, getState, vie
               disabled={streaming}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                // Enter sends; Shift+Enter is a newline. A forecaster types one
-                // line and expects it to go.
+                // Enter sends, Shift+Enter adds a new line.
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   submit(draft);

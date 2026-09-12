@@ -1,10 +1,8 @@
-"""An ERDDAP .nc answer must parse in memory whatever its length.
+"""ERDDAP .nc responses must parse in memory whatever their length.
 
-netCDF-C's in-memory reader fails on netCDF3 classic buffers whose last block
-runs past the end, as "PermissionError: Operation not permitted: 'map.nc'".
-A current's u at one HYCOM cell (4904 bytes) hit it on 2026-09-10 while the
-temperature at the same cell (4780 bytes) did not — which is what makes it look
-intermittent. Small generated files reproduce it every time. No network.
+netCDF-C's in-memory reader fails on some classic buffers ("PermissionError:
+Operation not permitted") depending only on the length. Small generated files
+reproduce it. No network.
 """
 import tempfile
 from pathlib import Path

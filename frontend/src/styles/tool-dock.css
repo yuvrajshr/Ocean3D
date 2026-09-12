@@ -1,7 +1,4 @@
-/* ============================================================================
-   tool-dock.css — Ocean3D Right-Hand Tool Dock & Points Drawer
-   Theme C: Warm Maritime Chronometer & Copper
-   ========================================================================== */
+/* tool-dock.css: right-hand tool dock and the floats drawer. */
 
 #ocean3d-tool-dock {
   position: absolute;
@@ -123,7 +120,7 @@
   line-height: 1;
 }
 
-/* Floating Side Drawer for Active Tool */
+/* Drawer for the active tool */
 .tool-dock-drawer {
   position: absolute;
   right: calc(100% + 78px);
@@ -157,7 +154,10 @@
   visibility: hidden;
 }
 
-/* Points drawer starts above the tool panel to maximize vertical space and stay clear of timeline */
+/*
+ * The points drawer starts higher up to use the vertical space and stay clear of
+ * the timeline
+ */
 .tool-dock-drawer--points {
   top: -85px;
   width: 440px;
@@ -395,9 +395,7 @@
   background: var(--rt-surface-hover, #262830);
 }
 
-/* ============================================================================
-   Standalone Points Drawer (Invoked from Navbar) — Theme C Warm Maritime
-   ========================================================================== */
+/* --- floats drawer (opened from the navbar) --- */
 .points-standalone-drawer {
   position: fixed;
   top: 64px;
@@ -490,7 +488,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* Selected row in Theme C */
+/* Selected row */
 .points-standalone-drawer .tool-dock-point-row--active {
   background: var(--rt-surface-active, #2f313c) !important;
   color: var(--rt-ink, #f4efe6) !important;

@@ -1,20 +1,11 @@
 /**
- * The 3D scene: an ocean, with the analysis inside it.
+ * The 3D scene: the globe, and the water column with the analysis inside it.
  *
- * Design notes that are decisions, not incidentals:
- *
- * - Everything is positioned through one GeoFrame (viz/geo.ts). The terrain,
- *   the sea, the volume and the markers must agree on where 15 N is, and the
- *   only way to guarantee that is to give them one mapping to share.
- * - The globe carries NASA Blue Marble imagery and is a place you can return to
- *   (context.md §5.1 Principle 7, and the two §10 entries that reverse the
- *   earlier "graticule, never a destination" decisions). What survives those
- *   reversals: the app still opens by diving, so the globe is never the default
- *   view, and the globe never rotates on its own.
- * - The globe and the descent are ONE continuous gesture (context.md §5.1,
- *   Principle 3), skipped entirely under prefers-reduced-motion.
- * - The data volume is drawn in true colormap colour with no lighting or fog.
- *   Every atmospheric effect belongs to the water around it.
+ * - Everything is positioned through one GeoFrame (viz/geo.ts) so terrain, sea,
+ *   volume and markers agree on where things are.
+ * - The globe uses NASA Blue Marble. The move from globe to column is one
+ *   continuous animation, skipped under prefers-reduced-motion.
+ * - The data volume uses the raw colormap colours, no lighting or fog.
  */
 
 import * as THREE from "three";
@@ -75,18 +66,18 @@ export interface MarkerDatum {
   featured: boolean;
 }
 
-/** One float's measured profile, ready to draw beside the model field. */
+/** One float's measured profile, to draw next to the model field. */
 export interface ProfileTrace {
   lat: number;
   lon: number;
-  /** Which variable was measured. Must match the displayed field, or nothing draws. */
+  /** Measured variable. Has to match the displayed field or nothing is drawn. */
   variable: string;
   points: ReadonlyArray<{ depth: number; value: number }>;
 }
 
 export type SceneExtent = Extent;
 
-/** The two views. "column" is where the app opens and where the data lives. */
+/** The two views the scene knows about. */
 export type SceneView = "globe" | "column";
 
 export function isWebGL2Available(): boolean {
@@ -101,20 +92,17 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
-/** Smootherstep — no overshoot, and it settles rather than snapping. */
+/** Smootherstep easing (no overshoot). */
 function ease(t: number): number {
   const c = Math.max(0, Math.min(1, t));
   return c * c * c * (c * (c * 6 - 15) + 10);
 }
 
 /**
- * Shortest signed distance from `from` to `to`, wrapped to (-π, π].
+ * Shortest signed angle from ``from`` to ``to``, in (-π, π].
  *
- * `azimuth` accumulates unbounded across repeated drags (it is never wrapped
- * back into a fixed range), while a fly-to target comes from `atan2`, which
- * always returns a value in [-π, π]. Lerping the raw difference could send
- * the camera the long way around the globe once azimuth has wound past ±π;
- * this picks the short way regardless of how far azimuth has drifted.
+ * azimuth keeps growing across drags while atan2 targets are in [-π, π], so a
+ * plain difference could fly the long way round.
  */
 function shortestAngleDelta(from: number, to: number): number {
   const twoPi = Math.PI * 2;
@@ -134,8 +122,8 @@ export class OceanScene {
   private readonly volumeGroup = new THREE.Group();
   private readonly markerGroup = new THREE.Group();
   private readonly globeGroup = new THREE.Group();
-  // Siblings of volumeGroup, never children: clearVolume() disposes everything
-  // under it on every field load, which is how markers once silently vanished.
+  // Siblings of volumeGroup, not children, because clearVolume() disposes
+  // everything under it.
   private readonly latticeGroup = new THREE.Group();
   private readonly profileGroup = new THREE.Group();
 
@@ -149,12 +137,11 @@ export class OceanScene {
   private markerStems: THREE.LineSegments | null = null;
   private lattice: Lattice | null = null;
 
-  // Held on the scene rather than only inside the volume material, because
-  // ShaderMaterial.dispose() does not reach textures in uniforms (they leaked
-  // once per timestep) and because the ribbon has to share the very same LUT.
+  // Kept here because ShaderMaterial.dispose() doesn't free textures in uniforms,
+  // and the ribbon needs the same LUT.
   private volumeTexture: THREE.Data3DTexture | null = null;
   private lutTexture: THREE.DataTexture | null = null;
-  /** What the texture is actually encoded against — diverging maps re-centre on zero. */
+  /** Range the texture is encoded against (diverging maps are re-centred on zero). */
   private encodedRange: [number, number] = [0, 1];
   private fieldVariable = "";
   private fieldHasDepth = true;
@@ -179,34 +166,20 @@ export class OceanScene {
   private globe: Globe | null = null;
   private clouds: CloudLayer | null = null;
   private globeFloats: FloatMarkers | null = null;
-  // Lives directly in `scene`, not `globeGroup` — it must never move with
-  // the globe's fixed rotation. Visibility is synced from
-  // `globeGroup.visible` once per frame in tick() rather than duplicated
-  // across the several places that already toggle that flag (the pattern
-  // next_session.md §6.9 warns caused markers to silently vanish before).
+  // Added to the scene, not globeGroup, so it doesn't rotate with the globe.
+  // Visibility is synced from globeGroup.visible in tick().
   private readonly starfield: THREE.Group;
-  /**
-   * Which of the two views is showing.
-   *
-   * The globe is a destination now, but never the default one — this starts on "column"
-   * because the entry gesture ends there, and a forecaster's data is in the water column.
-   */
+  /** Current view. Starts as "column" since that's where the entry animation ends. */
   private view: SceneView = "column";
   private regionHovered = false;
-  /** The lat/lon under the cursor on the globe, or null off the sphere entirely.
-   * Refreshed every hover, independent of `regionHovered` — a click reads
-   * this to fly toward wherever was actually clicked, not just the box. */
+  /** Lat/lon under the cursor on the globe, or null when off the sphere. */
   private hoverLatLon: { lat: number; lon: number } | null = null;
   /**
-   * The globe's own rotation, held separately from the entry's.
+   * The globe's rotation in globe mode.
    *
-   * `updateEntry()` writes `globeGroup.rotation.y` every frame from the camera azimuth, so
-   * that the study region keeps facing the camera as it flies in. In globe mode that
-   * formula must NOT run: it would counter-rotate the Earth against every drag and pin the
-   * same face toward the viewer forever. So globe mode fixes the rotation once and orbits
-   * the camera instead — which is also the physically honest choice, since the terminator
-   * is anchored in the sphere's object space and should stay put on the Earth as the
-   * viewer moves around it.
+   * During the entry, updateEntry() rotates the globe so the study region faces the
+   * camera. In globe mode we fix the rotation and orbit the camera instead,
+   * otherwise every drag would be cancelled out (and the day/night line stays put).
    */
   private globeRotationY = 0;
 
@@ -215,85 +188,50 @@ export class OceanScene {
   private entryProgress = 0;
   private entryLastFrame = 0;
   /**
-   * Never advance the entry more than this much in a single frame.
-   *
-   * The gesture used to run on wall-clock time, which meant that on slow
-   * hardware the whole thing elapsed across two or three rendered frames and
-   * the viewer simply never saw it — the one orchestrated moment in the
-   * product, invisible precisely on the machines least able to spare it. Capping
-   * the per-frame step guarantees the gesture is always *seen*, taking longer in
-   * wall-clock time when the machine is slow. The skip control remains.
+   * Max entry progress per frame, so the animation is still visible on slow
+   * machines instead of finishing in two or three frames.
    */
   private static readonly MAX_ENTRY_STEP = 1 / 45;
 
-  /**
-   * How quickly `distance` eases toward `distanceTarget` each frame — a
-   * frame-rate-independent exponential lerp (`1 - exp(-k*dt)`), not a fixed
-   * per-frame step, so zoom feels the same at 30fps and 120fps.
-   */
+  /** Zoom easing rate, using 1 - exp(-k*dt) so it's frame-rate independent. */
   private static readonly ZOOM_DAMPING = 10;
 
-  /** Smooths instantaneous drag speed into `*Velocity`, so one jittery final
-   * pointer event can't produce a wild fling on release. 0 = no smoothing
-   * (raw instantaneous speed), 1 = never updates. */
+  /**
+   * Drag speed smoothing so one jittery last event doesn't cause a wild fling.
+   * 0 = none, 1 = never updates.
+   */
   private static readonly VELOCITY_SMOOTHING = 0.35;
-  /** Coast angular velocity decays exponentially, per second, after release. */
+  /** Coast speed decay per second after release. */
   private static readonly COAST_DAMPING = 2.2;
-  /** Below this angular speed (rad/s) coasting stops rather than crawling forever. */
+  /** Coasting stops below this angular speed (rad/s). */
   private static readonly COAST_STOP_SPEED = 0.02;
-  /** Release must exceed this angular speed (rad/s) to start coasting at all —
-   * otherwise a deliberate small nudge or a click-without-moving would drift. */
+  /** Minimum release speed (rad/s) to start coasting, so small nudges don't drift. */
   private static readonly COAST_MIN_SPEED = 0.05;
-  /** How quickly azimuth/elevation ease toward a fly-to target — slower than
-   * ZOOM_DAMPING so the swoop reads as a deliberate flight, not a snap. */
+  /** Fly-to easing rate, slower than zoom so it looks like a flight. */
   private static readonly FLYTO_DAMPING = 4.5;
-  /** How close a click-anywhere fly-to swoops in — just above the globe's own
-   * zoom-in floor (2.0), close enough to read as "look here" without the
-   * camera clipping into the sphere. */
+  /** How close a click fly-to gets (the zoom-in limit is 2.0). */
   private static readonly FLYTO_CLOSE_DISTANCE = 2.3;
 
   /**
-   * Idle spin (globe view only): after this many seconds with no drag, coast,
-   * or fly-to in flight, the camera starts drifting in azimuth on its own —
-   * Google Earth's "it's a living planet, not a poster" idle behaviour. Long
-   * enough that pausing to read a tooltip doesn't trigger it.
+   * Idle spin (globe only) starts after this many seconds with no drag, coast
+   * or fly-to.
    */
   private static readonly IDLE_SPIN_DELAY = 3.5;
-  /** Seconds for the idle spin to ease from a standstill up to full speed, so
-   * it starts as an imperceptible drift rather than a visible "kick-off". */
+  /** Seconds to ramp the idle spin up to full speed. */
   private static readonly IDLE_SPIN_RAMP = 4;
-  /** Idle spin speed at full ramp, in rad/s — a full rotation takes ~5
-   * minutes. Deliberately far slower than any drag or coast speed. */
+  /** Idle spin speed in rad/s (~5 minutes per rotation). */
   private static readonly IDLE_SPIN_SPEED = 0.021;
 
   private azimuth = -0.62;
-  // BELOW the waterline, by about 86 m, and close enough that the analysis
-  // fills ~58% of frame height instead of 25%.
-  //
-  // This reverses §10's "elevated 3/4 view above the waterline". The geometry
-  // left no third option: eye height is target.y + distance*sin(elevation), so
-  // getting the box large enough to read means a smaller distance, and staying
-  // dry at that distance would need a HIGHER angle — which shows the column's
-  // warm lid and hides the thermocline, the exact thing §10 lowered the
-  // elevation to avoid. Closer and lower is underwater.
-  //
-  // What survives the reversal: dragging up still returns to the basin
-  // overview, so a forecaster keeps the whole-box view on demand. What it buys:
-  // the light shafts and marine snow, which are gated on being underwater and
-  // so had never once been visible in the default frame.
+  // Default camera sits ~86 m below the surface, close enough that the analysis
+  // fills most of the frame. Staying above the water at this distance would need a
+  // steeper angle, which only shows the top of the column. Dragging up still gets
+  // you the overview.
   private elevation = 0.1;
   private distance = 2.35;
-  // The value `onWheel` writes; `tick()` eases the rendered `distance`
-  // toward this every frame instead of snapping to it directly. Every call
-  // site that hard-sets `distance` (resetColumnCamera, enterGlobe, the
-  // entry gesture's completion) must also sync this, or the next scroll
-  // will lurch back from a stale target.
-  //
-  // Seeded from `distance` above, not from the 4.4 this arrived with: the
-  // globe branch predates the submerged default, and a target that disagrees
-  // with the rendered distance would ease the camera back up through the
-  // surface on the first frame — undoing the reversal above without a single
-  // line of it changing.
+  // Zoom target set by onWheel; tick() eases ``distance`` towards it. Anything that
+  // sets ``distance`` directly (resetColumnCamera, enterGlobe, end of entry) must
+  // update this too, or the next scroll jumps.
   private distanceTarget = 2.35;
   private fitScale = 1;
   private readonly target = new THREE.Vector3(0, -0.44, 0);
@@ -301,28 +239,20 @@ export class OceanScene {
   private lastPointer = { x: 0, y: 0 };
   private lastPointerTime = 0;
   private pointerDownPosition = { x: 0, y: 0 };
-  // Set on pointerup: did this gesture move more than a few pixels? The
-  // browser fires a native "click" after a drag-release too, not just a
-  // real click, and onClick uses this to ignore the former — otherwise
-  // every rotate gesture ends by (mis)reading its release point as a click.
+  // Set on pointerup if the pointer moved more than a few pixels, so onClick can
+  // ignore the click the browser fires after a drag.
   private wasDrag = false;
   private static readonly CLICK_DRAG_THRESHOLD = 6;
-  // Drag inertia: the smoothed angular speed carried into a coast after
-  // release, and whether that coast is currently running. Reset to 0/false
-  // on every new pointerdown and on every hard camera reset (enterGlobe,
-  // resetColumnCamera) so no leftover momentum bleeds across a view switch.
+  // Drag inertia. Reset on pointerdown and on camera resets so momentum doesn't
+  // carry across a view switch.
   private azimuthVelocity = 0;
   private elevationVelocity = 0;
   private coasting = false;
-  // Idle spin: `lastInteractionTime` resets on every pointerdown, drag step, and
-  // wheel event, so `tick()` can measure how long control has truly sat idle.
-  // `idleSpinRampTime` accumulates only while the spin is actively easing in, and
-  // is zeroed the instant an interaction (or coast) preempts it — no ease-out, the
-  // speed is slow enough that a hard stop is imperceptible.
+  // Idle spin timing. lastInteractionTime resets on any pointer or wheel input;
+  // idleSpinRampTime only grows while the spin is easing in.
   private lastInteractionTime = performance.now();
   private idleSpinRampTime = 0;
-  // Click-anywhere fly-to (globe only): the targets `tick()` eases azimuth/
-  // elevation toward while `flyToActive`, set by `flyToOutsidePoint()`.
+  // Fly-to targets (globe only), set by flyToOutsidePoint().
   private azimuthTarget = 0;
   private elevationTarget = 0;
   private flyToActive = false;
@@ -330,19 +260,15 @@ export class OceanScene {
   onHover: ((marker: MarkerDatum | null) => void) | null = null;
   onSelect: ((marker: MarkerDatum | null) => void) | null = null;
   onEntryComplete: (() => void) | null = null;
-  /** Fires when the scene changes view on its own — clicking into the region, say. */
+  /** Fires when the scene changes view by itself (e.g. clicking into the region). */
   onViewChange: ((view: SceneView) => void) | null = null;
-  /** Fires when a globe click flies toward a point outside the analysis extent —
-   * there's real data to dive into only inside it, so this is the signal for the
-   * "no measurement here" callout rather than pretending there's detail to find. */
+  /**
+   * Fires when a globe click lands outside the analysis area, so the UI can say
+   * there's no data there.
+   */
   onEmptyRegionClick: (() => void) | null = null;
 
-  /**
-   * A place on Earth, from a click anywhere on the sphere.
-   *
-   * The globe answers "where"; the chunk view answers "what is in there". With
-   * this set, a click stops being a camera move and becomes navigation.
-   */
+  /** Fires with the lat/lon of a click on the globe (opens the chunk view). */
   onGlobePick: ((lat: number, lon: number) => void) | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -354,17 +280,13 @@ export class OceanScene {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(TOKEN.abyss, 1);
-    // NO tone mapping. A filmic curve looks better on the water but it also
-    // remaps every colour in the frame, including the data volume's — which
-    // would quietly shift a reader's sense of a temperature away from what the
-    // colorbar states. context.md §5.1 forbids exactly that.
+    // No tone mapping. It would also shift the data colours away from the colorbar.
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 400);
     this.worldGroup.add(this.volumeGroup, this.markerGroup, this.latticeGroup, this.profileGroup);
     this.scene.add(this.worldGroup, this.globeGroup);
-    // Parented to worldGroup, not scene, so globe mode hides them with everything
-    // else — depth labels have no meaning floating beside the Earth.
+    // Labels live in worldGroup so they hide with it in globe mode.
     void ensureLabelFont();
 
     this.sky = buildSky();
@@ -384,8 +306,7 @@ export class OceanScene {
     });
     this.globeGroup.add(this.globe.group);
 
-    // In globeGroup (not scene), so it shares the group's fixed rotation and
-    // stays static relative to the surface rather than drifting on its own.
+    // In globeGroup so the clouds rotate with the Earth.
     this.clouds = buildClouds(CLOUDS_URL, this.renderer.capabilities.getMaxAnisotropy());
     this.globeGroup.add(this.clouds.mesh);
 
@@ -399,18 +320,13 @@ export class OceanScene {
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
-  // ---------------------------------------------------------------- lifecycle
+  // --- lifecycle ---
 
   /**
-   * Stop or resume the render loop.
+   * Pause or resume rendering.
    *
-   * The chunk view is a second full-screen WebGL surface laid over this one.
-   * Two contexts drawing at once costs real frames on a mid-range laptop, and
-   * the console is not visible underneath, so this scene stands down while the
-   * chunk view is up. It is a pause, not a teardown: the camera, the volume
-   * texture and the markers all survive, so returning is instant and the view
-   * toggle never has to re-derive which view the scene is on — which is the
-   * failure mode recorded in next_session.md §6.
+   * The chunk view is a second full-screen WebGL canvas on top of this one, so we
+   * stop drawing while it's open. Nothing is torn down, so coming back is instant.
    */
   setPaused(paused: boolean): void {
     if (this.disposed) return;
@@ -422,9 +338,8 @@ export class OceanScene {
     this.renderer.setAnimationLoop(null);
     this.detachInput();
     this.effects.dispose();
-    // Explicit, because the traverse below only reaches geometries and materials — it
-    // would leave the basemap texture (4096×2048, ~45 MB on the GPU with mipmaps)
-    // allocated on every hot reload.
+    // The traverse below only reaches geometries and materials, so free the basemap
+    // texture (~45 MB on the GPU) explicitly.
     this.globe?.dispose();
     this.globe = null;
     this.lattice?.dispose();
@@ -436,8 +351,7 @@ export class OceanScene {
     this.clouds?.dispose();
     this.clouds = null;
     this.scene.traverse((object) => {
-      // Every Sprite in the process shares one module-level geometry. Disposing
-      // it here would yank it out from under every other sprite on the page.
+      // Sprites share one geometry; don't dispose it.
       if ((object as THREE.Sprite).isSprite) return;
       const mesh = object as THREE.Mesh;
       mesh.geometry?.dispose?.();
@@ -457,38 +371,27 @@ export class OceanScene {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.effects.setSize(width, height);
-    // sizeAttenuation is off, so a label's world scale depends on the projection.
+    // Labels don't use sizeAttenuation, so their scale depends on the projection.
     this.lattice?.setLabelScale(this.camera, height);
 
-    // Field of view is vertical, so a tall narrow viewport crops horizontally
-    // and the basin runs off the sides. Pull further out to compensate.
-    // The cap MUST stay low now the default view is submerged. fitScale
-    // multiplies distance, and eye height is target.y + distance*fitScale*
-    // sin(elevation): at the old 2.4 cap that reaches +0.12 on a narrow
-    // viewport — above the water — and the whole design silently flips regime.
-    // At 1.6 the worst case is -0.065, still under.
+    // FOV is vertical, so narrow viewports crop the sides; pull back to compensate.
+    // Keep the cap low (1.6): at 2.4 a narrow viewport lifts the camera above the water.
     const TARGET_ASPECT = 1.7;
     this.fitScale = Math.min(1.6, Math.max(1, TARGET_ASPECT / this.camera.aspect));
   }
 
-  // ------------------------------------------------------------------- globe
+  // --- globe ---
 
-  /** A scenario picks its own season; no-op when the basemap is already loaded. */
+  /** Switch basemap month. Does nothing if it's already loaded. */
   setBasemap(url: string): void {
     void this.globe?.setBasemap(url);
   }
 
   /**
-   * (Re)draw the floats on the sphere.
+   * Redraw the floats on the globe. Rebuilt each time since it's cheap.
    *
-   * Rebuilt rather than mutated because it depends on the marker list and is cheap. Kept
-   * as a field so repeated calls replace rather than accumulate.
-   *
-   * No visible extent outline is drawn here (removed — it read as a distracting box on
-   * the sphere). The region is still a real hit-test target: `isInsideExtent` below
-   * checks a clicked lat/lon against the same bounds regardless of what's drawn, so the
-   * click-to-dive gesture is unaffected. The floats themselves, and the hint copy in
-   * App.tsx, are what show a reader roughly where the analysis is.
+   * There's no outline drawn for the analysis area, but isInsideExtent() still
+   * uses its bounds for clicks.
    */
   private refreshGlobeMarks(): void {
     if (this.globeFloats) {
@@ -504,7 +407,7 @@ export class OceanScene {
     }
   }
 
-  /** Is a point on the sphere inside the analysis extent? */
+  /** Is a point on the globe inside the analysis area? */
   private isInsideExtent(lat: number, lon: number): boolean {
     const [lat0, lat1] = this.extent.latRange;
     const [lon0, lon1] = this.extent.lonRange;
@@ -517,12 +420,8 @@ export class OceanScene {
   }
 
   /**
-   * Go back to the globe.
-   *
-   * Instant in both directions — the descent is the *entry*, and replaying a 4.6 s
-   * cinematic every time someone checks where they are would turn the product's one
-   * orchestrated moment into a toll. Returning to the column replays it (see
-   * enterColumn) because that direction is the gesture; coming back up is navigation.
+   * Switch to the globe. Instant: only going down into the column replays the
+   * entry animation.
    */
   enterGlobe(): void {
     if (this.view === "globe") return;
@@ -534,8 +433,7 @@ export class OceanScene {
     setGlobeOpacity(this.globeGroup, 1);
     this.worldGroup.visible = false;
 
-    // Frame the whole sphere, centred. Radius 1.35 at a 42° vertical FOV needs ~3.8 to
-    // fit; 4.05 leaves the margin of space the reference frames have around the limb.
+    // Frame the whole globe. Radius 1.35 at 42° FOV needs ~3.8; 4.05 leaves some margin.
     this.target.set(0, 0, 0);
     this.distance = this.distanceTarget = 4.05;
     this.elevation = 0.22;
@@ -543,13 +441,12 @@ export class OceanScene {
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
     this.flyToActive = false;
-    // Idle spin starts counting from arrival, not from whenever the scene was
-    // constructed (which could already be well past IDLE_SPIN_DELAY).
+    // Start the idle timer on arrival.
     this.lastInteractionTime = performance.now();
     this.idleSpinRampTime = 0;
 
-    // Fix the Earth's rotation so the study region faces the camera on arrival, then
-    // leave it alone — from here the camera orbits and the Earth stays put.
+    // Rotate the Earth once so the study region faces the camera; after that only
+    // the camera moves.
     const midLon = (this.extent.lonRange[0] + this.extent.lonRange[1]) / 2;
     this.globeRotationY = THREE.MathUtils.degToRad(midLon) - Math.PI / 2 + this.azimuth;
     this.globeGroup.rotation.set(0, this.globeRotationY, 0);
@@ -559,7 +456,7 @@ export class OceanScene {
     this.onHover?.(null);
   }
 
-  /** Dive back into the water column, replaying the entry descent. */
+  /** Go back into the water column, replaying the entry animation. */
   enterColumn(): void {
     if (this.view === "column") return;
     this.view = "column";
@@ -571,15 +468,14 @@ export class OceanScene {
       this.worldGroup.visible = true;
       this.resetColumnCamera();
       this.revealMarkers();
-      // Reported even though nothing was animated: the caller resets its "entry running"
-      // state before calling this, and without the callback it would never clear.
+      // Call this even with no animation, the caller waits on it to reset its state.
       this.onEntryComplete?.();
       return;
     }
     this.startEntry();
   }
 
-  /** Zoom the camera smoothly inward with view-specific limits. */
+  /** Zoom in, within the current view's limits. */
   zoomIn(factor = 0.75): void {
     this.lastInteractionTime = performance.now();
     this.idleSpinRampTime = 0;
@@ -589,7 +485,7 @@ export class OceanScene {
       : Math.max(1.2, Math.min(11, next));
   }
 
-  /** Zoom the camera smoothly outward with view-specific limits. */
+  /** Zoom out, within the current view's limits. */
   zoomOut(factor = 1.33): void {
     this.lastInteractionTime = performance.now();
     this.idleSpinRampTime = 0;
@@ -599,7 +495,7 @@ export class OceanScene {
       : Math.max(1.2, Math.min(11, next));
   }
 
-  /** Reset globe view camera and orientation. */
+  /** Reset the globe camera and rotation. */
   resetGlobeCamera(): void {
     this.lastInteractionTime = performance.now();
     this.idleSpinRampTime = 0;
@@ -616,13 +512,11 @@ export class OceanScene {
     this.canvas.style.cursor = "grab";
   }
 
-  /** Must land exactly where the entry gesture ends, or a globe round trip jumps. */
+  /** Must match where the entry animation ends, or a globe round trip jumps. */
   resetColumnCamera(): void {
     this.azimuth = -0.62;
     this.elevation = 0.1;
-    // Assigned together so the eased target can never disagree with the
-    // rendered distance — the docstring's "exactly" is what makes a globe
-    // round trip land where the entry gesture ended.
+    // Set both so the eased target matches the actual distance.
     this.distance = this.distanceTarget = 2.35;
     this.target.set(0, -0.44, 0);
     this.coasting = false;
@@ -631,7 +525,7 @@ export class OceanScene {
     this.flyToActive = false;
   }
 
-  /** Reset camera according to current active 3D view. */
+  /** Reset the camera for the current view. */
   resetCamera(): void {
     if (this.view === "globe") {
       this.resetGlobeCamera();
@@ -640,7 +534,7 @@ export class OceanScene {
     }
   }
 
-  // -------------------------------------------------------------- atmosphere
+  // --- atmosphere ---
 
   private buildAtmosphere(): void {
     const bounds = new THREE.Vector3(7, ANALYSIS_HEIGHT * 1.7, 7);
@@ -649,7 +543,7 @@ export class OceanScene {
     this.worldGroup.add(this.marineSnow, this.lightShafts);
   }
 
-  // ----------------------------------------------------------------- terrain
+  // --- terrain ---
 
   setTerrain(field: TerrainField): void {
     if (this.terrainMesh) {
@@ -663,9 +557,8 @@ export class OceanScene {
   }
 
   /**
-   * The relief dissolves in the analysis box's own half-widths, so the uniform
-   * has to follow the extent rather than being baked at build time. Called from
-   * both setTerrain and setExtent, because either can arrive first.
+   * The terrain fade depends on the analysis box, so update it from both
+   * setTerrain and setExtent (either can come first).
    */
   private applyTerrainBounds(): void {
     const material = this.terrainMesh?.material as THREE.ShaderMaterial | undefined;
@@ -674,7 +567,7 @@ export class OceanScene {
     (uniform.value as THREE.Vector2).set(this.boxSize.x / 2, this.boxSize.z / 2);
   }
 
-  // ------------------------------------------------------------------ volume
+  // --- volume ---
 
   setExtent(extent: SceneExtent): void {
     this.extent = extent;
@@ -687,9 +580,8 @@ export class OceanScene {
   }
 
   /**
-   * The lattice belongs to the extent, not the field: it states where the box
-   * is, which does not change when the variable does. Rebuilding it here rather
-   * than in setField also keeps it clear of clearVolume().
+   * The lattice depends on the extent, not the field, so it's rebuilt here and
+   * not touched by clearVolume().
    */
   private rebuildLattice(): void {
     this.lattice?.dispose();
@@ -701,7 +593,7 @@ export class OceanScene {
     this.latticeGroup.add(this.lattice.group);
   }
 
-  /** Vertical exaggeration, so the UI can state it rather than imply it. */
+  /** Vertical exaggeration, so the UI can show it. */
   get verticalExaggeration(): number {
     return this.geo.verticalExaggeration();
   }
@@ -715,9 +607,7 @@ export class OceanScene {
   ): void {
     this.clearVolume();
 
-    // encodedRange, not valueRange: a diverging map re-centres on zero, so the
-    // texture is encoded against a different span than the metadata reports.
-    // Anything colouring alongside the volume has to use what it actually used.
+    // Use encodedRange, not valueRange: diverging maps are re-centred on zero.
     const { texture, encodedRange } = buildVolumeTexture(values, geometry, valueRange, colormap);
     this.volumeTexture = texture;
     this.lutTexture = buildLutTexture(colormap);
@@ -727,12 +617,11 @@ export class OceanScene {
 
     const material = createVolumeMaterial({ volume: texture, lut: this.lutTexture });
 
-    // A UNIT cube scaled to the field's aspect. The raymarch shader intersects
-    // against [-0.5, 0.5] in object space, so a pre-sized geometry would leave
-    // it marching only the central unit cube and clipping the field away.
+    // Unit cube scaled to the field's aspect. The raymarch shader works in
+    // [-0.5, 0.5] object space, so a pre-sized box would get clipped.
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
     mesh.scale.copy(this.boxSize);
-    // Hung from the sea surface: top face at y = 0, bottom at the 2000 m mark.
+    // Top face at y = 0 (sea surface), bottom at 2000 m.
     mesh.position.set(0, -this.boxSize.y / 2, 0);
     mesh.renderOrder = RENDER_ORDER.volume;
     this.volumeMesh = mesh;
@@ -740,14 +629,13 @@ export class OceanScene {
 
     this.buildFrame();
 
-    // A surface variable carries one level smeared down the whole box. Marking
-    // depths on it would assert a measurement at 500 m that does not exist.
+    // Surface-only variables have no depth, so hide the depth labels.
     this.lattice?.setDepthAxisVisible(this.fieldHasDepth);
     this.setDepthWindow(this.depthWindow[0], this.depthWindow[1]);
     this.rebuildRibbon();
   }
 
-  /** A hairline cage stating the analysis extent, now that the data fades out. */
+  /** Thin wireframe showing the analysis extent. */
   private buildFrame(): void {
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(this.boxSize.x, this.boxSize.y, this.boxSize.z)),
@@ -758,10 +646,10 @@ export class OceanScene {
     this.volumeGroup.add(edges);
   }
 
-  /** Clears only the field. Markers, lattice and ribbon are siblings and survive.
-   *
-   *  Public because the layer panel calls it directly to drop a field when a
-   *  layer is switched off, rather than round-tripping through a re-fetch. */
+  /**
+   * Clears only the field; markers, lattice and ribbon stay. Public so the layer
+   * panel can drop a field without refetching.
+   */
   clearVolume(): void {
     for (const child of [...this.volumeGroup.children]) {
       this.volumeGroup.remove(child);
@@ -769,8 +657,7 @@ export class OceanScene {
       mesh.geometry?.dispose?.();
       (mesh.material as THREE.Material | undefined)?.dispose?.();
     }
-    // ShaderMaterial.dispose() does not reach textures held in uniforms, so
-    // without this every variable or timestep change orphaned a 3D texture.
+    // ShaderMaterial.dispose() doesn't free textures in uniforms, so do it here.
     this.volumeTexture?.dispose();
     this.volumeTexture = null;
     this.lutTexture?.dispose();
@@ -790,13 +677,11 @@ export class OceanScene {
     }
   }
 
-  // --------------------------------------------------------- profile ribbon
+  // --- profile ribbon ---
 
   /**
-   * The selected float's measured profile, drawn where it was measured and
-   * coloured on the same scale as the water around it. This is the co-display
-   * the problem statement asks for, happening in the viewport rather than only
-   * in a side panel.
+   * Draw the selected float's profile in place, coloured on the same scale as the
+   * water around it.
    */
   setProfile(profile: ProfileTrace | null): void {
     this.profile = profile;
@@ -821,9 +706,8 @@ export class OceanScene {
     const lut = this.lutTexture;
     if (!profile || !lut) return;
 
-    // Colouring an observed temperature through the current-speed ramp would be
-    // a lie the reader cannot see. When the float and the field disagree, draw
-    // nothing — the marker's own stem already says where the float is.
+    // Only draw if the float's variable matches the field, otherwise the colours
+    // would mean something else.
     if (profile.variable !== this.fieldVariable) return;
 
     const points = profile.points
@@ -870,15 +754,9 @@ export class OceanScene {
       );
     };
 
-    // Figure/ground separation, drawn behind — never a wash on top.
-    //
-    // `foam`, not `abyss`, and the reason is worth keeping: most of a profile's
-    // length is deep water, which sits at the COLD end of every cmocean ramp and
-    // is therefore nearly black. A dark casing cannot separate dark from dark, so
-    // the first attempt made a correct ribbon invisible. A light sheath separates
-    // in both directions. It encodes nothing; only the core carries a value.
-    // Kept to ~1.4x rather than 1.8x: the ribbon is a few pixels wide at the
-    // default camera, and a wider casing swallowed the colour it exists to frame.
+    // Light casing behind the ribbon. Most of a profile is deep, cold water, which
+    // is near-black in every cmocean ramp, so a dark casing wouldn't show up.
+    // ~1.4x the width so it doesn't swallow the colour.
     const casing = build(0.027, TOKEN.foam, 0.36);
     casing.renderOrder = RENDER_ORDER.ribbonCasing;
     casing.visible = !this.entryActive;
@@ -901,7 +779,7 @@ export class OceanScene {
     material.uniforms.uSliceDepth!.value = depthToNorm(depth);
   }
 
-  // ----------------------------------------------------------------- markers
+  // --- markers ---
 
   setMarkers(markers: MarkerDatum[]): void {
     if (this.markerMesh) {
@@ -918,17 +796,13 @@ export class OceanScene {
     }
     this.markers = markers;
     this.hoveredIndex = -1;
-    // The globe carries the same floats, so it is rebuilt from the same list. Done before
-    // the early return so clearing the markers clears them on the sphere too.
+    // Rebuild the globe floats from the same list (before the early return so
+    // clearing works too).
     this.refreshGlobeMarks();
     if (markers.length === 0) return;
 
-    // Per-instance colour comes from instanceColor, which the renderer
-    // multiplies against the material colour. `vertexColors` must stay off: it
-    // makes the shader look for a geometry colour attribute that does not exist
-    // here, and every marker renders black.
+    // Colour comes from instanceColor. Keep vertexColors off or every marker renders black.
     const mesh = new THREE.InstancedMesh(
-      // Was 0.02, sized for a camera 1.9x further out. Same apparent size.
       new THREE.SphereGeometry(0.011, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
       markers.length,
@@ -951,10 +825,8 @@ export class OceanScene {
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.renderOrder = RENDER_ORDER.markers;
-    // The markers are the ONLY thing permitted to bloom. Enabling (not setting)
-    // keeps them in the normal render too. Nothing added since — lattice, labels,
-    // ribbon — goes on that layer: the bloom pass renders it alone, so anything
-    // on it is unoccludable and would glow through the water and the Earth.
+    // Only the markers bloom. Anything else on BLOOM_LAYER would glow through the
+    // water and the Earth, since the bloom pass renders that layer alone.
     mesh.layers.enable(BLOOM_LAYER);
     mesh.visible = !this.entryActive;
     this.markerMesh = mesh;
@@ -976,14 +848,8 @@ export class OceanScene {
   }
 
   /**
-   * Markers are instruments, not data, so they must sit below the colormap in
-   * the frame's value order. At full token brightness a resting marker renders
-   * at foam (0.918, 0.953, 0.945) — level with the top of every cmocean ramp —
-   * so it competed with the field it exists to point at. Resting states are
-   * dimmed; only the selected one is allowed to be the brightest chrome.
-   *
-   * Both the initial colouring and every refresh go through here, so they
-   * cannot drift apart.
+   * Markers are dimmed so they don't outshine the data; only the selected one
+   * is at full brightness. Used for both first colouring and refreshes.
    */
   private markerColour(index: number, marker: MarkerDatum, into: THREE.Color): THREE.Color {
     if (index === this.selectedIndex) return into.setHex(TOKEN.advisory);
@@ -1009,16 +875,18 @@ export class OceanScene {
   private revealMarkers(): void {
     if (this.markerMesh) this.markerMesh.visible = true;
     if (this.markerStems) this.markerStems.visible = true;
-    // The descent is meant to arrive at the instruments, not fly through them.
+    // Show the lattice once the camera has arrived.
     this.lattice?.setVisible(true);
     if (this.ribbon) this.ribbon.visible = true;
     if (this.ribbonCasing) this.ribbonCasing.visible = true;
   }
 
-  // ------------------------------------------------------------------- input
+  // --- input ---
 
-  /** Almost to either pole on the globe, but never past — the rig degenerates at ±π/2.
-   * Allowed below the horizon in column view so the viewer can dive under the surface. */
+  /**
+   * Clamp elevation: almost to the poles on the globe (the rig breaks at ±π/2);
+   * below the horizon is allowed in column view.
+   */
   private clampElevation(value: number): number {
     return this.view === "globe"
       ? Math.max(-1.35, Math.min(1.35, value))
@@ -1027,8 +895,7 @@ export class OceanScene {
 
   private readonly onPointerDown = (event: PointerEvent) => {
     this.dragging = true;
-    // Grabbing the globe always regains immediate control, whether a coast
-    // from a previous release or an in-flight fly-to swoop was running.
+    // Grabbing the globe cancels any coast or fly-to.
     this.coasting = false;
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
@@ -1037,17 +904,14 @@ export class OceanScene {
     this.lastPointerTime = performance.now();
     this.lastInteractionTime = this.lastPointerTime;
     this.idleSpinRampTime = 0;
-    // Where the gesture started, so onClick can tell a real click (the
-    // pointer barely moved) from a drag that happened to release over the
-    // same element — the browser fires "click" after both.
+    // Remember where the pointer went down so onClick can tell clicks from drags.
     this.pointerDownPosition = { x: event.clientX, y: event.clientY };
     this.canvas.setPointerCapture(event.pointerId);
   };
 
   private readonly onPointerUp = (event: PointerEvent) => {
     this.dragging = false;
-    // Only a deliberate flick starts a coast — a slow drag or a click that
-    // barely moved leaves the velocity near zero and nothing drifts.
+    // Only a real flick starts a coast.
     this.coasting = Math.hypot(this.azimuthVelocity, this.elevationVelocity)
       > OceanScene.COAST_MIN_SPEED;
     this.wasDrag = Math.hypot(
@@ -1067,8 +931,7 @@ export class OceanScene {
       const dx = event.clientX - this.lastPointer.x;
       const dy = event.clientY - this.lastPointer.y;
       const now = performance.now();
-      // Floored rather than left free, so two events on the same frame (dt≈0)
-      // can't produce a divide-by-near-zero velocity spike.
+      // Clamp dt so two events in the same frame don't spike the velocity.
       const dt = Math.max((now - this.lastPointerTime) / 1000, 1 / 240);
       this.lastPointer = { x: event.clientX, y: event.clientY };
       this.lastPointerTime = now;
@@ -1079,8 +942,7 @@ export class OceanScene {
       this.azimuth += azimuthStep;
       this.elevation = this.clampElevation(this.elevation + elevationStep);
 
-      // Smoothed instantaneous angular speed, carried into onPointerUp to
-      // decide whether — and how fast — to coast.
+      // Smoothed angular speed, used on pointerup to decide whether to coast.
       const k = 1 - OceanScene.VELOCITY_SMOOTHING;
       this.azimuthVelocity += (azimuthStep / dt - this.azimuthVelocity) * k;
       this.elevationVelocity += (elevationStep / dt - this.elevationVelocity) * k;
@@ -1094,25 +956,18 @@ export class OceanScene {
     this.lastInteractionTime = performance.now();
     this.idleSpinRampTime = 0;
     const next = this.distanceTarget + event.deltaY * 0.0016;
-    // The globe's near limit has to clear its own radius (1.35) or the camera ends up
-    // inside the Earth, looking at the back of the texture.
+    // Keep the camera outside the globe (radius 1.35).
     this.distanceTarget = this.view === "globe"
       ? Math.max(2.0, Math.min(9, next))
       : Math.max(1.2, Math.min(11, next));
   };
 
   private readonly onClick = () => {
-    // A drag that released over the canvas still fires a native "click" —
-    // this isn't one, so it shouldn't dive, select a marker, or fly
-    // anywhere. Without this, every rotate gesture would end by reading its
-    // release point as a click on whatever it happened to land on.
+    // Ignore the click event that follows a drag.
     if (this.wasDrag) return;
 
-    // On the globe, a click is a place. Anywhere on the sphere opens the chunk
-    // containing that point — inside the analysis extent or well outside it,
-    // since the chunk view resolves its own tile and says so when it has to
-    // step to a neighbouring one. Without a handler the camera flies there
-    // instead, which is what this did before the chunk view existed.
+    // On the globe, clicking anywhere opens the chunk for that point. Without a
+    // handler we fly the camera there instead.
     if (this.view === "globe") {
       if (this.hoverLatLon) {
         if (this.onGlobePick) this.onGlobePick(this.hoverLatLon.lat, this.hoverLatLon.lon);
@@ -1131,36 +986,25 @@ export class OceanScene {
   };
 
   /**
-   * Fly the camera toward a clicked point outside the analysis extent, and
-   * settle into a close orbit of it there.
-   *
-   * This is the honest version of "zoom in for detail": real detail only
-   * exists inside the extent — that's the dive, unchanged above — so a click
-   * elsewhere gets a closer look at the same basemap and the
-   * `onEmptyRegionClick` signal for an explicit "no measurement here," never
-   * fabricated detail (context.md §5.1 Principle 7).
+   * Fly toward a point outside the analysis area and orbit it closely. We only
+   * have data inside the area, so this also fires onEmptyRegionClick.
    */
   private flyToOutsidePoint(lat: number, lon: number): void {
     const sphere = this.globe?.sphere;
     if (!sphere) return;
 
-    // Three.js's own object-to-world transform, symmetric with
-    // updateGlobeHover's worldToLocal — avoids hand-inverting globeGroup's
-    // rotation to get from a lat/lon back to a world-space direction.
+    // Use Three's localToWorld instead of inverting the globe rotation by hand.
     const worldNormal = sphere.localToWorld(latLonToGlobe(lat, lon, 1)).normalize();
 
-    // tick() renders the camera along the direction
-    // (cosE*sin(az), sinE, cosE*cos(az)) from `target` — see the position
-    // assignment there. Aligning that direction with the clicked point's
-    // world normal is exactly "face the camera at this point."
+    // tick() places the camera along (cosE*sin(az), sinE, cosE*cos(az)) from target,
+    // so match that direction to the clicked point's normal.
     this.elevationTarget = this.clampElevation(
       Math.asin(THREE.MathUtils.clamp(worldNormal.y, -1, 1)),
     );
     this.azimuthTarget = Math.atan2(worldNormal.x, worldNormal.z);
     this.distanceTarget = OceanScene.FLYTO_CLOSE_DISTANCE;
 
-    // A fly-to takeover always wins over a coast in progress — same "regain
-    // control" rule as grabbing the globe.
+    // Fly-to overrides any coast.
     this.coasting = false;
     this.azimuthVelocity = 0;
     this.elevationVelocity = 0;
@@ -1192,16 +1036,11 @@ export class OceanScene {
   }
 
   /**
-   * Globe hover: is the cursor over the analysis extent, and where is it, period?
+   * Globe hover: is the cursor over the analysis area, and where is it?
    *
-   * Raycasts the sphere and tests the resulting lat/lon against the extent, rather than
-   * raycasting the outline itself. A LineLoop is a nearly un-hittable target — a few
-   * pixels wide, and only its edges — whereas this makes the whole region clickable, which
-   * is what a reader expects from a box drawn on a map.
-   *
-   * `hoverLatLon` is refreshed on every call, independent of the `regionHovered`
-   * early-return below, so a click always knows exactly where it landed —
-   * not just the last point where inside/outside status changed.
+   * We raycast the sphere and check the lat/lon against the extent, which makes the
+   * whole region clickable. hoverLatLon is updated on every call so clicks always
+   * know where they landed.
    */
   private updateGlobeHover(): void {
     const sphere = this.globe?.sphere;
@@ -1212,8 +1051,7 @@ export class OceanScene {
 
     let inside = false;
     if (hit) {
-      // World space to the sphere's own space, so the globe's rotation is undone before
-      // the position is read as a place on Earth.
+      // Convert to the sphere's local space to undo the globe's rotation.
       const local = sphere.worldToLocal(hit.point.clone());
       this.hoverLatLon = globeToLatLon(local);
       inside = this.isInsideExtent(this.hoverLatLon.lat, this.hoverLatLon.lon);
@@ -1251,7 +1089,7 @@ export class OceanScene {
     this.onSelect?.(this.markers[index]!);
   }
 
-  // ------------------------------------------------------------------- entry
+  // --- entry animation ---
 
   startEntry(): void {
     this.view = "column";
@@ -1303,25 +1141,19 @@ export class OceanScene {
       this.elevation = 0.95 - k * 0.46;
       this.azimuth = -1.15 + k * 0.35;
     } else if (t < 0.72) {
-      // Hand-off: the sphere opens into the sea it contains.
+      // Hand-off from the globe to the sea.
       const k = ease((t - 0.52) / 0.2);
       this.globeGroup.visible = true;
       this.worldGroup.visible = true;
       this.globeGroup.scale.setScalar(1 + k * 1.8);
       setGlobeOpacity(this.globeGroup, 1 - k);
-      // Ends on 3.3 / 0.40 / -0.70, which is exactly where the settle begins.
-      // The old curve handed off at 4.2 and resumed at 4.1 — a small jump that
-      // was invisible only because the settle was so gentle.
+      // Ends on 3.3 / 0.40 / -0.70, where the settle phase starts.
       this.distance = 3.5 - k * 0.2;
       this.elevation = 0.49 - k * 0.09;
       this.azimuth = -0.8 + k * 0.1;
     } else {
-      // Settle into the working view — and, now, THROUGH the surface. Eye
-      // height runs from +1.14 to -0.21 across this phase, so the gesture's
-      // last beat is a real dive rather than a hover above the water.
-      //
-      // These four must land exactly on resetColumnCamera(), or returning from
-      // the globe jumps.
+      // Settle into the working view, going through the surface. These values must
+      // match resetColumnCamera() or returning from the globe jumps.
       const k = ease((t - 0.72) / 0.28);
       this.globeGroup.visible = false;
       this.worldGroup.visible = true;
@@ -1331,15 +1163,11 @@ export class OceanScene {
       this.target.y = -0.14 - k * 0.3;
     }
 
-    // Turn the study region to face the camera. Done after the phase branches
-    // so it uses this frame's azimuth, not the previous one's.
+    // Rotate the globe so the study region faces the camera, using this frame's azimuth.
     //
-    // The globe shader derives longitude as atan2(n.z, n.x), so a point at
-    // longitude L sits at angle L in the xz plane, and rotating the globe by
-    // theta moves it to L - theta. The camera at azimuth `az` looks along the
-    // direction at angle (pi/2 - az); setting those equal gives the rotation
-    // below. The previous formula ignored the camera azimuth entirely, which is
-    // why the entry used to fly toward the Atlantic.
+    // The globe shader uses longitude = atan2(n.z, n.x), so rotating by theta moves
+    // longitude L to L - theta. The camera at azimuth az looks along (pi/2 - az);
+    // setting them equal gives the rotation below.
     const midLon = (this.extent.lonRange[0] + this.extent.lonRange[1]) / 2;
     this.globeGroup.rotation.y =
       THREE.MathUtils.degToRad(midLon) - Math.PI / 2 + this.azimuth;
@@ -1350,14 +1178,10 @@ export class OceanScene {
       this.globeGroup.visible = false;
       this.globeGroup.scale.setScalar(1);
       this.revealMarkers();
-      // The entry writes `distance` directly every frame without touching
-      // `distanceTarget`; sync it now so the first post-entry scroll eases
-      // from where the camera actually is, not from a stale target.
+      // Entry sets distance directly, so sync the zoom target now.
       this.distanceTarget = this.distance;
-      // Any coast or fly-to running before the dive started (from a flick or
-      // a swoop on the globe) was frozen, not stopped, while entryActive
-      // gated it out of tick() — clear it so it doesn't silently resume in
-      // the column.
+      // Clear any coast or fly-to that was paused during the entry, so it doesn't
+      // resume in the column.
       this.coasting = false;
       this.azimuthVelocity = 0;
       this.elevationVelocity = 0;
@@ -1366,31 +1190,24 @@ export class OceanScene {
     }
   }
 
-  // -------------------------------------------------------------------- loop
+  // --- render loop ---
 
   private tick(): void {
     if (this.disposed) return;
     const now = performance.now();
-    // `getDelta()` advances the clock and returns the frame time; reading
-    // `elapsedTime` afterward (rather than calling `getElapsedTime()`, which
-    // would call `getDelta()` again) gives the same running total this file
-    // used to get from `getElapsedTime()`, without consuming a second delta.
+    // getDelta() advances the clock; read elapsedTime after it instead of calling
+    // getElapsedTime(), which would call getDelta() again.
     const delta = Math.min(this.clock.getDelta(), 0.1);
     const time = this.clock.elapsedTime;
     if (this.entryActive) {
       this.updateEntry(now);
     } else {
-      // Eased toward `distanceTarget` rather than snapped, so a scroll glides to a stop.
-      // Skipped during the entry gesture, which drives `distance` directly every frame.
+      // Ease towards the zoom target (skipped during the entry animation).
       this.distance += (this.distanceTarget - this.distance)
         * (1 - Math.exp(-OceanScene.ZOOM_DAMPING * delta));
 
-      // Click-anywhere fly-to (globe only): eases azimuth/elevation toward
-      // the target set by flyToOutsidePoint(); `distance` is already easing
-      // toward FLYTO_CLOSE_DISTANCE via the block above, since it shares
-      // `distanceTarget` with ordinary zoom. Mutually exclusive with
-      // coasting below — flyToOutsidePoint() and onPointerDown both clear
-      // `coasting` before this ever runs.
+      // Globe fly-to: ease azimuth/elevation to the target. distance is already
+      // easing via the zoom code above. Never runs together with coasting.
       if (this.flyToActive) {
         const k = 1 - Math.exp(-OceanScene.FLYTO_DAMPING * delta);
         this.azimuth += shortestAngleDelta(this.azimuth, this.azimuthTarget) * k;
@@ -1403,10 +1220,7 @@ export class OceanScene {
           this.flyToActive = false;
         }
       } else if (this.coasting) {
-        // Drag inertia: coasts on the velocity carried out of the last drag,
-        // decaying exponentially until it's imperceptible. onPointerDown
-        // cancels this immediately, so grabbing the globe mid-coast regains
-        // control at once rather than fighting it.
+        // Drag inertia, decaying until it's too small to notice.
         this.azimuth += this.azimuthVelocity * delta;
         this.elevation = this.clampElevation(this.elevation + this.elevationVelocity * delta);
         const decay = Math.exp(-OceanScene.COAST_DAMPING * delta);
@@ -1419,11 +1233,8 @@ export class OceanScene {
         }
       }
 
-      // Idle spin (globe view only): once nothing else is moving the camera and
-      // control has sat untouched past IDLE_SPIN_DELAY, ease in a very slow
-      // autonomous drift in azimuth. Any interaction resets `lastInteractionTime`
-      // (see onPointerDown/onPointerMove/onWheel) and zeroes the ramp, so the
-      // drift always restarts from a standstill rather than resuming mid-speed.
+      // Idle spin (globe only): after IDLE_SPIN_DELAY with no input, slowly ease into
+      // an azimuth drift. Any input resets it to zero.
       if (
         this.view === "globe" &&
         !this.flyToActive &&
@@ -1457,28 +1268,21 @@ export class OceanScene {
     );
     this.camera.lookAt(this.target);
 
-    // Elevation is clamped inside ±90°, so cosE > 0 and the camera's x/z signs
-    // are the azimuth's — which is all the far-face choice needs.
+    // Elevation is within ±90°, so the camera's x/z signs come from azimuth, which
+    // is all the far-face choice needs.
     if (this.lattice && this.worldGroup.visible) {
       this.lattice.faceCull(sinA, cosA);
       this.lattice.anchorLabels(this.camera);
     }
 
-    // The sky follows the camera so the horizon never runs out. It belongs to the sea, so
-    // it is hidden whenever the sea is — which puts the globe against space rather than
-    // against a horizon gradient, as the reference frames have it. During the hand-off
-    // phase both groups are visible and the sky comes up with the water.
+    // The sky follows the camera and is hidden with the sea, so the globe sits
+    // against space.
     this.sky?.position.copy(this.camera.position);
     if (this.sky) this.sky.visible = this.worldGroup.visible;
-    // Synced here rather than at each of the several call sites that toggle
-    // globeGroup.visible — see the field's own comment for why.
+    // Keep the starfield in sync with the globe.
     this.starfield.visible = this.globeGroup.visible;
-    // Drives per-style animation (pulse) and the individual/cluster crossfade (every
-    // Drives the pulse animation and the glow/pulse crossfade — see globe.ts's own
-    // comment on buildFloatMarkers. `this.distance` here is already the eased, per-frame
-    // value driving the visible zoom, not `distanceTarget`, so the crossfade tracks
-    // exactly what's on screen with no separate lag. Gated on visibility so it costs
-    // nothing while in the water column.
+    // Globe marker animation (pulse and glow crossfade, see buildFloatMarkers).
+    // Uses the eased distance so it matches what's on screen.
     if (this.globeGroup.visible) {
       this.globeFloats?.update({ time, cameraDistance: this.distance });
     }
@@ -1506,14 +1310,13 @@ export class OceanScene {
     setUniform(this.marineSnow?.material as THREE.Material, "uTime", time);
     this.lightShafts?.children.forEach((shaft) => {
       setUniform((shaft as THREE.Mesh).material as THREE.Material, "uTime", time);
-      // Turn broadside to the camera, with a fixed per-shaft offset so they do
-      // not read as one card pivoting. See buildLightShafts.
+      // Face the camera, with a small per-shaft offset so they don't all turn together.
       shaft.rotation.y = this.azimuth + ((shaft.userData.jitter as number) ?? 0);
     });
 
     if (this.volumeMesh) {
       const material = this.volumeMesh.material as THREE.ShaderMaterial;
-      // The shader marches in the box's own space, so hand it the camera there.
+      // The shader works in the box's local space, so pass the camera position in it.
       material.uniforms.uCameraLocal!.value.copy(
         this.volumeMesh.worldToLocal(this.camera.position.clone()),
       );
@@ -1522,9 +1325,7 @@ export class OceanScene {
     this.effects.render();
 
     this.frame++;
-    // Measured against performance.now() directly. Calling clock.getDelta()
-    // here would reset the same clock getElapsedTime() drives, and would time
-    // one frame rather than ten.
+    // Use performance.now() directly; clock.getDelta() here would reset the clock.
     if (this.frame % 10 === 0) {
       if (this.lastFpsMark > 0) {
         const seconds = (now - this.lastFpsMark) / 1000;
@@ -1541,7 +1342,7 @@ export class OceanScene {
     return this.frame;
   }
 
-  /** Rolling frame rate, so verification can report it rather than guess. */
+  /** Rolling frame rate. */
   get fps(): number {
     if (this.fpsSamples.length === 0) return 0;
     return this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
@@ -1551,16 +1352,12 @@ export class OceanScene {
     return this.camera.position.y < 0;
   }
 
-  /** Exposed so verification can catch the entry gesture deterministically. */
+  /** Whether the globe is visible (used by tests). */
   get isGlobeVisible(): boolean {
     return this.globeGroup.visible;
   }
 
-  /**
-   * Exposed for verification. Markers have silently vanished on group rebuilds before
-   * (next_session.md §6.8), and switching views rebuilds groups, so the count is checked
-   * across round trips rather than assumed.
-   */
+  /** Number of markers (used by tests to check they survive view switches). */
   get markerCount(): number {
     return this.markers.length;
   }

@@ -1,19 +1,9 @@
-"""Conversation persistence and the analysis cache.
+"""Conversation history and the analysis cache, in SQLite.
 
-SQLite, not a hosted database. context.md §1 requires the app be deployable on
-INCOIS infrastructure, and a cloud database is an outbound dependency a
-government network may refuse; §4 already sanctions "SQLite for demo". This
-adds no infrastructure, no credentials and no new failure mode.
-
-The `ConversationStore` protocol is the seam that keeps that decision cheap to
-reverse: swapping in Postgres or Supabase later means writing one more class,
-not rewriting the router. Same shape as the `DataSource` protocol in
-`ingestion/base.py`, and for the same reason.
-
-Connections are opened per operation rather than held. The workload is one
-analyst asking questions, so the simplicity is worth more than the handful of
-microseconds a pooled connection would save, and it sidesteps SQLite's
-thread-affinity rules under an async server entirely.
+SQLite keeps it deployable on INCOIS servers with no hosted database.
+ConversationStore is a protocol, so switching to Postgres later is one new class.
+A connection is opened per operation; it's one user, and this avoids SQLite's
+threading rules.
 """
 
 from __future__ import annotations
@@ -91,11 +81,7 @@ class ToolCall:
 
 @runtime_checkable
 class ConversationStore(Protocol):
-    """Everything the assistant router needs from persistence.
-
-    Implement this to move the assistant onto Postgres, Supabase or anything
-    else; nothing above this line knows which one it is talking to.
-    """
+    """What the assistant router needs from storage."""
 
     def create_conversation(self, *, title: str) -> str: ...
 
@@ -120,7 +106,7 @@ class ConversationStore(Protocol):
 
 
 class SqliteConversationStore:
-    """The default `ConversationStore`, backed by a file on disk."""
+    """SQLite implementation of ConversationStore."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -131,12 +117,11 @@ class SqliteConversationStore:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        # Off by default in SQLite, and the schema above depends on it to clean
-        # up messages and tool calls when a conversation goes.
+        # SQLite has foreign keys off by default; we need them for cascade deletes.
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
-    # ---------------------------------------------------------------- writes
+    # --- writes ---
 
     def create_conversation(self, *, title: str) -> str:
         cid = uuid.uuid4().hex
@@ -158,9 +143,7 @@ class SqliteConversationStore:
         mid = uuid.uuid4().hex
         now = time.time()
         with self._connect() as conn:
-            # `seq` rather than `created_at` for ordering: two messages written
-            # in the same turn can share a timestamp at this clock resolution,
-            # and history order is what the model reads as context.
+            # Order by seq, not created_at: messages from the same turn can share a timestamp.
             row = conn.execute(
                 "SELECT COALESCE(MAX(seq), -1) + 1 AS next FROM messages WHERE conversation_id = ?",
                 (conversation_id,),
@@ -187,7 +170,7 @@ class SqliteConversationStore:
                 )
         return mid
 
-    # ----------------------------------------------------------------- reads
+    # --- reads ---
 
     def list_conversations(self, *, limit: int = 50) -> list[Conversation]:
         with self._connect() as conn:
@@ -227,7 +210,7 @@ class SqliteConversationStore:
             for r in rows
         ]
 
-    # ----------------------------------------------------------- cache
+    # --- cache ---
 
     def cache_get(self, key: str) -> Any | None:
         with self._connect() as conn:

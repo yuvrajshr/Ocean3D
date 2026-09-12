@@ -1,12 +1,11 @@
-"""The tool loop: fast by construction, and honest about which view it acts on.
+"""Tests for the tool loop, with a fake Gemini client (no key or network needed).
+time.sleep fails the test if the loop ever waits blindly.
 
-A scripted stand-in replaces Gemini, so these run without a key or a network,
-and `time.sleep` fails the test if the loop ever waits blindly. What they pin:
-
-- a pure command costs one request, its sentence composed from the action;
-- a view switch hands the next round that view's tools, in the same message;
-- a rate-limited model is swapped for the next, not slept on;
-- reads run in parallel under a budget and report when still loading.
+Covers:
+- a plain command costs one request
+- a view switch gives the next round that view's tools, in the same message
+- a rate-limited model is swapped for the next one, not waited on
+- reads run in parallel under a budget and report when still loading
 """
 
 from __future__ import annotations
@@ -107,9 +106,7 @@ def in_chunk() -> ScreenState:
 
 
 def test_a_question_is_not_cut_short_by_an_action_in_its_first_round(loop):
-    # Found live, 2026-09-10: "What is the temperature at 100 m here?" drew a
-    # show_variable first, and the one-round shortcut ended the turn with
-    # "Showing temperature." — the question was never answered.
+    # A question must still get answered even if the first step was a view change.
     fake = loop([calls(call("set_display", mode="slices")), reply("23.95 °C at 100 m on 7 Oct 2013.")])
     result = run_turn(history=user("What is the temperature at 100 m here?"), state=in_chunk(), catalogue=CATALOGUE)
     assert len(fake.requests) == 2
@@ -154,7 +151,7 @@ def test_a_rate_limited_model_is_swapped_not_slept_on(loop, monkeypatch):
     assert [r["model"] for r in fake.requests] == ["lite", "lite-2"]
     assert result.text == "Hello." and result.model == "lite-2"
 
-    # The next turn does not ask the cooled model again.
+    # The next turn skips the rate-limited model.
     again = FakeClient([reply("Again.")])
     monkeypatch.setattr(gemini_client, "_client", lambda: again)
     run_turn(history=user("hi"), state=on_map(), catalogue=CATALOGUE)
@@ -210,9 +207,7 @@ def test_a_read_past_its_budget_reports_still_loading(loop, monkeypatch):
     assert result.text == "Still loading — ask again."
 
 
-# --------------------------------------------------------------------------
-# The router's view of the screen
-# --------------------------------------------------------------------------
+# --- Screen state parsing ---
 
 def test_the_payload_tolerates_missing_blocks_and_unknown_keys():
     state = ScreenState.from_payload({"view": "chunk", "chunk": {"variable": "salinity", "bogus": 1}})
@@ -222,9 +217,8 @@ def test_the_payload_tolerates_missing_blocks_and_unknown_keys():
 
 
 def test_a_read_cached_under_an_older_result_shape_is_not_served(loop, monkeypatch):
-    # Found live, 2026-09-12: after compare_float gained its provenance block,
-    # the server kept answering from rows cached by the old code — for up to a
-    # day — so the citation fix was invisible. The key must carry the shape.
+    # The cache key has to include RESULT_VERSION, otherwise rows cached before a
+    # read's output changed keep getting served.
     from app.assistant import reads
 
     class Store:
@@ -241,10 +235,10 @@ def test_a_read_cached_under_an_older_result_shape_is_not_served(loop, monkeypat
     fresh = {"value": 2, "provenance": {"dataset": "new"}}
     monkeypatch.setitem(gemini_client.READ_TOOLS, "query_point", lambda _s, _a: fresh)
 
-    # A row written under the previous shape version, for exactly this call.
+    # A row saved under the previous version, for this exact call.
     monkeypatch.setattr(reads, "RESULT_VERSION", reads.RESULT_VERSION - 1)
     old_key = gemini_client._cache_key("query_point", {"lat": 1, "lon": 1}, reads.cache_context("query_point", on_map()))
-    store.rows[old_key] = {"value": 1}  # stale: no provenance
+    store.rows[old_key] = {"value": 1}  # old format, no provenance
     monkeypatch.setattr(reads, "RESULT_VERSION", reads.RESULT_VERSION + 1)
 
     loop([calls(call("query_point", lat=1, lon=1)), reply("2.")])

@@ -1,16 +1,9 @@
 /**
- * Depth ruler for the map: a slice, not a window.
+ * Depth ruler for the map: picks one level.
  *
- * `components/DepthRuler.tsx` is a two-handle *window* over a continuous axis,
- * because the 3D column integrates a band. The map shows one level, and the
- * levels are irregular (HYCOM: 0, 2, 4 … 3000, 4000, 5000 m). A continuous
- * slider over those would imply the data interpolates between them, which it
- * does not — so this snaps to real stops and labels the ones it can fit.
- *
- * The component is never rendered at all for a surface field. That is deliberate
- * and stronger than disabling it: a greyed-out ruler still asserts that a depth
- * exists to slice (context.md §10, "depth markings are suppressed for surface
- * variables").
+ * Unlike DepthRuler.tsx (a range over a continuous axis for the 3D column), this
+ * snaps to the dataset's real levels, which are uneven (HYCOM: 0, 2, 4 ... 5000 m).
+ * It isn't rendered at all for surface fields.
  */
 
 import { useMemo } from "react";
@@ -32,14 +25,11 @@ function fmtDepth(d: number): string {
 
 export function MapDepthRuler({ levels, index, onChange, label }: Props) {
   const maxDepth = levels[levels.length - 1] ?? 1;
-  // The same power-0.65 axis the 3D column and the profile chart use, so a depth
-  // sits in the same relative place everywhere in the product (viz/depth.ts).
+  // Same 0.65 power axis as the 3D column and profile chart (viz/depth.ts).
   const pos = (d: number) => depthToNorm(d, maxDepth) * 100;
 
-  // Which stops get a printed label. Walking the axis with a running note of
-  // the last label placed means a dense cluster near the surface yields the ones
-  // that fit, instead of none: comparing only to the immediate neighbour (the
-  // first attempt) dropped every label in a tight run.
+  // Which stops get a label. Track the last placed label, so a dense cluster near
+  // the surface still gets the labels that fit.
   const labelAt = useMemo(() => {
     let last = -Infinity;
     return levels.map((depth, i) => {

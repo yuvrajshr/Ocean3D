@@ -1,24 +1,13 @@
 /**
- * The lattice: the analysis box's own instrument markings.
+ * Grid lines and depth labels on the analysis box.
  *
- * Why this exists (context.md §5.1, Principle 8). A raymarched field has no
- * edges, and the eye reads structure from edges — so the volume reads as haze
- * at any density, and no `uDensity` value fixes it. Lighting the data is
- * forbidden (it would shift a colour away from what the colorbar states), so
- * the form has to come from around the data rather than from shading it.
+ * A raymarched volume has no edges, so without reference lines it just looks
+ * like haze. We can't light the data (that would change its colours), so the
+ * structure comes from lines around it instead.
  *
- * Three rules keep this an instrument rather than chart trim:
- *
- *  1. Only the FAR faces draw, so the lattice is never between the reader and
- *     the data. The camera orbits by azimuth with elevation clamped inside
- *     ±90°, so cos(elevation) > 0 always and the choice is two sign bits — see
- *     `faceCull`.
- *  2. Depth lines sit at RULER_TICKS and labels at LABELLED_TICKS, the same
- *     arrays viz/depth.ts hands the DOM DepthRuler. The two agree literally,
- *     not approximately.
- *  3. Depth markings vanish for a field with no depth dimension. Four of the
- *     seven variables are surface-only; writing "500 m" beside one would assert
- *     a measurement that does not exist. See `setDepthAxisVisible`.
+ * - Only the far faces are drawn, so lines are never in front of the data.
+ * - Depth lines and labels use the same ticks as the DOM depth ruler (viz/depth.ts).
+ * - Depth markings are hidden for surface-only variables.
  */
 
 import * as THREE from "three";
@@ -27,35 +16,22 @@ import { LABELLED_TICKS, RULER_TICKS } from "./depth";
 import type { Extent, GeoFrame } from "./geo";
 
 /**
- * One table for every transparent object in the column, because renderOrder is
- * read off the leaf and not inherited from a group — spreading these across
- * files is how they drift apart.
+ * All render orders for transparent objects in the column, in one place.
+ * renderOrder isn't inherited from groups, so spreading these across files lets
+ * them clash.
  *
- * The lattice MUST sort before the volume. The volume runs `depthWrite: false`
- * and so never occludes anything; ordered after it, a grid geometrically behind
- * the data would draw on top of it.
- *
- * The same trap already cost this project its whole look once. `ocean.ts` had
- * the sea surface at 6, marine snow at 7 and light shafts at 8; this table was
- * written with ribbon 6, stems 7, markers 8 without reading that file, so the
- * entire atmosphere collided with the data and drew AFTER it. The sea plane
- * composited over every pixel of the volume at ~66% opacity, which turned a
- * cmocean deep red into grey-blue and silently broke the promise volume.ts
- * makes in its own comments — that nothing shifts a data colour. Two rounds of
- * shader tuning went into a field that was being veiled a moment after it
- * rendered.
- *
- * So: EVERY renderOrder in the column lives here, background included. If a
- * number is written anywhere else, this table is already wrong.
+ * The lattice has to draw before the volume: the volume doesn't write depth, so
+ * anything drawn after it lands on top. (The sea surface once drew after the
+ * volume and greyed out all the data colours.) Don't set renderOrder anywhere else.
  */
 export const RENDER_ORDER = {
-  // --- background: everything below the line is scenery BEHIND the data ---
+  // --- background (behind the data) ---
   sky: -10,
   terrain: -8,
   seaSurface: -6,
   marineSnow: -4,
   lightShafts: -3,
-  // --- the data, and the instruments that read it ---
+  // --- data and instruments ---
   lattice: 1,
   volume: 2,
   frame: 4,
@@ -70,53 +46,50 @@ const TOKEN_CURRENT = 0x1c6e8c;
 const TOKEN_FOAM = 0xeaf3f1;
 
 /**
- * Minor and major share a token and differ only in weight, like the ruler's
- * ticks. Tuned up from 0.16/0.38 on first look: `current` is a dark teal and
- * the ground behind it is `abyss`, so the first pass was invisible — a lattice
- * that cannot be seen supplies none of the edges it exists to supply.
+ * Minor and major lines use the same colour at different opacity. Lower values
+ * were invisible against the dark background.
  */
 const MINOR_OPACITY = 0.3;
 const MAJOR_OPACITY = 0.62;
 
-/** Pulled off the face so it cannot z-fight the volume's BackSide fragments. */
+/** Offset from the face to avoid z-fighting with the volume. */
 const INSET = 0.002;
 
-/** Label size in CSS pixels — --size-readout (12px) from tokens.css. */
+/** Label size in CSS px (--size-readout in tokens.css). */
 const LABEL_PX = 12;
 const LABEL_FONT = `500 ${LABEL_PX}px "IBM Plex Mono", ui-monospace, monospace`;
 
-/** How far outboard of the corner post a label sits, in world units. */
+/** How far a label sits outside the corner post, in world units. */
 const LABEL_PAD = 0.055;
 
 export interface Lattice {
   group: THREE.Group;
-  /** Show only the two far side faces. Takes sin/cos of azimuth, already computed by the caller. */
+  /** Show only the two far side faces. Takes sin/cos of the azimuth. */
   faceCull(sinAzimuth: number, cosAzimuth: number): void;
-  /** Move the depth labels to whichever corner post currently reads leftmost. */
+  /** Move the depth labels to whichever corner post is leftmost on screen. */
   anchorLabels(camera: THREE.PerspectiveCamera): void;
-  /** Recompute sprite scale so labels stay at an exact CSS pixel size. */
+  /** Rescale the sprites so labels stay a fixed CSS pixel size. */
   setLabelScale(camera: THREE.PerspectiveCamera, viewportHeight: number): void;
-  /** False for surface-only fields, which have no depth to mark. */
+  /** False for surface-only fields. */
   setDepthAxisVisible(visible: boolean): void;
   setVisible(visible: boolean): void;
   dispose(): void;
 }
 
 /**
- * The canvas must not be drawn before IBM Plex Mono is parsed, or ctx.font
- * silently falls back to generic monospace and the 3D labels stop matching the
- * DOM ruler they are supposed to agree with.
+ * Wait for IBM Plex Mono before drawing, otherwise the canvas falls back to a
+ * generic monospace and the labels won't match the ruler.
  */
 export async function ensureLabelFont(): Promise<void> {
   try {
     await document.fonts?.load(LABEL_FONT);
   } catch {
-    /* No FontFaceSet, or the face failed. The fallback stack still renders. */
+    /* No FontFaceSet, or loading failed. Fallback fonts still work. */
   }
 }
 
 function labelSprite(text: string): THREE.Sprite {
-  // Match the renderer's own pixel ratio cap so a label is never resampled.
+  // Same pixel-ratio cap as the renderer so labels aren't resampled.
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d")!;
@@ -128,12 +101,11 @@ function labelSprite(text: string): THREE.Sprite {
   canvas.width = Math.ceil(cssW * dpr);
   canvas.height = Math.ceil(cssH * dpr);
   ctx.scale(dpr, dpr);
-  // Re-set: resizing the canvas resets every 2D context property.
+  // Resizing the canvas resets the 2D context, so set the font again.
   ctx.font = LABEL_FONT;
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  // Drawn white, as a pure alpha mask. The colour comes from the material, so
-  // the label lands at the same apparent brightness as the rest of the chrome.
+  // Drawn white as an alpha mask; the material sets the colour.
   ctx.fillStyle = "#ffffff";
   ctx.fillText(text, 2, cssH / 2);
 
@@ -163,7 +135,7 @@ function labelSprite(text: string): THREE.Sprite {
   return sprite;
 }
 
-/** Whole-degree values strictly inside a range — the ends are the frame's own edges. */
+/** Whole-degree values strictly inside a range (the ends are the frame edges). */
 function wholeDegrees(range: [number, number]): number[] {
   const lo = Math.min(range[0], range[1]);
   const hi = Math.max(range[0], range[1]);
@@ -198,7 +170,7 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
     depthWrite: false,
   });
 
-  // 0 m and 2000 m are the frame's own top and bottom edges; a line there doubles up.
+  // 0 m and 2000 m are already the frame edges.
   const depthTicks = RULER_TICKS.filter((d) => d > 0 && d < 2000);
   const lats = wholeDegrees(extent.latRange);
   const lons = wholeDegrees(extent.lonRange);
@@ -212,8 +184,8 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
   };
 
   /**
-   * `axis` is the face's constant axis; `sign` which side it sits on. Depth
-   * lines run across the face horizontally, geographic lines run top to bottom.
+   * ``axis`` is the face's fixed axis, ``sign`` which side it's on. Depth lines run
+   * across, lat/lon lines run top to bottom.
    */
   const buildFace = (axis: "x" | "z", sign: 1 | -1): Face => {
     const faceGroup = new THREE.Group();
@@ -261,10 +233,9 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
   const posZ = buildFace("z", 1);
   const negZ = buildFace("z", -1);
 
-  // --- depth labels -------------------------------------------------------
-  // Every labelled tick, including 0 m and 2000 m: those get no gridline
-  // because the frame already draws that edge, but the reader still wants the
-  // number on it.
+  // --- depth labels ---
+  // All labelled ticks, including 0 m and 2000 m (no gridline there, but still
+  // worth labelling).
   const labels = RULER_TICKS.filter((d) => LABELLED_TICKS.has(d)).map((depth) => {
     const sprite = labelSprite(`${depth} m`);
     sprite.position.set(0, geo.depthY(depth), 0);
@@ -272,8 +243,7 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
     return sprite;
   });
 
-  // The four vertical corner posts, as (x, z) pairs. Labels hang off whichever
-  // reads leftmost on screen.
+  // The four vertical corner posts as (x, z). Labels go on the leftmost one.
   const posts: Array<[number, number]> = [
     [hx, hz],
     [hx, -hz],
@@ -286,11 +256,8 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
   let viewportHeight = 1;
 
   /**
-   * The depth axis is a 0.65 power curve, so the top ticks bunch — fine on the
-   * DOM ruler, which is tall, but in a box a couple of hundred pixels high
-   * "50 m" and "100 m" land on top of each other. Drop a label rather than let
-   * two overlap: an unreadable number is worse than a missing one, and the
-   * gridline it belongs to is still drawn.
+   * The depth axis bunches up near the surface, so in a short box labels can
+   * overlap. Skip a label rather than overlap (the gridline stays).
    */
   const MIN_LABEL_GAP = LABEL_PX * 1.3;
 
@@ -298,9 +265,8 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
     group,
 
     faceCull(sinAzimuth, cosAzimuth) {
-      // cos(elevation) > 0 always, so the camera's x and z signs are the
-      // azimuth's. The far face is the one on the opposite side. Complementary
-      // comparisons keep exactly one of each pair up at the degenerate value.
+      // cos(elevation) is always > 0, so the camera's x/z signs match the azimuth;
+      // show the opposite faces.
       posX.group.visible = sinAzimuth <= 0;
       negX.group.visible = sinAzimuth > 0;
       posZ.group.visible = cosAzimuth <= 0;
@@ -318,13 +284,13 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
           best = post;
         }
       }
-      // Push outboard, away from the box centre, so the number clears the corner.
+      // Push outward from the box centre so the label clears the corner.
       const length = Math.hypot(best[0], best[1]) || 1;
       const x = best[0] + (best[0] / length) * LABEL_PAD;
       const z = best[1] + (best[1] / length) * LABEL_PAD;
 
-      // Labels are ordered surface-downward, so walking them in order and
-      // keeping the first of any crowded pair always keeps the shallower tick.
+      // Labels go top to bottom, so keeping the first of any close pair keeps the
+      // shallower one.
       const shown = depthVisible && group.visible;
       let lastY = -Infinity;
       for (const sprite of labels) {
@@ -343,9 +309,8 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
 
     setLabelScale(camera, height) {
       viewportHeight = height;
-      // With sizeAttenuation off, the sprite's world scale maps to NDC directly.
-      // projectionMatrix[5] is 1/tan(fov/2), so this lands the sprite at exactly
-      // its canvas size in CSS pixels.
+      // With sizeAttenuation off, world scale maps to NDC. projectionMatrix[5] is
+      // 1/tan(fov/2), which gives the exact canvas size in CSS px.
       const p11 = camera.projectionMatrix.elements[5] ?? 1;
       const k = 2 / (p11 * Math.max(viewportHeight, 1));
       for (const sprite of labels) {
@@ -374,9 +339,8 @@ export function buildLattice(geo: GeoFrame, extent: Extent, boxSize: THREE.Vecto
       group.traverse((object) => {
         const sprite = object as THREE.Sprite;
         if (sprite.isSprite) {
-          // Never touch sprite.geometry — Three shares one instance across every
-          // Sprite in the process. The map is ours and SpriteMaterial.dispose()
-          // does not reach it.
+          // Don't dispose sprite.geometry (shared by all sprites). The texture is ours
+          // and SpriteMaterial.dispose() doesn't free it.
           const material = sprite.material as THREE.SpriteMaterial;
           material.map?.dispose();
           material.dispose();

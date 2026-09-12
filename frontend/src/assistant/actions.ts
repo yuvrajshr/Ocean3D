@@ -1,18 +1,15 @@
 /**
- * Actions the assistant may take, and the shapes they reach the app in.
+ * Actions the assistant can take, and their shapes.
  *
- * Every action the backend returns has been validated against the view that was
- * on screen, and carries that view as `scope` (context.md §5.1 Principle 13,
- * amended 2026-09-10). The bridge routes on it: a `scope: "chunk"` action goes
- * to the chunk view's controller and nowhere else, which is what "changes apply
- * to the view you are on" means in code. `set_view` and `open_chunk` move
- * between views and are handled first, whatever their scope.
+ * Each action from the backend has already been validated against the view that
+ * was on screen and carries it as ``scope``. The bridge routes on it: a chunk
+ * action only goes to the chunk view. set_view and open_chunk switch views and
+ * are handled first.
  *
- * THE LAYER SEAM, which bit once already: `layerStack` in App.tsx is the source
- * of truth for the map's layers, NOT `map.layers`, and VariablePanel owns the
- * stack in its own state. A layer change must produce a new stack and reach the
- * panel through `externalStack`; dispatching `layer/add` at the reducer appears
- * to work and is silently overwritten by the next `layers/sync`.
+ * Layer changes: layerStack in App.tsx is the source of truth (not map.layers),
+ * and VariablePanel keeps its own copy. So a layer change has to produce a new
+ * stack and reach the panel via externalStack; dispatching layer/add to the map
+ * reducer just gets overwritten by the next layers/sync.
  */
 
 import type { GeoPoint } from "../map/state";
@@ -37,7 +34,7 @@ export type MapAssistantAction =
       opacity: Record<string, number>;
     }
   | { type: "set_time"; time: string }
-  /** `depth_index` indexes the active layer's own levels, as the ruler does. */
+  /** ``depth_index`` indexes the active layer's own levels, like the ruler. */
   | { type: "set_depth"; depth_m: number; depth_index: number; requested_m: number }
   | {
       type: "zoom_to_region";
@@ -56,9 +53,8 @@ export type GlobeAssistantAction =
 export type AppAssistantAction =
   | { type: "set_view"; view: AssistantScope }
   /**
-   * Open the chunk over a named region or stated coordinates. The tile is chosen
-   * here by the same snap a globe click uses, so the assistant cannot open a
-   * chunk that clicking could not.
+   * Open the chunk over a named region or given coordinates. The tile is snapped
+   * the same way a globe click is.
    */
   | { type: "open_chunk"; label: string; lat: number; lon: number };
 
@@ -69,11 +65,8 @@ export type AssistantAction =
   | (ChunkAssistantAction & { scope: "chunk" });
 
 /**
- * Provenance for one sourced claim.
- *
- * `kind` is the distinction that matters: "data" is a measurement from one of
- * this project's own upstreams, "web" is a page Google Search returned. A reader
- * must never mistake one for the other, so the panel renders them differently.
+ * Source for one claim. "data" is one of our datasets, "web" is a Google Search
+ * result; the panel shows them differently.
  */
 export interface Citation {
   kind?: "data" | "web";
@@ -90,11 +83,8 @@ export interface Citation {
 }
 
 /**
- * The next layer stack after one `set_layers` action.
- *
- * Removals are applied before additions so that swapping a layer stays inside
- * the three-layer cap. A new layer goes on TOP (index 0), because index 0 is
- * drawn last and is what the reader sees.
+ * The layer stack after one set_layers action. Removals happen first so a swap
+ * stays under the three-layer limit. New layers go on top (index 0).
  */
 export function applyLayerAction(
   stack: LayerStack,
@@ -123,14 +113,14 @@ export function applyLayerAction(
   return { keys, visibility, opacity };
 }
 
-/** Everything a batch of actions can change, captured so one click puts it all back. */
+/** Everything a batch of actions can change, so Undo can put it all back. */
 export interface AppSnapshot {
   view: string;
   map: {
     stack: LayerStack;
     time: string;
     pin: GeoPoint | null;
-    /** The active layer and its depth index, when there is one. */
+    /** Active layer and its depth index, if any. */
     active: { id: string; depthIndex: number } | null;
   };
   globe: { timeIndex: number; selectedId: string | null };

@@ -1,8 +1,5 @@
-"""Dataset facts for the INCOIS ERDDAP server.
-
-Every value here was read off the live server (``/info/{id}/index.json``) rather
-than assumed, because getting a dimension name or a unit wrong silently produces
-a plausible-looking but wrong picture. See context.md §10.
+"""Dataset settings. Names and units were checked against each server's
+/info/{id}/index.json, not guessed.
 """
 
 from __future__ import annotations
@@ -19,23 +16,18 @@ PROJECT_ROOT = BACKEND_ROOT.parent
 CACHE_DIR = BACKEND_ROOT / "app" / "cache_store"
 FIXTURE_DIR = PROJECT_ROOT / "data"
 
-# How long a cached upstream response is considered fresh. Beyond this we try
-# the network again, but a stale entry is still served if the network fails —
-# the demo must never hard-fail on venue wifi (context.md §10).
+# Cache entries are fresh for 12 h. After that we retry the network, but still
+# serve the stale copy if it fails.
 CACHE_TTL_SECONDS = 60 * 60 * 12
 
-# INCOIS's certificate chain is served without its intermediate, so strict
-# clients reject it (UNABLE_TO_VERIFY_LEAF_SIGNATURE). Browsers usually recover
-# via AIA fetching; httpx does not. This is the single place that decision is
-# made — see erddap_client.py.
+# INCOIS serves its cert without the intermediate, so httpx rejects it
+# (UNABLE_TO_VERIFY_LEAF_SIGNATURE). See erddap_client.py.
 ERDDAP_VERIFY_TLS = False
 
 
-# --- Credentials -----------------------------------------------------------
-# Copernicus Marine needs an account. The credentials live in `backend/.env`,
-# which is gitignored; only the variable NAMES are committed, in .env.example.
-# Loaded here rather than by the toolbox so a missing file degrades to "the
-# Copernicus layers are unavailable" instead of an import-time crash.
+# --- Credentials ---
+# Copernicus Marine needs an account; credentials go in backend/.env (gitignored).
+# We load it ourselves so a missing file just disables those layers.
 def _load_dotenv() -> None:
     env = Path(__file__).resolve().parent.parent / ".env"
     if not env.exists():
@@ -54,26 +46,18 @@ COPERNICUS_USERNAME = os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME", "")
 COPERNICUS_PASSWORD = os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD", "")
 COPERNICUS_AVAILABLE = bool(COPERNICUS_USERNAME and COPERNICUS_PASSWORD)
 
-# Licence condition, not a courtesy: using Copernicus Marine data obliges us to
-# display this plus each product's DOI. It ships with the data or the data does
-# not ship (context.md 5.5).
+# Required by the Copernicus Marine licence, along with each product's DOI.
 COPERNICUS_CREDIT = "Generated using E.U. Copernicus Marine Service Information"
 
-# ---------------------------------------------------------------- assistant
 
-# The ocean assistant. Server-side only: the key never reaches the browser,
-# exactly like the Copernicus credentials above. Without a key the assistant
-# simply does not appear and every other part of the app still works, which is
-# the same degradation the Copernicus layers already have.
+# --- Assistant ---
+# The Gemini key stays on the server. No key means no assistant; nothing else breaks.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
-# gemini-3.5-flash-lite at minimal thinking: measured 1.86 s per round against
-# 8-13 s for gemini-3.5-flash on the same prompt and tools (2026-09-10), choosing
-# the same tool call. Every answer costs at least one round and most cost two,
-# so this is the difference between a 3 s answer and a 20 s one.
+# flash-lite with minimal thinking is ~2 s per round vs 8-13 s for flash, and picks
+# the same tools.
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
-# Tried in order when the model above is rate limited or times out. Free-tier
-# quota is per model, so the next model is a fresh quota, not a retry.
+# Tried in order on rate limits or timeouts. Free-tier quota is per model.
 GEMINI_FALLBACK_MODELS: tuple[str, ...] = tuple(
     m.strip()
     for m in os.environ.get(
@@ -83,63 +67,46 @@ GEMINI_FALLBACK_MODELS: tuple[str, ...] = tuple(
 )
 # "minimal" | "low" | "medium" | "high", or "" for the model's own default.
 GEMINI_THINKING = os.environ.get("GEMINI_THINKING", "minimal").strip().lower()
-# A request past this is abandoned for the next model rather than waited on.
+# Give up on a slow request and try the next model.
 GEMINI_TIMEOUT_SECONDS = 20.0
 
-# Conversations and the analysis cache. SQLite rather than a hosted database:
-# context.md 1 requires the app be deployable on INCOIS infrastructure, and 4
-# already sanctions "SQLite for demo". Lives beside the disk cache and is
-# gitignored the same way.
+# SQLite so it runs on INCOIS infrastructure without a hosted database.
 ASSISTANT_DB = BACKEND_ROOT / "app" / "assistant_store" / "assistant.db"
 
-# How long a cached tool result stays fresh. Ocean analyses for a past date do
-# not change, so this is generous; it exists to stop a repeated question
-# spending free-tier quota, not to guarantee recency.
+# Cached tool results. Past analyses don't change, this just saves quota.
 ASSISTANT_CACHE_TTL_SECONDS = 60 * 60 * 24
 
-# A hard ceiling on tool-calling rounds per message. Without it a confused
-# model can loop until the quota is gone.
+# Max tool-calling rounds per message, so a confused model can't loop forever.
 ASSISTANT_MAX_STEPS = 6
 
-# A read past this budget is reported to the model as still loading. The fetch
-# finishes in the background and lands in the analysis cache for the next ask.
+# Reads slower than this are reported as "still loading"; the result is cached
+# for next time.
 ASSISTANT_READ_BUDGET_SECONDS = 10.0
-# Conversation turns resent to the model. Older ones cost latency on every
-# request and rarely change the answer.
+# How many previous turns we send back to the model.
 ASSISTANT_HISTORY_MESSAGES = 12
 
-# Google Search grounding, which lets the assistant answer live real-world
-# questions ("what is oil trading at?") with real sources instead of an honest
-# refusal.
-#
-# It is billed separately from generation and is NOT part of the free tier:
-# measured on a free key, every request carrying the `google_search` tool
-# returned 429 "check your plan and billing details", while the identical
-# request without it succeeded. Enable billing on the Google Cloud project and
-# it starts working with no code change.
-#
-# "auto" (the default) tries once per process and remembers the answer. Set to
-# "off" on a free key to skip that probe and save a request per restart, or
-# "on" to insist.
+# Google Search grounding for live questions. It isn't in the Gemini free tier
+# (requests with the search tool get a 429), so "auto" probes once per process
+# and remembers. "off" skips the probe, "on" forces it.
 GEMINI_SEARCH = os.environ.get("GEMINI_SEARCH", "auto").strip().lower()
 
 
 @dataclass(frozen=True)
 class VariableSpec:
-    """One variable a user can select, and how to actually fetch it."""
+    """One selectable variable and how to fetch it."""
 
     key: str  # stable id used by the frontend
     dataset_id: str  # ERDDAP datasetID
     erddap_name: str  # variable name on the server
-    label: str  # sentence case, for the UI
+    label: str  # sentence case
     units: str  # normalized, display-ready
-    kind: str  # "volume" (has depth) | "surface" | "vector"
-    colormap: str  # cmocean ramp, per context.md §5.1
-    caption: str  # one line, Explore mode
-    units_declared_by_us: bool = False  # True when ERDDAP omitted the units
+    kind: str  # "volume" | "surface" | "vector"
+    colormap: str  # cmocean colormap name
+    caption: str  # one-line description
+    units_declared_by_us: bool = False  # True when ERDDAP doesn't give units
 
 
-# --- The 3D volume. This is the hero: 24 depth levels, 5-2000 m. ------------
+# --- 3D volume: 24 depth levels, 5-2000 m ---
 GRID_DATASET = "incois_argo_10d_VAM"
 GRID_DIMS = ("time", "ZAX", "latitude", "longitude")
 GRID_SHAPE = {"ZAX": 24, "latitude": 60, "longitude": 90}
@@ -147,18 +114,17 @@ GRID_LAT_RANGE = (-29.5, 29.5)
 GRID_LON_RANGE = (30.5, 119.5)
 GRID_DEPTH_RANGE = (5.0, 2000.0)
 
-# --- In-situ observations --------------------------------------------------
+# --- Argo floats ---
 ARGO_DATASET = "Indian_ARGO_Floats"
-# Argo quality flags: 1 = good, 2 = probably good. Everything else is rejected.
-# This is a correctness requirement: float 2900757 looks like a -4 C cold wake
-# but is entirely QC=4. See context.md §10.
+# Argo QC flags: 1 = good, 2 = probably good. Float 2900757 looks like a -4 C
+# cold wake but every level is QC 4, so this filter matters.
 ARGO_ACCEPTED_QC = ("1", "2")
 
-# --- Derived hazard fields + currents. Stops 2019-03-30. -------------------
+# --- Hazard fields + currents (data ends 2019-03-30) ---
 VALUE_ADDED_DATASET = "incois_valueadded_products_datasets"
 VALUE_ADDED_TIME_RANGE = ("2004-01-10", "2019-03-30")
 
-# --- Chlorophyll (surface, cloud-gapped) ----------------------------------
+# --- Chlorophyll (surface only, gaps under cloud) ---
 CHLOROPHYLL_DATASET = "incois_oceansat2_datasets"
 
 
@@ -168,8 +134,7 @@ VARIABLES: tuple[VariableSpec, ...] = (
         dataset_id=GRID_DATASET,
         erddap_name="TEMP",
         label="Temperature",
-        # ERDDAP reports the unit as "degs"; the CF standard_name and the value
-        # range (-2..33) make it unambiguous that this is Celsius.
+        # ERDDAP says "degs"; the standard_name and value range make it Celsius.
         units="°C",
         kind="volume",
         colormap="thermal",
@@ -189,8 +154,7 @@ VARIABLES: tuple[VariableSpec, ...] = (
         key="currents",
         dataset_id=VALUE_ADDED_DATASET,
         erddap_name="GEO_U,GEO_V",
-        # Shown as speed, sqrt(u^2 + v^2), not a single component. Direction is
-        # not yet drawn — see the roadmap note in README.
+        # Speed, sqrt(u^2 + v^2).
         label="Current speed",
         units="cm/s",
         kind="vector",
@@ -280,36 +244,25 @@ HAZARD_VARIABLES: tuple[VariableSpec, ...] = (
 )
 
 
-# --- Terrain relief -------------------------------------------------------
-# ETOPO from NOAA CoastWatch: 1 arc-minute global relief, `altitude` in metres,
-# positive on land and negative at sea. One dataset gives both the Eastern
-# Ghats and the floor of the Bay of Bengal, which is the point — they are one
-# continuous surface, and rendering them as one is what stops the analysis
-# looking like a box in a void (context.md §5.1, Principle 6).
-# 2026-09-05: repointed. The old base, coastwatch.pfeg.noaa.gov, is a legacy
-# host NOAA has retired — it no longer resolves, and `etopo180` exists on no
-# reachable ERDDAP. Terrain was therefore loading only from the disk cache, so a
-# fresh clone lost the seafloor entirely. NCEI's ArcGIS ImageServer publishes the
-# same ETOPO1 bedrock grid and returns real Float32 metres, so the fix is a new
-# transport rather than a new dataset.
+# --- Terrain ---
+# ETOPO1 bedrock from NCEI's ArcGIS ImageServer (1 arc-minute, metres, positive
+# on land). The old coastwatch.pfeg.noaa.gov host is gone.
 TERRAIN_BASE = "https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics"
 TERRAIN_DATASET = "ETOPO1_bedrock"
-# ETOPO1 is 1 arc-minute, so a span in degrees times 60 is its native cell count.
+# ETOPO1 is 1 arc-minute, so degrees * 60 = native cells.
 TERRAIN_ARCMIN_PER_DEG = 60
 
-# Deliberately wider than the analysis box so the sea continues past the data
-# to a horizon rather than stopping at its edge.
+# Wider than the analysis box so the sea carries on past the data.
 TERRAIN_LAT_RANGE = (0.0, 25.0)
 TERRAIN_LON_RANGE = (75.0, 100.0)
 
-# Stride over the 1-arc-minute grid. 4 gives 376 x 376 (~550 KB as Float32),
-# fine enough for a legible coastline and trivial for the GPU as a mesh.
+# Every 4th cell: 376 x 376 (~550 KB), plenty for the coastline.
 TERRAIN_STRIDE = 4
 
 
 @dataclass(frozen=True)
 class Scenario:
-    """A preset the demo opens on."""
+    """A preset the demo can open on."""
 
     key: str
     title: str
@@ -320,13 +273,12 @@ class Scenario:
     lat_range: tuple[float, float]
     lon_range: tuple[float, float]
     featured_platforms: tuple[str, ...] = field(default_factory=tuple)
-    # Which bundled Blue Marble month the globe shows. Both ship; a scenario picks
-    # the one that matches its season. See frontend/scripts/fetch-textures.mjs.
+    # Which Blue Marble month the globe uses (see frontend/scripts/fetch-textures.mjs).
     basemap: str = "october"
 
 
-# Cyclone Phailin is the only window where the 3D grid, the in-situ floats and
-# the hazard fields all overlap — the value-added products stop in March 2019.
+# Phailin is the one window where the 3D grid, the floats and the hazard fields
+# all overlap (the hazard products stop in March 2019).
 PHAILIN = Scenario(
     key="phailin",
     title="Cyclone Phailin",
@@ -340,72 +292,47 @@ PHAILIN = Scenario(
     focus_time="2013-10-10",
     lat_range=(5.0, 23.0),
     lon_range=(78.0, 95.0),
-    # 2901335 profiled near-hourly and shows the cold wake; 2901327 shows the
-    # same event in the subsurface (100 m: 23.72 -> 20.27 C).
+    # 2901335 shows the cold wake at the surface; 2901327 shows it at 100 m
+    # (23.72 -> 20.27 C).
     featured_platforms=("2901335", "2901327", "2901334", "2901288"),
-    # October 2013: the December basemap's Arctic and Scandinavian snow would be
-    # the wrong season for this window.
+    # October to match the season.
     basemap="october",
 )
 
 SCENARIOS = {PHAILIN.key: PHAILIN}
 
 
-# ---------------------------------------------------------------------------
-# 2D map layers (added 2026-09-05)
-# ---------------------------------------------------------------------------
-# Deliberately a separate dataclass from VariableSpec. These live on other
-# ERDDAP servers, carry their own depth axes, cadences and axis orders, and are
-# addressed one depth level at a time. Widening VariableSpec would force every
-# 3D consumer to care about a `base` URL and an axis order it never uses.
-#
-# Every dataset below was verified live on 2026-09-05: dimensions read from the
-# server's own /info/ endpoint, payload sizes and latency measured by fetching
-# them. Nothing here is assumed.
+# --- 2D map layers ---
+# Separate from VariableSpec because these come from other servers, each with its
+# own depth axis, cadence and axis order, and are fetched one level at a time.
 
 MAP_ERDDAP_APDRC = "https://apdrc.soest.hawaii.edu/erddap"
 MAP_ERDDAP_COASTWATCH = "https://coastwatch.noaa.gov/erddap"
 
-# A slice is capped at this many cells; the server raises the stride to fit and
-# reports what it used, rather than refusing. 400k cells is 1.6 MB as Float32.
+# Max cells per slice. The server increases the stride to fit (400k cells = 1.6 MB).
 MAX_SLICE_CELLS = 400_000
-# A time axis longer than this is summarised rather than enumerated. HYCOM has
-# 8034 daily steps and VIIRS 4833; sending every stamp is ~200 KB of JSON.
+# Longer time axes get sampled instead of sent in full (HYCOM has 8034 days).
 MAX_TIME_ENTRIES = 2_000
 
-# The same budget for a volume, counted across every level rather than per
-# level. A 5-degree chunk of HYCOM is 63 x 63 x 36 = 143k cells (571 KB as
-# Float32) and needs no striding at all; the cap only bites if someone asks for
-# a chunk far larger than the view was designed around.
+# Same budget for a whole volume. A 5 degree HYCOM chunk is ~143k cells, so it
+# normally doesn't need striding.
 MAX_VOLUME_CELLS = 400_000
 
-# The chunk view's tile size, in degrees. A globe click floors to this grid, so
-# the same click always resolves to the same tile and the backend cache is
-# reused across visits. This is a request-shaping convention, not a storage
-# tiling layer — see context.md §12, which rules the latter out.
+# Chunk tile size in degrees. Clicks snap to this grid so the same click hits the
+# same cache entry.
 CHUNK_TILE_DEGREES = 5.0
-# Chunks stop where Argo does. Below 2000 m nothing in this project has measured
-# anything, and drawing HYCOM's deeper levels would claim otherwise.
+# Argo only goes to 2000 m, so chunks stop there too.
 CHUNK_MAX_DEPTH = 2000.0
 
-# Which product serves each of the chunk view's variables.
-#
-# Named explicitly rather than resolved through `map_dataset_for`, which picks by
-# preference and would silently hand the chunk view a surface product or a
-# different grid the day another upstream is enabled. The chunk view needs one
-# grid across all four variables, so this table is the place that decision is
-# made and the place to change it.
-#
-# INCOIS's own `incois_argo_10d_VAM` is deliberately not here: at 1 degree a
-# 5-degree chunk is 6x6 cells, which is thirty-six columns of water rather than
-# a block of it. The map view still draws INCOIS, and states that it does.
+# Which dataset feeds each chunk-view variable. Picked explicitly (not via
+# map_dataset_for) because the chunk needs all variables on the same grid.
+# INCOIS's 1 degree grid would only give 6x6 cells per chunk, so it isn't used here.
 CHUNK_DATASETS: dict[str, str] = {
     "temperature": "hycom_temperature",
     "salinity": "hycom_salinity",
-    # Advected client-side from u and v; the scalar path serves hypot(u, v).
+    # u and v are advected on the client; the scalar is hypot(u, v).
     "speed": "hycom_currents",
-    # The one variable with no 3D source anywhere. VIIRS is surface-only, so the
-    # chunk view disables its depth-dependent modes and says why.
+    # No 3D chlorophyll exists anywhere, so the chunk view turns off the depth modes.
     "chlorophyll": "incois_chlorophyll",
 }
 
@@ -414,11 +341,8 @@ CHUNK_DATASETS: dict[str, str] = {
 class MapDataset:
     """A gridded product the 2D map can draw.
 
-    `axis_order` is the griddap dimension order, which differs per server and is
-    the single most common source of a silently-wrong query: HYCOM is
-    (time, LEV, latitude, longitude) while VIIRS carries a singleton `altitude`
-    where a depth would go. Building the query by walking this tuple means a new
-    upstream is a table entry, not a new code path.
+    axis_order is the griddap dimension order, which varies by server (HYCOM is
+    time, LEV, lat, lon; VIIRS has a singleton altitude). Queries are built from it.
     """
 
     id: str
@@ -429,15 +353,15 @@ class MapDataset:
     provider: str
     attribution: str
     units: str
-    kind: str  # "volume" (has depth) | "surface" | "vector"
+    kind: str  # "volume" | "surface" | "vector"
     colormap: str
     caption: str
     axis_order: tuple[str, ...]
-    depth_dim: str | None  # the member of axis_order that is a real depth
+    depth_dim: str | None  # which axis is depth
     lat_dim: str = "latitude"
     lon_dim: str = "longitude"
-    # Some servers store latitude north-to-south. A griddap range must be given
-    # in axis order, so asking for (lo):(hi) on a descending axis returns 404.
+    # Some servers store latitude north to south, and griddap wants ranges in axis
+    # order, otherwise it returns 404.
     lat_descending: bool = False
     lon_range: tuple[float, float] = (-180.0, 180.0)
     lat_range: tuple[float, float] = (-90.0, 90.0)
@@ -449,23 +373,19 @@ class MapDataset:
     regional: bool = False
     units_declared_by_us: bool = False
     default_stride: int = 1
-    # "erddap" reaches the server with a griddap URL; "cmems" goes through the
-    # Copernicus Marine toolbox, which subsets server-side and has no stride.
+    # "erddap" uses griddap URLs; "cmems" uses the Copernicus Marine toolbox.
     protocol: str = "erddap"
-    # Which VariableSpec key this dataset is a source for. A layer in the UI is a
-    # *variable*, not a dataset: adding "Temperature" gives the 3D column INCOIS's
-    # analysis and the 2D map whichever global product serves it best. This field
-    # is what lets one layer resolve to a different source per view.
+    # The VariableSpec this dataset serves. A layer is a variable, so each view can
+    # pick its own best source for it.
     variable_key: str = ""
-    # Lower wins when several datasets satisfy the same variable.
+    # Lower wins when several datasets serve the same variable.
     preference: int = 100
-    # Licence attribution that MUST appear wherever the layer does.
+    # Licence attribution, must be shown with the layer.
     doi: str = ""
 
 
-# HYCOM GLBv0.08 — the workhorse. Global, 40 levels to 5000 m, daily.
-# One dataset supplies the coloured field, the depth slider, the profile, the
-# depth-time section and the u/v for streamlines.
+# HYCOM GLBv0.08: global, 40 levels to 5000 m, daily. Covers the field, depth
+# slider, profile, section and streamlines.
 _HYCOM = dict(
     base=MAP_ERDDAP_APDRC,
     dataset_id="hawaii_soest_6a0a_5127_d118",
@@ -524,16 +444,9 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
     MapDataset(
         id="viirs_chlorophyll",
         variable_key="chlorophyll",
-        # Repointed and demoted 2026-09-09. The science-quality dataset this row
-        # used to name, `noaacwNPPVIIRSSQchlaDaily`, was retired by CoastWatch and
-        # now answers 404 "Currently unknown datasetID". Nothing noticed because
-        # the response was still on disk — the test that covers this path was
-        # green from cache while a clean machine would have shown an empty map.
-        #
-        # The replacement is near-real-time and carries a ROLLING one-year window,
-        # so `time_range` below goes stale on its own and nothing may hardcode a
-        # date inside it. It cannot serve the 2013 demo at all, which is why
-        # INCOIS Oceansat-2 is preferred for chlorophyll.
+        # The science-quality VIIRS dataset was retired by CoastWatch. This one is
+        # near-real-time with a rolling one-year window, so don't hardcode dates in it.
+        # It can't cover 2013, which is why INCOIS Oceansat-2 is preferred.
         preference=2,
         base=MAP_ERDDAP_COASTWATCH,
         dataset_id="noaacwNPPVIIRSchlaDaily",
@@ -545,15 +458,14 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
         kind="surface",
         colormap="algae",
         caption="Plant life near the surface. Satellites cannot see through cloud, so there are gaps.",
-        # `altitude` is a singleton, not a depth — it must still be indexed, but
-        # it must never produce a depth ruler.
+        # altitude is a singleton, not a real depth axis.
         axis_order=("time", "altitude", "latitude", "longitude"),
         depth_dim=None,
         lat_descending=True,
         lat_range=(-89.75625, 89.75625),
         lon_range=(-180.01875, 180.01875),
         native_shape=(4788, 9602),
-        # Rolling. Read off the server 2026-09-09; it moves every day.
+        # Rolling window, moves every day.
         time_range=("2025-08-07", "2026-08-12"),
         cadence="daily",
         cadence_days=1.0,
@@ -564,11 +476,9 @@ MAP_DATASETS: tuple[MapDataset, ...] = (
 MAP_DATASETS_BY_ID: dict[str, MapDataset] = {d.id: d for d in MAP_DATASETS}
 
 
-# --- Copernicus Marine (GLORYS) -------------------------------------------
-# Better data than HYCOM on every axis that matters here: 0.083 deg, 50 levels
-# to 5728 m, daily, and it runs to 2026-06 with a forecast product reaching ten
-# days past today. The cost is that CMEMS has no server-side striding and about
-# 11 s of fixed request overhead, so slices are downsampled and cached by us.
+# --- Copernicus Marine (GLORYS) ---
+# 0.083 deg, 50 levels to 5728 m, daily, with a forecast product. No server-side
+# striding and ~11 s per request, so we downsample and cache.
 _GLORYS = dict(
     base="https://data.marine.copernicus.eu",
     dataset_id="cmems_mod_glo_phy_my_0.083deg_P1D-m",
@@ -628,15 +538,13 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         caption="How fast the water moves, and which way, at any depth.",
         **_GLORYS,
     ),
-    # --- Mixed Layer Thickness (mlotst) ---------------------------------------
-    # mlotst lives in the same GLORYS physics product as temperature and
-    # salinity, so the same credentials and cache machinery already cover it.
-    # It is a surface scalar (one value per column, not per depth level), so
-    # depth_dim is overridden to None and axis_order drops the depth axis.
+    # --- Mixed layer thickness (mlotst) ---
+    # Same GLORYS product as temperature and salinity. It's one value per column,
+    # so no depth axis.
     MapDataset(
         id="cmems_mixed_layer_depth",
         variable_key="mixed_layer_depth",
-        preference=1,  # beats the INCOIS regional version globally
+        preference=1,  # wins over the INCOIS regional one
         variable="mlotst",
         label="Mixed layer depth (Copernicus)",
         units="m",
@@ -646,7 +554,7 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
             "How deep the wind has stirred the ocean surface layer. "
             "Deep mixing = warm cyclone fuel; shallow = stable, stratified ocean."
         ),
-        # Override: mlotst has no depth dimension in the output — it IS a depth.
+        # mlotst has no depth dimension (it is a depth).
         **{**_GLORYS, "depth_dim": None,
            "axis_order": ("time", "latitude", "longitude")},
     ),
@@ -679,7 +587,7 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         cadence_days=1.0,
         default_stride=5,
     ),
-    # --- Ocean Waves Reanalysis (WAVERYS VHM0) --------------------------------
+    # --- Wave height (WAVERYS VHM0) ---
     MapDataset(
         id="cmems_wave_height",
         variable_key="wave_height",
@@ -712,7 +620,7 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         cadence_days=1.0,
         default_stride=2,
     ),
-    # --- Biogeochemistry Ocean Acidification (pH) ----------------------------
+    # --- pH ---
     MapDataset(
         id="cmems_ph",
         variable_key="ph",
@@ -745,7 +653,7 @@ CMEMS_DATASETS: tuple[MapDataset, ...] = (
         cadence_days=1.0,
         default_stride=2,
     ),
-    # --- Zooplankton Biomass (SEAPODYM-LMTL zooc) -----------------------------
+    # --- Zooplankton (SEAPODYM-LMTL zooc) ---
     MapDataset(
         id="cmems_zooplankton",
         variable_key="zooplankton",
@@ -785,9 +693,8 @@ if COPERNICUS_AVAILABLE:
     MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}
 
 
-# The hazard fields have no global equivalent, so the map serves them from
-# INCOIS directly. Regional (30.5-119.5E, +/-29.5), 1 deg, 10-daily, and the
-# map simply draws nothing outside that box -- which is the honest result.
+# Hazard fields only exist regionally, so these come straight from INCOIS
+# (30.5-119.5E, +/-29.5, 1 deg, 10-daily). Nothing is drawn outside that box.
 _INCOIS_VA = dict(
     base=ERDDAP_BASE,
     dataset_id=VALUE_ADDED_DATASET,
@@ -812,9 +719,7 @@ INCOIS_MAP_DATASETS: tuple[MapDataset, ...] = (
     MapDataset(
         id="incois_chlorophyll",
         variable_key="chlorophyll",
-        # Preferred over CoastWatch: this is INCOIS's own ocean-colour product,
-        # it is four times finer (0.04 deg against VIIRS's 4 km), and it is the
-        # only chlorophyll source that still covers the demo window at all.
+        # Preferred: INCOIS's own product, 0.04 deg, and the only one covering 2013.
         preference=1,
         base=ERDDAP_BASE,
         dataset_id=CHLOROPHYLL_DATASET,
@@ -822,7 +727,7 @@ INCOIS_MAP_DATASETS: tuple[MapDataset, ...] = (
         label="Chlorophyll",
         provider="INCOIS Oceansat-2 OCM",
         attribution="INCOIS, Ministry of Earth Sciences",
-        # ERDDAP declares mg/m3 here, so this one is not our inference.
+        # Units come from ERDDAP here.
         units="mg/m³",
         units_declared_by_us=False,
         kind="surface",
@@ -880,11 +785,9 @@ MAP_DATASETS_BY_ID = {d.id: d for d in MAP_DATASETS}
 
 
 def map_dataset_for(variable_key: str, date: str | None = None) -> MapDataset | None:
-    """The best source for a variable, or None if nothing serves it.
+    """Best source for a variable, or None.
 
-    Lowest `preference` wins. With `date`, only sources whose stated coverage
-    includes that day are considered: the assistant asking HYCOM (1994-2015)
-    for a 2026 date is how "HYCOM is unreachable" reached a reader (2026-09-10).
+    Lowest preference wins. If a date is given, only sources covering that day count.
     """
     candidates = [d for d in MAP_DATASETS if d.variable_key == variable_key]
     if date:
@@ -896,7 +799,7 @@ def map_dataset_for(variable_key: str, date: str | None = None) -> MapDataset | 
 
 
 def coverage_for(variable_key: str) -> list[tuple[str, str, str]]:
-    """(provider, start, end) for every source of a variable, most preferred first."""
+    """(provider, start, end) for each source of a variable, best first."""
     ranked = sorted(
         (d for d in MAP_DATASETS if d.variable_key == variable_key), key=lambda d: d.preference
     )

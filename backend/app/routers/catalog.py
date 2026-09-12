@@ -1,4 +1,4 @@
-"""Catalog endpoints: what can be shown, and for when."""
+"""Catalog endpoints: which variables, scenarios and times are available."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ router = APIRouter()
 
 
 def _availability(spec) -> tuple[bool, str | None]:
-    """Hazard layers and currents come from the value-added product, which
-    stops in March 2019. Rather than letting them silently vanish on a recent
-    date, say why."""
+    """Hazard layers and currents stop in March 2019, so explain that instead of
+    showing nothing.
+    """
     if spec.dataset_id == "incois_valueadded_products_datasets":
         return True, (
             f"Available {VALUE_ADDED_TIME_RANGE[0]} to {VALUE_ADDED_TIME_RANGE[1]} only."
@@ -80,16 +80,13 @@ def list_scenarios() -> list[ScenarioInfo]:
 
 @router.get("/build")
 def build() -> dict[str, object]:
-    """The commit this API process started from. Deliberately separate from
-    /health, which probes the upstream on every call — this is polled, so it
-    must cost nothing."""
+    """Commit this API process started from. Cheap, so the UI can poll it (unlike /health)."""
     return build_info.identity()
 
 
 @router.get("/health")
 def health() -> dict[str, object]:
-    """Liveness plus a real upstream probe, so the UI can show provenance
-    before anyone touches a control."""
+    """Liveness plus an actual upstream check."""
     upstream_ok = True
     detail = "INCOIS ERDDAP reachable."
     try:

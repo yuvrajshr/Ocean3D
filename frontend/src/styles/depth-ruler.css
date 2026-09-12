@@ -1,7 +1,4 @@
-/* ============================================================================
-   depth-ruler.css — Ratio Design System Depth Ruler (Grid Column 12)
-   Theme C: Warm Maritime Chronometer & Copper
-   ========================================================================== */
+/* depth-ruler.css: the vertical depth slider. */
 
 #ocean3d-depth-slider {
   position: absolute;
@@ -15,7 +12,7 @@
   font-family: var(--rt-font-ui, "Inter", sans-serif);
 }
 
-/* Tooltip Callout on Left */
+/* Callout on the left */
 .depth-slider-tooltip {
   position: absolute;
   right: calc(100% + 10px);
@@ -54,7 +51,7 @@
   color: var(--rt-ink-muted, #9698a3);
 }
 
-/* Outer Instrument Column */
+/* Outer column */
 .depth-slider-pill {
   background: var(--rt-surface, #1c1d22);
   border: 1px solid var(--rt-border-color, #2e303a);
@@ -72,7 +69,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* Vertical D E P T H Header with 3px Copper Rule Underline */
+/* Vertical "DEPTH" header with a copper underline */
 .depth-slider-header {
   display: flex;
   flex-direction: column;
@@ -90,7 +87,7 @@
   padding-bottom: 3px;
 }
 
-/* Vertical Track */
+/* Track */
 .depth-slider-track {
   position: relative;
   width: 8px;
@@ -114,7 +111,7 @@
   opacity: 0.25;
 }
 
-/* Tick marks on left of track */
+/* Ticks on the left of the track */
 .depth-slider-tick {
   position: absolute;
   right: calc(100% + 3px);
@@ -133,7 +130,7 @@
   box-shadow: none !important;
 }
 
-/* Draggable Square Copper Thumb */
+/* Handle */
 .depth-slider-handle {
   position: absolute;
   left: 50%;
@@ -179,7 +176,7 @@
   border-radius: 0px !important;
 }
 
-/* Bottom Depth Readout */
+/* Depth readout at the bottom */
 .depth-slider-footer {
   margin-top: 8px;
   font-size: 9px;

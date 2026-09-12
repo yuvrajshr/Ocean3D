@@ -1,8 +1,5 @@
-"""Integration tests for the 2D map's global upstreams.
-
-Live data, like the rest of this suite. These assert physical facts about the
-ocean rather than array shapes, because a shape test passes just as happily on a
-field that is upside down, in the wrong hemisphere, or all fill value.
+"""Integration tests for the map's global datasets (live data). We check physical
+facts, since a shape check passes on a field that's upside down or all fill values.
 """
 
 from __future__ import annotations
@@ -29,11 +26,7 @@ def test_hycom_has_a_real_depth_axis():
 
 
 def test_surface_field_reports_no_depth_levels():
-    """This emptiness is what removes the depth ruler.
-
-    A surface field that reported a depth would let the UI write "500 m" on a
-    measurement that does not exist (context.md §10).
-    """
+    """Surface fields report no depth levels, which hides the depth ruler."""
     levels, _ = em.depth_levels(CHLA)
     assert levels == []
     assert CHLA.depth_dim is None
@@ -43,57 +36,51 @@ def test_global_surface_temperature_is_physically_plausible():
     result = em.fetch_slice(ds=HYCOM, time=DATE, depth=0.0)
     finite = result.values[np.isfinite(result.values)]
     assert finite.size > 0
-    # Sea water spans roughly the freezing point of brine to the warmest tropics.
+    # Roughly from the freezing point of seawater to the warmest tropics.
     assert -3.0 < finite.min() < 0.0
     assert 28.0 < finite.max() < 36.0
-    # Earth is ~71% ocean; this grid runs -80..90 lat, so a little less.
+    # Earth is ~71% ocean; this grid covers -80..90 lat, so a bit less.
     ocean_fraction = finite.size / result.values.size
     assert 0.55 < ocean_fraction < 0.80
 
 
 def test_deep_water_is_colder_than_the_surface():
-    """The single cheapest check that the depth axis is wired to the right dim."""
+    """Quick check that the depth axis is the right dimension."""
     surface = em.fetch_slice(ds=HYCOM, time=DATE, depth=0.0).values
     deep = em.fetch_slice(ds=HYCOM, time=DATE, depth=1000.0).values
     assert np.nanmax(deep) < np.nanmax(surface) - 5.0
-    # And the seafloor rises above 1000 m in places, so there is strictly less
-    # valid water down there than at the surface.
+    # The seafloor comes above 1000 m in places, so there's less valid water at depth.
     assert np.isfinite(deep).sum() < np.isfinite(surface).sum()
 
 
 def test_land_is_nan_and_never_zero():
-    """A fill value leaking through as 0.0 would render as freezing water."""
+    """A fill value showing up as 0.0 would look like freezing water."""
     values = em.fetch_slice(ds=HYCOM, time=DATE, depth=0.0).values
     assert np.isnan(values).any(), "a global field must have land"
-    # Exact zeros would be suspicious in a percentile-scaled temperature field.
+    # Exact zeros would be suspicious in a temperature field.
     assert (values == 0.0).sum() < values.size * 0.001
 
 
 def test_descending_latitude_is_normalised_to_ascending():
-    """VIIRS stores latitude north-to-south; HYCOM does not.
-
-    Every consumer sees one convention, so this flip happens at the boundary.
-    Getting it wrong renders the whole ocean upside down, which looks plausible.
+    """VIIRS stores latitude north to south, HYCOM doesn't. We flip at the boundary;
+    getting it wrong draws the ocean upside down.
     """
     assert CHLA.lat_descending is True
-    # The date comes from the dataset's own coverage, never hardcoded: CoastWatch
-    # serves this product on a rolling one-year window, so a literal date here
-    # would go stale and then pass from disk cache while the live server 404s.
-    # That is exactly how the retired science-quality dataset stayed green for
-    # weeks (context.md §10, 2026-09-09).
+    # Take the date from the dataset's coverage. The product has a rolling one-year
+    # window, so a hardcoded date would go stale and keep passing from the cache.
     result = em.fetch_slice(ds=CHLA, time=CHLA.time_range[1])
     assert result.lats[0] < result.lats[-1], "latitude must come back ascending"
     assert result.lats[0] < -80.0 and result.lats[-1] > 80.0
 
 
 def test_vector_components_keep_their_direction():
-    """`fetch_vector_magnitude` discards direction; streamlines cannot use it."""
+    """fetch_vector_magnitude drops direction, so streamlines can't use it."""
     result = em.fetch_vector_components(ds=CURRENTS, time=DATE, depth=0.0, stride=16)
     assert result.u.shape == result.v.shape
-    # A global current field flows both ways on both axes.
+    # Global currents go both ways on both axes.
     assert np.nanmin(result.u) < -0.2 and np.nanmax(result.u) > 0.2
     assert np.nanmin(result.v) < -0.2 and np.nanmax(result.v) > 0.2
-    # Ocean currents, not a runaway model: a few m/s at most.
+    # A few m/s at most.
     assert np.nanmax(np.hypot(result.u, result.v)) < 6.0
 
 
@@ -108,7 +95,7 @@ def test_point_block_is_depth_by_time():
     )
     assert block.values.shape == (len(block.depths), len(block.times))
     assert len(block.depths) == 40
-    # A tropical Bay of Bengal column: warm lid, cold abyss.
+    # Tropical column: warm on top, cold at depth.
     column = block.values[:, 0]
     assert column[0] > 26.0
     deepest_valid = column[np.isfinite(column)][-1]
@@ -120,10 +107,8 @@ def test_point_block_is_depth_by_time():
     [(None, None), ((-10.0, 10.0), (60.0, 100.0)), ((-80.0, 90.0), (-180.0, 179.0))],
 )
 def test_derive_stride_always_respects_the_cell_budget(lat_range, lon_range):
-    """The budget applies to the cells actually requested, not to the whole globe.
-
-    A 20 x 40 degree box is a small fraction of a global grid, so stride 1 is the
-    right answer there; only a near-global request needs subsampling.
+    """The budget applies to the cells requested, not the whole globe. A 20 x 40
+    degree box fits at stride 1; only near-global requests need subsampling.
     """
     for ds in (HYCOM, CHLA):
         stride = em.derive_stride(ds, lat_range, lon_range)
@@ -136,7 +121,7 @@ def test_derive_stride_always_respects_the_cell_budget(lat_range, lon_range):
         cells = (ds.native_shape[0] * frac_lat / stride) * (ds.native_shape[1] * frac_lon / stride)
         assert cells <= MAX_SLICE_CELLS * 1.05
 
-        # And the stride must be the SMALLEST that fits, not merely a safe one.
+        # And it should be the smallest stride that fits.
         if stride > 1:
             looser = (ds.native_shape[0] * frac_lat / (stride - 1)) * (
                 ds.native_shape[1] * frac_lon / (stride - 1)

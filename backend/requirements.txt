@@ -1,27 +1,18 @@
-# INCOIS 3D Ocean Data Visualization — backend
-#
-# The backend is deliberately thin: it crosses the CORS/TLS boundary to
-# erddap.incois.gov.in, normalizes every source into the two schemas in
-# context.md §6, and caches responses so a demo never depends on the network.
+# INCOIS 3D Ocean Data Visualization - backend
 
 fastapi>=0.115
 uvicorn[standard]>=0.32
 httpx>=0.27
 
-# NetCDF ingestion. The PS names xarray explicitly; ERDDAP serves real
-# CF-1.6 NetCDF, so this path is genuinely exercised rather than simulated.
+# NetCDF / data handling
 xarray>=2024.9
 netCDF4>=1.7
 numpy>=2.0
 pandas>=2.2
 
-# Copernicus Marine (GLORYS). The only upstream here that is not plain HTTP:
-# CMEMS is a Zarr store reached through Mercator Ocean's toolbox. Optional at
-# runtime - without credentials in backend/.env the Copernicus layers simply do
-# not appear, and every other source still works.
+# Copernicus Marine. Optional: without credentials in backend/.env those layers
+# are just hidden.
 copernicusmarine>=2.4
 
-# The ocean assistant. Optional at runtime exactly like Copernicus above -
-# without GEMINI_API_KEY in backend/.env the assistant does not appear and
-# every other part of the app still works.
+# Assistant (Gemini). Optional: without GEMINI_API_KEY the assistant is hidden.
 google-genai>=2.22

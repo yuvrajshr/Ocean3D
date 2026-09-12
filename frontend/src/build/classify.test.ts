@@ -1,11 +1,7 @@
 /**
- * The stale-build decision.
- *
- * The scenario these exist for: a teammate pulls `main`, keeps the dev server
- * that was already running, and sees a control that no longer exists in the
- * source. The page must say so. The opposite failure matters just as much: a
- * warning that fires on your own commits gets ignored within a day, and then it
- * is not there for the case above.
+ * Tests for the stale-build check. It has to warn after someone pulls while an
+ * old dev server keeps running, and it must not warn on your own commits
+ * (or people will learn to ignore it).
  */
 
 import { describe, expect, it } from "vitest";
@@ -66,9 +62,8 @@ describe("frontend dev server", () => {
   });
 
   it("forgets what was undone: look at another branch, come back, then commit", () => {
-    // Without this the warning would stay up until a restart, for a checkout
-    // that left nothing behind — the kind of false alarm that teaches people
-    // to ignore it.
+    // Otherwise the warning would stay up until a restart after a checkout that
+    // changed nothing.
     const verdict = frontend({
       headSha: OWN,
       reflog: [
@@ -98,7 +93,7 @@ describe("frontend dev server", () => {
 
   it("does not warn when the pull only touched docs or the backend", () => {
     const verdict = frontend({
-      changedPaths: ["context.md", "backend/app/main.py"],
+      changedPaths: ["README.md", "backend/app/main.py"],
       reflog: [at(1, PULLED, "pull: Fast-forward")],
     });
     expect(verdict.status).toBe("current");
@@ -148,8 +143,7 @@ describe("backend process", () => {
 
 describe("helpers", () => {
   it("parses git's real reflog format, oldest first", () => {
-    // Verbatim shape of `git reflog --date=unix --format=%gd%x09%H%x09%gs`,
-    // which prints newest first.
+    // Exact format of git reflog --date=unix --format=%gd%x09%H%x09%gs (newest first).
     const text = [
       `HEAD@{1789017662}\t${PULLED}\tcheckout: moving from main to integrate/chunk-view`,
       `HEAD@{1788887541}\t${BUILT}\tcommit: Fix the map's squish`,
@@ -191,7 +185,7 @@ describe("helpers", () => {
     expect(sameCommit("28ff21d", PULLED)).toBe(true);
     expect(sameCommit("28FF21D", PULLED)).toBe(true);
     expect(sameCommit("28ff21e", PULLED)).toBe(false);
-    // Fewer than seven characters is too ambiguous to call a match.
+    // Under seven characters is too ambiguous to count as a match.
     expect(sameCommit("28ff2", PULLED)).toBe(false);
   });
 

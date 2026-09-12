@@ -1,9 +1,6 @@
 /**
- * The timeline.
- *
- * The only numbered structural markers in this view live here, on a real
- * scrubber: T12/30 is a step index, not a decorative label. Playback speed is a
- * multiplier on a fixed 620 ms frame, so the date readout stays legible at 4×.
+ * The chunk timeline. T12/30 is the step index. Playback speed multiplies a fixed
+ * 620 ms frame, so the date is still readable at 4×.
  */
 
 import { dateLabel } from "../../viz/chunk/model";
@@ -13,7 +10,7 @@ const SPEEDS = [1, 2, 4];
 
 interface Props {
   spec: SceneSpec;
-  /** The window's real stamps, one per step, as the upstream reported them. */
+  /** The window's actual timestamps, one per step, from the upstream. */
   times: string[];
   playing: boolean;
   speed: number;
@@ -36,9 +33,8 @@ export function TimeBar({
   onToggleSpec,
 }: Props) {
   const { index, steps } = spec.time;
-  // The stamp the upstream actually served, not the date we asked for. HYCOM is
-  // daily and complete here, but a product with a gap answers with its nearest
-  // step and the timeline has to say which one it got.
+  // Show the time the upstream actually served, not the one we asked for (a product
+  // with gaps answers with its nearest step).
   const label = dateLabel(times[index] ?? "");
 
   return (

@@ -6,10 +6,10 @@ import type { CutAxis, LayerDesc } from "../../viz/chunk/spec";
 export const gradient = (name: CmapName): string =>
   "linear-gradient(90deg," + CMAPS[name].join(",") + ")";
 
-/** Values are printed at the variable's own precision, never a shared default. */
+/** Format with the variable's own precision. */
 export const fmt = (v: number, dec = 2): string => v.toFixed(dec);
 
-/** The cut the active axis exposes: which prop it writes, and in what units. */
+/** What the active cut axis controls: which prop it sets, and the units. */
 export function cutFor(axis: CutAxis, props: LayerDesc["props"], source: ChunkSource) {
   const p = props ?? {};
   const G = source.grid;
@@ -39,9 +39,8 @@ export function cutFor(axis: CutAxis, props: LayerDesc["props"], source: ChunkSo
       note: "",
     };
   }
-  // The slider is continuous but the analysis is not: it has levels, and the
-  // plane drawn is the nearest one. The readout names that level rather than
-  // the number under the handle, so the two can never disagree on screen.
+  // The slider is continuous but the data has levels, and the nearest level is
+  // drawn. Show that level rather than the raw slider value so they always match.
   const value = p.sliceDepth ?? 0;
   const level = G.levels[source.levelIndex(value)] ?? value;
   return {

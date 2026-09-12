@@ -1,8 +1,5 @@
-"""An HTTP error from an upstream says "refused", not "unreachable".
-
-APDRC answered HTTP 500 for a date outside HYCOM's coverage, and every HTTP
-error used to surface as "did not answer ... not cached" — sending a reader to
-check the network when the query itself was the problem. No network.
+"""An HTTP error from an upstream should say "refused", not "unreachable", since
+it's usually the query, not the network. No network.
 """
 import httpx
 import pytest

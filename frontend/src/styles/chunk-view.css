@@ -1,70 +1,55 @@
-/* ============================================================================
-   chunk-view.css — the chunk view's instrument chrome.
+/*
+ * chunk-view.css: styles for the chunk view.
+ *
+ * The --cv-* variables below are local aliases for --rt-* tokens, so this file
+ * has its own names but no separate colours. If you add one, point it at a token.
+ *
+ * Flat surfaces, thin borders, square corners, copper for "on". The exception is
+ * the water: the depth gradient, glow and sea surface use the ocean colours
+ * (thermocline, abyss, current), not the UI palette. Data colours come from
+ * viz/chunk/model.ts.
+ */
 
-   This screen shipped with its own palette and typefaces on 2026-09-09. That
-   was REVERSED on 2026-09-10 — see context.md §5.1.5, which keeps the original
-   reasoning above the reversal rather than deleting it. The chunk view now
-   resolves through Theme C like every other surface.
-
-   The `--cv-*` names survive as a LOCAL ALIAS LAYER: the block below maps each
-   one to an `--rt-*` token, so this file keeps its own vocabulary while holding
-   no independent colour values. If you add a `--cv-*`, point it at a token —
-   a raw hex here is how the fourth colour system comes back.
-
-   Flat, not glass: solid Theme C surfaces, hairline borders, square corners
-   (`var(--rt-radius)`), one copper accent meaning "this control is on".
-
-   THE ONE EXEMPTION, and it is deliberate: the WATER is not chrome. The depth
-   ramp, the light source and the sea-surface plane keep the six named ocean
-   tokens (`thermocline` → `abyss`, and `current` for light in water). Copper is
-   a button colour; an ocean painted in it stops reading as an ocean. Data stays
-   cmocean, in viz/chunk/model.ts, and was not touched at all.
-   ========================================================================== */
-
-/* The chunk view covers the console rather than docking into it. Fixed, so it
-   is unaffected by the console's grid, and above every docked panel. */
+/* Covers the console instead of docking into it. Fixed, above the docked panels. */
 .chunk-overlay {
   position: fixed;
   inset: 0;
   z-index: 60;
-  /* The overlay is a child of the console, which is concealed with
-     `visibility: hidden` while the chunk view is up. Visibility inherits, so
-     the chunk view has to opt back in — this is what keeps the console's
-     controls out of the tab order without also hiding what replaced them. */
+  /*
+   * The overlay is inside the console, which is hidden (visibility is inherited)
+   * while the chunk view is open, so turn it back on here.
+   */
   visibility: visible;
 }
 
 .chunk-view {
-  /* --- ground and water ---------------------------------------------------
-     Flat, not glass. The `-top`/`-bottom` pairs are deliberately identical so
-     that every `linear-gradient(180deg, top, bottom)` already written below
-     resolves to a solid Theme C surface without touching its call site. */
+  /*
+   * --- ground and water ---
+   * The -top/-bottom pairs are identical on purpose, so the existing
+   * linear-gradient(180deg, top, bottom) uses end up as flat colours.
+   */
   --cv-void: var(--rt-inset);
   --cv-glass-top: var(--rt-surface);
   --cv-glass-bottom: var(--rt-surface);
   --cv-glass-top-strong: var(--rt-surface-hover);
   --cv-glass-bottom-strong: var(--rt-surface-hover);
-  /* Referenced with a fallback further down and never defined until now, so
-     the fallback always fired. Defined here, where it can be seen. */
+  /* Used with a fallback below; defined here. */
   --cv-panel-strong: var(--rt-surface-hover);
   --cv-inset: var(--rt-inset);
 
-  /* --- edges -------------------------------------------------------------- */
+  /* --- edges --- */
   --cv-edge: var(--rt-border-color);
   --cv-edge-lit: var(--rt-border-strong);
-  /* Used by the breadcrumb notice and the hover callout and never defined, so
-     those two borders were resolving to `currentColor` — the same latent bug
-     as --cv-panel-strong and --cv-warn, both also defined here for the first
-     time. Three undefined custom properties were in this file. */
+  /* Used by the breadcrumb notice and hover callout. */
   --cv-line: var(--rt-border-color);
   --cv-rule: #24262e;
   --cv-rule-faint: #1f2128;
 
-  /* --- ink ----------------------------------------------------------------
-     A warm ramp from Theme C's parchment ink down to its faint stone. The
-     three anchors resolve through --rt-*; the steps between them are the same
-     hue family, interpolated, because the ramp needs more stops than Theme C
-     names. */
+  /*
+   * --- text ---
+   * A warm ramp from the main text colour down to faint grey. The ends come from
+   * --rt-*; the steps in between are interpolated.
+   */
   --cv-ink: var(--rt-ink);
   --cv-ink-bright: #fbf8f2;
   --cv-ink-strong: #ede7dc;
@@ -77,28 +62,21 @@
   --cv-ink-faint: var(--rt-ink-faint);
   --cv-ink-ghost: #4a4c55;
 
-  /* --- accents ------------------------------------------------------------
-     Copper means "this control is on", and it means the measurement, matching
-     what copper does everywhere else in the console. `advisory` amber carries
-     "model, as opposed to observation".
-
-     These two are near neighbours — the 2026-09-08 log entry says so, about
-     this exact pair. The team chose the pairing knowingly, so the difference
-     is never left to hue: the model trace is DASHED and both series are
-     labelled, per §5.4. Colour is the last cue here, not the only one. */
+  /*
+   * --- accents ---
+   * Copper for "on" and for observations; amber for the model. They look alike,
+   * so the model trace is also dashed and both are labelled.
+   */
   --cv-accent: var(--rt-copper);
   --cv-accent-soft: rgba(229, 152, 88, 0.16);
   --cv-accent-line: rgba(229, 152, 88, 0.4);
   --cv-model: var(--advisory);
   --cv-warn: var(--advisory);
-  /* Theme C names no error colour — the console spells one in copper
-     (`--rt-red`). Deep copper keeps that convention while staying separable
-     from the accent beside it. */
+  /* Error colour: deep copper, distinct from the accent. */
   --cv-alarm: var(--rt-copper-deep);
   --cv-off: rgba(150, 152, 163, 0.07);
 
-  /* Theme C is flat: the console sets `box-shadow: none` almost everywhere and
-     reserves a shadow for what genuinely floats. This panel does. */
+  /* Only floating panels get a shadow. */
   --cv-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   --cv-font: var(--rt-font-ui);
   --cv-mono: var(--rt-font-mono);
@@ -119,9 +97,10 @@
   box-sizing: border-box;
 }
 
-/* The one orchestrated moment: panels rise as the camera settles into the box.
-   Suppressed wholesale under prefers-reduced-motion, along with the camera
-   descent the engine skips. */
+/*
+ * Panels rise in as the camera settles. Turned off with reduced motion, along
+ * with the camera move.
+ */
 @keyframes chunk-rise {
   from {
     opacity: 0;
@@ -143,13 +122,9 @@
   }
 }
 
-/* ------------------------------------------------------------------- water */
+/* --- water --- */
 
-/* The water is not chrome, and it is deliberately NOT Theme C: copper is the
-   console's accent, and an ocean painted in it would stop reading as water.
-   This is the split §5.1 already draws and §5.1.4 records — the six named
-   ocean tokens colour the viewport, Theme C colours the instruments around it.
-   Ramping thermocline → abyss is Principle 1 made literal. */
+/* The water uses the ocean colours, not the UI palette: thermocline down to abyss. */
 .chunk-view__depth {
   position: absolute;
   inset: 0;
@@ -162,8 +137,7 @@
   );
 }
 
-/* A single soft light source behind the chunk, so the box sits *in* water
-   rather than on a flat field. */
+/* A soft light behind the chunk so the box sits in water. */
 .chunk-view__glow {
   position: absolute;
   left: 50%;
@@ -172,8 +146,7 @@
   height: 1100px;
   margin: -550px 0 0 -550px;
   pointer-events: none;
-  /* `current`, the six-token blue, for the same reason the depth ramp above
-     keeps its ocean colours: this is light in water, not an interface accent. */
+  /* current blue, since this is light in water, not a UI accent. */
   background: radial-gradient(
     circle,
     rgba(56, 189, 248, 0.14) 0%,
@@ -200,7 +173,7 @@
   );
 }
 
-/* ------------------------------------------------------------------- ruler */
+/* --- ruler --- */
 
 .chunk-ruler {
   position: absolute;
@@ -212,7 +185,7 @@
   z-index: 4;
 }
 
-/* Positioned by the engine every frame against the box's near-left edge. */
+/* Positioned by the engine each frame on the box's near-left edge. */
 .chunk-ruler__tick {
   position: absolute;
   left: 0;
@@ -236,7 +209,7 @@
   color: var(--cv-ink-label);
 }
 
-/* ------------------------------------------------------------------- glass */
+/* --- panels --- */
 
 .chunk-panel {
   background: linear-gradient(180deg, var(--cv-glass-top), var(--cv-glass-bottom));
@@ -268,10 +241,9 @@
   color: var(--cv-ink-label);
 }
 
-/* ---------------------------------------------------------------- controls */
+/* --- controls --- */
 
-/* Every control is a real button so it is reachable by keyboard; these rules
-   strip the UA look without losing the element. */
+/* Controls are real buttons (keyboard accessible); reset the browser styling. */
 .chunk-view button {
   appearance: none;
   margin: 0;
@@ -340,8 +312,7 @@
   background: rgba(229, 152, 88, 0.3);
 }
 
-/* A segmented toggle: uppercase, tight, and lit only when it is the state the
-   scene is actually in. */
+/* Segmented toggle, highlighted only for the scene's current state. */
 .chunk-seg {
   display: flex;
   gap: 3px;
@@ -370,8 +341,7 @@
   color: var(--cv-accent);
 }
 
-/* A panel-section heading, same role as .chunk-panel__title but without the
-   panel's top border — used inside a panel body. */
+/* Section heading inside a panel (like .chunk-panel__title, without the top border). */
 .chunk-heading {
   font-size: 9.5px;
   letter-spacing: 0.2em;
@@ -392,7 +362,7 @@
   color: var(--cv-ink-faint);
 }
 
-/* A label on the left, a live value on the right. The value is always mono. */
+/* Label on the left, live value on the right (mono). */
 .chunk-kv {
   display: flex;
   justify-content: space-between;
@@ -415,7 +385,7 @@
   color: var(--cv-accent);
 }
 
-/* A square checkbox that reads as a layer's eye. */
+/* Square checkbox used as a layer's visibility toggle. */
 .chunk-dot {
   width: 11px;
   height: 11px;
@@ -435,7 +405,7 @@
   height: 9px;
 }
 
-/* -------------------------------------------------------------- breadcrumb */
+/* --- breadcrumb --- */
 
 .chunk-crumb {
   position: absolute;
@@ -566,7 +536,7 @@
   color: var(--cv-ink-label);
 }
 
-/* --------------------------------------------------------- presets/locator */
+/* --- presets / locator --- */
 
 .chunk-corner {
   position: absolute;
@@ -607,10 +577,10 @@
   color: var(--cv-accent);
 }
 
-/* The scalar field is the layer a forecaster reaches for first, so it gets
-   its own fixed panel above the general layer stack rather than a row
-   inside it. Always shown in full — never shrinks or scrolls; the layer
-   stack below absorbs whatever height is left. */
+/*
+ * Scalar field panel, above the layer stack. Always full height; the layer stack
+ * takes whatever space is left.
+ */
 .chunk-scalar {
   flex-shrink: 0;
 }
@@ -650,10 +620,9 @@
   color: var(--cv-ink-faint);
 }
 
-/* -------------------------------------------------------------- layer stack */
+/* --- layer stack --- */
 
-/* Holds the scalar field panel above the layer stack — separate panels,
-   stacked in one column, rather than rows of one combined panel. */
+/* Column holding the scalar field panel and the layer stack. */
 .chunk-stack {
   position: absolute;
   left: 84px;
@@ -833,7 +802,7 @@
   gap: 11px;
 }
 
-/* ------------------------------------------------------ variable + colorbar */
+/* --- variable + colorbar --- */
 
 .chunk-inspector {
   width: 276px;
@@ -914,8 +883,10 @@
   color: #efb07a;
 }
 
-/* The histogram, the ramp and the two handles are one instrument: the handles
-   sit on the real distribution, so clipping is a visible decision. */
+/*
+ * Histogram, colour ramp and the two handles together, so you can see what you
+ * clip.
+ */
 .chunk-range__bar {
   position: relative;
   user-select: none;
@@ -1021,7 +992,7 @@
   margin-bottom: 8px;
 }
 
-/* ------------------------------------------------------------ hover readout */
+/* --- hover readout --- */
 
 .chunk-hover {
   position: absolute;
@@ -1046,7 +1017,7 @@
   color: var(--cv-ink-dim);
 }
 
-/* ---------------------------------------------------------------- timeline */
+/* --- timeline --- */
 
 .chunk-time {
   position: absolute;
@@ -1146,7 +1117,7 @@
   color: var(--cv-accent);
 }
 
-/* --------------------------------------------------------- spec inspector */
+/* --- spec inspector --- */
 
 .chunk-spec {
   position: absolute;
@@ -1220,7 +1191,7 @@
   color: var(--cv-alarm);
 }
 
-/* ----------------------------------------------------------- profile panel */
+/* --- profile panel --- */
 
 .chunk-profile {
   position: absolute;
@@ -1294,8 +1265,7 @@
   background: var(--cv-accent);
 }
 
-/* Striped to match the dashed model trace, so the legend reads correctly even
-   if copper and advisory amber are indistinguishable to the reader. */
+/* Striped to match the dashed model line, since copper and amber look alike. */
 .chunk-profile__swatch--model {
   background: repeating-linear-gradient(
     90deg,
@@ -1328,7 +1298,7 @@
   height: auto;
 }
 
-/* ----------------------------------------------------------------- loading */
+/* --- loading --- */
 
 .chunk-loading {
   position: absolute;
@@ -1347,8 +1317,7 @@
   text-align: center;
 }
 
-/* An unavailable viewport is a sentence, not a status code, so it drops the
-   ruled-out tracking the loading line uses. */
+/* Error message is a sentence, so no letter spacing. */
 .chunk-loading--error {
   font-family: var(--cv-font);
   font-size: 13px;
@@ -1359,7 +1328,7 @@
   max-width: 46ch;
 }
 
-/* --------------------------------------------------------- reduced motion */
+/* --- reduced motion --- */
 
 @media (prefers-reduced-motion: reduce) {
   .chunk-crumb,
@@ -1376,12 +1345,12 @@
   }
 }
 
-/* ------------------------------------------------------------ provenance */
+/* --- provenance --- */
 
-/* Which product actually drew this chunk, at what spacing, and whether it came
-   off the network or the cache. §5.1 Principle 9 asks every layer to state its
-   own resolution; this view draws one product at a time, so it states it once,
-   here, always visible and never in a tooltip. */
+/*
+ * Which dataset drew this chunk, its grid spacing, and whether it came from the
+ * network or the cache. Always visible.
+ */
 .chunk-provenance {
   padding: 7px 9px;
   display: flex;
@@ -1404,9 +1373,7 @@
   color: var(--cv-ink-faint);
 }
 
-/* The chunk that was opened was not the one under the cursor. Said plainly and
-   left on screen rather than flashed, because it changes what the reader is
-   looking at. */
+/* Shown when the opened chunk isn't the one that was clicked. Stays on screen. */
 .chunk-notice {
   position: absolute;
   left: 50%;
@@ -1421,9 +1388,7 @@
   color: var(--cv-ink-value);
 }
 
-/* A step still in flight, while the previous one stays on screen. It does not
-   cover the viewport the way the first load does: there is already a chunk
-   drawn, and blanking it to say so would be a worse answer than a quiet line. */
+/* Small loading line while the next step loads; the previous one stays visible. */
 .chunk-loading--inline {
   inset: auto auto 62px 50%;
   transform: translateX(-50%);
@@ -1435,7 +1400,7 @@
   letter-spacing: 0.14em;
 }
 
-/* Nothing to compare — a real answer, in the voice §5.3 asks for. */
+/* Nothing to compare. */
 .chunk-profile__empty {
   padding: 22px 4px 8px;
   font-size: 12px;
@@ -1443,16 +1408,16 @@
   color: var(--cv-ink-caption);
 }
 
-/* A step the upstream cannot build, while the previous one stays on screen.
-   Amber and labelled, never colour alone — §5.4. */
+/* A step the upstream can't provide; the previous one stays visible. Amber with a label. */
 .chunk-notice--warn {
   border-color: rgba(245, 158, 11, 0.5);
   color: var(--cv-warn);
 }
 
-/* A control that exists but cannot apply here — a depth mode on a surface
-   product. Dimmed and inert, never removed: seeing that the mode exists is
-   part of understanding why this variable does not have it. */
+/*
+ * Modes that don't apply (e.g. depth modes on a surface field) are dimmed, not
+ * removed, so you can see they exist.
+ */
 .chunk-seg__btn:disabled {
   opacity: 0.32;
   cursor: not-allowed;

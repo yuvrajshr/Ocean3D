@@ -1,12 +1,8 @@
-"""Action validation: what the assistant may do, and on which view.
+"""Action validation: what the assistant can do, and in which view.
 
-Every action the model proposes is checked against the screen snapshot the
-frontend sent, for the view that is on screen, before it is handed back to be
-applied. The model therefore gets a truthful success/failure — including "that
-is a chunk-view control and the map is on screen" — rather than an optimistic
-guess, and an invalid action is refused in one place instead of half-applied.
-
-No network, no Gemini — this is the pure decision layer.
+Every proposed action is checked against the screen state for the current view
+before it's sent back, so the model gets a real success/failure (e.g. "that's a
+chunk control and the map is open"). No network or Gemini.
 """
 
 from __future__ import annotations
@@ -79,9 +75,7 @@ def act(name, args, state):
     return validate_action(name, args, state, CATALOGUE)
 
 
-# --------------------------------------------------------------------------
-# Scope — the reason this file was rewritten
-# --------------------------------------------------------------------------
+# --- Scope ---
 
 def test_every_action_is_tagged_with_the_view_it_was_validated_for():
     assert act("set_layers", {"add": ["salinity"]}, map_state())["scope"] == "map"
@@ -112,9 +106,7 @@ def test_each_view_declares_only_its_own_controls():
         assert declared == set(tools_for(view)), view
 
 
-# --------------------------------------------------------------------------
-# Map — layers
-# --------------------------------------------------------------------------
+# --- Map: layers ---
 
 def test_adds_a_layer_and_hides_another_in_one_action():
     action = act("set_layers", {"add": ["chlorophyll"], "hide": ["temperature"]}, map_state())
@@ -153,9 +145,7 @@ def test_opacity_must_be_a_fraction():
         act("set_layers", {"opacity": {"temperature": 250}}, map_state())
 
 
-# --------------------------------------------------------------------------
-# Map — time and depth
-# --------------------------------------------------------------------------
+# --- Map: time and depth ---
 
 def test_map_time_inside_a_visible_layer_is_accepted():
     assert act("set_time", {"time": "2013-10-12"}, map_state())["time"].startswith("2013-10-12")
@@ -193,9 +183,7 @@ def test_map_depth_below_the_grid_is_refused():
         act("set_depth", {"depth_m": 9000}, map_state())
 
 
-# --------------------------------------------------------------------------
-# Map — navigation: coordinates the model must never invent
-# --------------------------------------------------------------------------
+# --- Map: named regions only ---
 
 def test_zooms_to_a_named_region_from_the_table():
     action = act("zoom_to_region", {"region": "BAY OF BENGAL"}, map_state())
@@ -219,9 +207,7 @@ def test_area_ranges_must_be_ordered():
         act("set_area", {"lat_range": [20, 5], "lon_range": [80, 95]}, map_state())
 
 
-# --------------------------------------------------------------------------
-# Common — views and chunks
-# --------------------------------------------------------------------------
+# --- Views and chunks ---
 
 def test_switches_between_the_three_real_views():
     for view in VIEWS:
@@ -243,9 +229,7 @@ def test_open_chunk_by_named_region_or_stated_coordinates():
         act("open_chunk", {"region": "Atlantis"}, map_state())
 
 
-# --------------------------------------------------------------------------
-# Globe
-# --------------------------------------------------------------------------
+# --- Globe ---
 
 def test_globe_time_outside_the_scenario_window_is_refused():
     assert act("set_time", {"time": "2013-10-12"}, globe_state())
@@ -263,9 +247,7 @@ def test_select_float_only_for_one_that_is_reporting():
         act("select_float", {"platform_id": "2901335"}, globe_state(floats=[]))
 
 
-# --------------------------------------------------------------------------
-# Chunk
-# --------------------------------------------------------------------------
+# --- Chunk ---
 
 def test_show_variable_accepts_the_names_a_reader_uses():
     assert act("show_variable", {"variable": "current speed"}, chunk_state())["variable"] == "speed"
@@ -313,8 +295,7 @@ def test_camera_presets_accept_their_labels():
 
 
 def test_layers_are_the_ones_the_chunk_has():
-    # The sea surface was removed upstream (6718bc1). The instrument traces were
-    # removed (38db870) and then restored (77f5583) — the registry follows the view.
+    # Must match the chunk's own layer list.
     assert set(CHUNK_LAYERS) == {"scalar", "currents", "bathy", "instruments"}
     assert act("set_layer", {"layer": "bathymetry", "visible": False}, chunk_state())["layer"] == "bathy"
     assert act("set_layer", {"layer": "instrument traces", "visible": False}, chunk_state())["layer"] == "instruments"
@@ -347,9 +328,7 @@ def test_move_chunk_steps_one_tile():
     assert action["lat"] == 17.5 and action["lon"] == 87.5
 
 
-# --------------------------------------------------------------------------
-# State carried through a turn
-# --------------------------------------------------------------------------
+# --- State across a turn ---
 
 def test_opening_a_chunk_switches_the_view_and_snaps_the_tile():
     state = map_state()
@@ -370,9 +349,7 @@ def test_staying_in_a_view_is_not_a_switch():
     assert advance_state(state, act("set_camera", {"preset": "top"}, state)) is False
 
 
-# --------------------------------------------------------------------------
-# The sentence a command turn ends with
-# --------------------------------------------------------------------------
+# --- Confirmation text for command turns ---
 
 def test_describes_actions_in_the_voice_the_prompt_asks_for():
     state = map_state()

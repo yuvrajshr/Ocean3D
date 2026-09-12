@@ -1,69 +1,37 @@
 /**
  * Download and prepare the globe basemap and its overlay layers.
  *
- * These are committed to `public/`, not fetched at runtime: context.md §10 already
- * established that the deployment target cannot depend on outside hosts, which is why the
- * coastline data was bundled too. This script exists so the assets are reproducible rather
- * than mysterious — the same arrangement as `backend/snapshot_fixtures.py`, which
- * regenerates the committed sample data in `data/`.
+ * The results are committed to public/ so the app doesn't depend on outside hosts;
+ * this script just makes them reproducible (like backend/snapshot_fixtures.py
+ * for the sample data).
  *
- * The basemap source is NASA's Blue Marble Next Generation, *with topography and
- * bathymetry*. The "topo.bathy" part is the whole point: NASA bakes shaded relief into the
- * pixels, so one colour texture carries the visible mid-ocean ridges and the Greenland ice
- * dome without a separate elevation or normal map. (The matching GEBCO elevation raster is
- * published only at 21600×10800 / 17.6 MB, far too large to commit, and is not needed for
- * this.)
+ * Basemap: NASA Blue Marble Next Generation with topography and bathymetry. The
+ * relief is baked into the image, so no separate elevation or normal map is needed.
  *
- * Two overlay layers ship alongside it, sourced from the same NASA Earth Observatory family
- * (Reto Stöckli / Robert Simmon compositing, same public-domain terms), mirrored on
- * archive.org as direct JPEG downloads:
- *   - Clouds — the companion Blue Marble cloud composite. A luminance image: the globe
- *     shader samples it for both the white cloud tint and the alpha (see viz/globe.ts),
- *     so no real alpha channel is needed.
- *   - Night lights — the classic DMSP city-lights composite (data: Marc Imhoff/NASA GSFC,
- *     Christopher Elvidge/NOAA NGDC; image: Craig Mayhew/Robert Simmon, NASA GSFC).
+ * Overlays, from the same NASA Earth Observatory family (Reto Stöckli / Robert
+ * Simmon), mirrored on archive.org:
+ *   - Clouds: a luminance image; the globe shader uses it for both colour and
+ *     alpha (see viz/globe.ts).
+ *   - Night lights: DMSP city lights (data: Marc Imhoff/NASA GSFC, Christopher
+ *     Elvidge/NOAA NGDC; image: Craig Mayhew/Robert Simmon, NASA GSFC).
  *
- * A third layer — a specular ocean/land mask — needs no download at all. No NASA-original
- * specular mask could be traced to a directly verifiable, attributable source (only
- * third-party repacked texture sites turned up, which don't meet this project's "real,
- * attributable source" bar), so it is derived procedurally from the basemap already on
- * disk: a blue-dominance threshold per pixel, computed in the same puppeteer canvas step
- * used for resampling.
+ * The specular ocean/land mask isn't downloaded. We couldn't find an original,
+ * attributable NASA version, so it's generated from the basemap (blue-dominant
+ * pixels = ocean) in the same puppeteer step used for resizing.
  *
- * ## Why the basemap is resampled to 4096×2048, and the overlays to 2048×1024
+ * Sizes: NASA's basemap is 5400×2700, which isn't a power of two, and mipmapping
+ * it broke the WebGL context on some drivers (the canvas went blank). 4096×2048 is
+ * a power of two and still more detail than the globe can show (~5 px/degree on
+ * screen vs 11 here). Overlays are soft, so 2048×1024 is enough.
  *
- * NASA publishes the basemap at 5400×2700, which is NOT a power of two. Uploaded with
- * mipmaps, that texture makes mip generation fail on some drivers — reproducibly under
- * SwiftShader, where it put the GL context into a state where three unrelated materials
- * (PointsMaterial, LineBasicMaterial, ShaderMaterial) all failed VALIDATE_STATUS and the
- * canvas rendered nothing at all. Dropping mipmaps silences it but is the wrong fix: ~900 px
- * of globe on screen against 5400 px of texture is 6:1 minification, which without mipmaps
- * aliases badly on real hardware.
+ * Two basemap months are included so a scenario can match its season (see
+ * backend/app/config.py). Public domain; credit NASA Earth Observatory (plus the
+ * night-lights credit above).
  *
- * 4096×2048 is a power of two, so mip generation is exact halving. It is also still more
- * resolution than the globe can show — the visible hemisphere spans 180° of longitude
- * across roughly 900 px, about 5 px per degree, against 11 px per degree here — so this
- * costs no visible quality and saves about a third of the file size.
- *
- * The overlays are soft, glow-like layers (clouds, city lights, a specular mask), not
- * detail-critical imagery, so they resample to a smaller power-of-two size — 2048×1024 —
- * which still costs no visible quality against a globe that can show ~11 px/degree, and
- * measurably reduces the GPU memory this already-heavy scene carries.
- *
- * Two basemap months ship so a scenario can pick its own season; see BASEMAPS in
- * `backend/app/config.py`. Public domain, credit required: NASA Earth Observatory (and,
- * for night lights specifically, the fuller credit above).
- *
- *   node scripts/fetch-textures.mjs          # skip assets already present
+ *   node scripts/fetch-textures.mjs          # skip files already present
  *   node scripts/fetch-textures.mjs --force  # rebuild everything
  *
- * Note this is NASA Earth Observatory / Visible Earth (eoimages.gsfc.nasa.gov, mirrored via
- * archive.org since Visible Earth's own browsable catalogue has since been consolidated
- * into science.nasa.gov), a different programme from the Scientific Visualization Studio
- * that context.md §5.5 says we study but do not redistribute.
- *
- * Resampling runs in headless Chrome via puppeteer, which the repo already uses for the
- * screenshot harness — chosen over adding an image-processing dependency for one resize.
+ * Resizing runs in headless Chrome via puppeteer, so there's no extra image library.
  */
 
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -74,11 +42,11 @@ import puppeteer from "puppeteer";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
-/** Power of two, so mipmap generation is exact halving. See the note above. */
+/** Power of two, so mipmaps halve exactly. */
 const BASEMAP_WIDTH = 4096;
 const BASEMAP_HEIGHT = BASEMAP_WIDTH / 2;
 
-/** Smaller than the basemap — these are soft overlay layers, not detail-critical imagery. */
+/** Smaller than the basemap, since these overlays are soft. */
 const OVERLAY_WIDTH = 2048;
 const OVERLAY_HEIGHT = OVERLAY_WIDTH / 2;
 
@@ -89,8 +57,7 @@ const BASEMAPS = [
     month: "October 2004",
     url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73826/world.topo.bathy.200410.3x5400x2700.jpg",
     file: `world.topo.bathy.200410.${BASEMAP_WIDTH}x${BASEMAP_HEIGHT}.jpg`,
-    // The ocean mask is derived from this one basemap — geography doesn't change month to
-    // month, so deriving it twice would be redundant work for an identical result.
+    // Only generate the ocean mask from one basemap; geography doesn't change by month.
     deriveOceanMask: true,
   },
   {
@@ -133,8 +100,7 @@ async function download(label, url) {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const type = response.headers.get("content-type") ?? "";
-  // A 404 page served as HTML with a 200 would otherwise be resampled into a texture that
-  // decodes to nothing, and the failure would surface much later as a blank globe.
+  // Otherwise an HTML 404 page with status 200 would get turned into a blank texture.
   if (!type.startsWith("image/")) throw new Error(`expected an image, got ${type}`);
   const bytes = Buffer.from(await response.arrayBuffer());
   console.log(`  got   ${label}  ${mb(bytes.length)} at source`);
@@ -164,11 +130,9 @@ async function resample(page, bytes, width, height) {
 }
 
 /**
- * A grayscale ocean/land mask, derived from an already-resampled basemap image rather than
- * a separate download — see the file header for why no directly-attributable NASA specular
- * mask could be sourced. Ocean reads blue-dominant in the Blue Marble imagery; land (browns,
- * greens) and ice/cloud (near-equal RGB, bright) both fail that test. A soft ramp rather
- * than a hard cutoff, so a coastline doesn't produce a jagged specular edge in the shader.
+ * Grayscale ocean/land mask generated from the resized basemap. Ocean is blue
+ * dominant in Blue Marble; land and ice aren't. Uses a soft ramp so coastlines
+ * don't get a jagged specular edge.
  */
 async function deriveOceanMask(page, basemapBytes, width, height) {
   const dataUrl = await page.evaluate(
@@ -237,8 +201,7 @@ for (const basemap of BASEMAPS) {
   }
 
   if (basemap.deriveOceanMask) {
-    // Read back from disk rather than reusing the in-memory buffer, so this works whether
-    // the basemap was just downloaded or already present and skipped above.
+    // Read from disk so this works whether the basemap was just downloaded or skipped.
     oceanMaskSourceBytes = await readFile(path);
   }
 }

@@ -1,10 +1,6 @@
-"""The system prompt describes the view on screen, and only that view.
-
-The model is told what it is looking at — for the chunk, the tile, variable,
-date and window; for the map, each layer's source and coverage; for the globe,
-the window and the floats reporting — and never about a control this turn does
-not declare. A prompt that names a tool the model cannot call invites a call
-that will be refused, which costs a round.
+"""The system prompt describes the current view (tile, variable, date for the
+chunk; layers and coverage for the map; window and floats for the globe) and
+never mentions controls this turn doesn't have.
 """
 import pytest
 

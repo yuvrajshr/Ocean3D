@@ -1,13 +1,11 @@
 {
   "name": "ocean3d",
   "version": "1.0.0",
-  "description": "INCOIS 3D Ocean Data Visualization — root tooling (dev runner, screenshot harness).",
+  "description": "INCOIS 3D Ocean Data Visualization - root dev runner.",
   "main": "index.js",
   "scripts": {
     "dev": "node dev.mjs",
     "dev:open": "node dev.mjs --open",
-    "shot": "node shot.mjs",
-    "screenshot": "node screenshot.mjs",
     "test": "cd frontend && npm test"
   },
   "keywords": [],

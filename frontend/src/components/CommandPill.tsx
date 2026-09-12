@@ -1,16 +1,6 @@
 /**
- * CommandPill.tsx — Top Navigation Bar for Ocean 3D
- *
- * Fixed top rectangular navigation bar containing:
- * - Circular logo mark
- * - Contextual title (truncating)
- * - Provenance/status dot with tooltip
- * - View mode segmented control (Map / Globe / Water column / Chunk) always showing
- *   icon + name
- *
- * The Ops/Explore tabs were removed on 2026-09-08: they promised to hide advanced
- * controls that were never built, and two of their four behaviours were already
- * dead code. See context.md §5.1 Principle 4.
+ * Top navigation bar: logo, title, status dot and the view switcher
+ * (Map / Globe / Chunk).
  */
 
 import {
@@ -23,7 +13,7 @@ import type { Scenario, SourceStatus } from "../api/client";
 import type { SceneView } from "../viz/scene";
 import "../styles/command-pill.css";
 
-/** The chunk view is a fourth view with its own canvas, like the map. */
+/** The chunk view has its own canvas, like the map. */
 export type AppView = SceneView | "map" | "chunk";
 
 export interface CommandPillProps {
@@ -37,8 +27,10 @@ export interface CommandPillProps {
   pointsCount?: number;
   isPointsOpen?: boolean;
   onTogglePoints?: () => void;
-  /** True when at least one map layer exists — distinguishes "waiting for first
-   *  slice" (loading) from "genuinely unreachable" (offline). */
+  /**
+   * True when at least one map layer exists, to tell "waiting for the first
+   * slice" apart from "offline".
+   */
   hasLayers?: boolean;
 }
 
@@ -55,10 +47,9 @@ export function CommandPill({
   onTogglePoints,
   hasLayers = false,
 }: CommandPillProps) {
-  // Status dot: "loading" wins when data is in flight OR when we have layers
-  // but the first slice hasn't returned yet (Copernicus takes ~10-15s on cold
-  // start). Without this, a freshly-added Copernicus layer reads as OFFLINE
-  // for 15 s while it's actually just fetching.
+  // Show "loading" while data is in flight, or when we have layers but the first
+  // slice hasn't arrived yet (Copernicus can take 10-15 s on a cold start),
+  // otherwise a new layer would briefly show as offline.
   const statusType = mapLoadingLabel || (!source && hasLayers)
     ? "loading"
     : !source
@@ -69,11 +60,8 @@ export function CommandPill({
 
   const fullStatusText = mapLoadingLabel ?? provenanceLabel;
 
-  // Two views and a destination. The water column left the rail on 2026-09-10:
-  // the chunk view answers the same question about a block of water at a real
-  // model resolution, and is reached by clicking the globe rather than by a
-  // fourth toggle. Its button stays so the view is keyboard-reachable and so
-  // there is a way back into the chunk you were last looking at.
+  // View buttons. The water column isn't in the list anymore; the chunk view
+  // covers it and is also opened by clicking the globe.
   const viewModes: { id: AppView; label: string; icon: typeof MapIcon }[] = [
     { id: "map", label: "Map", icon: MapIcon },
     { id: "globe", label: "Globe", icon: GlobeIcon },
@@ -83,7 +71,7 @@ export function CommandPill({
   return (
     <nav className="command-pill-container" role="navigation" aria-label="Main Navigation">
       <div className="command-pill">
-        {/* 1. Ratio Brand Block with 3px Red Vertical Rule */}
+        {/* brand */}
         <div className="command-pill__brand">
           <div className="command-pill__logo" title="INCOIS · Ocean 3D">
             <img
@@ -102,7 +90,7 @@ export function CommandPill({
           </div>
         </div>
 
-        {/* 3. Status Beacon */}
+        {/* status */}
         <div
           className="command-pill__status-wrap"
           title={fullStatusText}
@@ -120,9 +108,8 @@ export function CommandPill({
           </div>
         </div>
 
-        {/* 4. Navigation & Mode Controls Cluster (Aligned to Right End) */}
+        {/* view controls */}
         <div className="command-pill__right-group">
-          {/* View-Mode Segmented Control: always shows icon + name */}
           <div
             className="command-pill__view-rail"
             role="group"
@@ -154,10 +141,9 @@ export function CommandPill({
             })}
           </div>
 
-          {/* Vertical Divider */}
           <div className="command-pill__divider" />
 
-          {/* Points / In-Situ Floats Toggle */}
+          {/* floats toggle */}
           {onTogglePoints && (
             <>
               <button

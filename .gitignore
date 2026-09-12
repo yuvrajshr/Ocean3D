@@ -13,16 +13,23 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Cached INCOIS ERDDAP responses. These are regenerated on demand and can be
-# large; the committed demo fixtures live in data/ instead.
+# Cached ERDDAP responses, regenerated on demand. Demo fixtures live in data/.
 backend/app/cache_store/*
 !backend/app/cache_store/.gitignore
 
-# Verification artifacts
+# Screenshots and local screenshot scripts
 temporary screenshots/
+/screenshot.mjs
+/shot.mjs
+/shot-map.mjs
 
-# The original 14584x14584 INCOIS seal (5.5 MB). The downscaled 64/128/256 px
-# versions used by the app are committed.
+# Personal notes and drafts (only the README is shared)
+/*.md
+!/README.md
+/docs/
+/spacex/
+
+# Full-size INCOIS seal (5.5 MB); the app uses the downscaled copies
 brand_assets/incois-logo-original.png
 
 # Editor / OS
@@ -31,9 +38,7 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Credentials. Copernicus Marine requires an account, and its username/password
-# are a personal login, not a project secret to share — they must never be
-# committed. .env.example carries the variable NAMES only.
+# Credentials - never commit these. .env.example has the variable names only.
 .env
 *.env
 !*.env.example

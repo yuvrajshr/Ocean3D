@@ -1,27 +1,19 @@
-"""The assistant's tools: what it may read, and what it may do — per view.
+"""Assistant tools: what it can read and what it can change, per view.
 
-Tools split into two families that cannot execute in the same place.
+Read tools run on the backend (reads.py) and return values with their source,
+which is what the citation line is built from.
 
-**Read tools** run on the backend (`reads.py`) and return their value *with*
-provenance attached, because the panel builds its citation line from the calls
-that actually ran (context.md §5.1 Principle 13).
+Action tools change React state, so they can't run here. We validate them
+against the screen state the frontend sent and return them for the client to
+apply, so the model always knows whether an action worked.
 
-**Action tools** mutate React state in the browser, so they cannot run here.
-They are *validated* here against the screen snapshot the frontend sent, then
-handed back as a typed action for the client to apply. The model is therefore
-told the truth about whether its action succeeded.
+Each view (map, globe, chunk) has its own actions, and a turn only gets the
+current view's actions plus set_view and open_chunk. So "show salinity" in the
+chunk view changes the chunk, not the map. Every action carries a ``scope``
+that the client uses to route it.
 
-**Every action belongs to a view** (decided 2026-09-10). The map, the globe and
-the chunk each declare their own controls, and a turn is only offered the
-controls of the view on screen, plus the two that move between views. That is
-what "changes apply to the view you are on" means structurally: "show salinity"
-in the chunk changes the chunk's variable, and cannot reach the map's layer
-stack, because no map tool is declared there. Each validated action carries the
-view it was validated against as `scope`, which is how the client routes it.
-
-`zoom_to_region` and `open_chunk` resolve place names against a fixed table and
-nothing else. A model-invented bounding box is the most dangerous kind of wrong
-here, because it looks entirely plausible on screen.
+zoom_to_region and open_chunk only accept places from a fixed table; we never
+let the model make up a bounding box.
 """
 
 from __future__ import annotations
@@ -33,14 +25,13 @@ from typing import Any, Callable
 
 from ..config import CHUNK_MAX_DEPTH, CHUNK_TILE_DEGREES
 
-# Mirrors MAX_LAYERS in frontend/src/map/state.ts. If that moves, this moves.
+# Same as MAX_LAYERS in frontend/src/map/state.ts.
 MAX_LAYERS = 3
 
-# The water column left the navigation on 2026-09-10. Mirrors AppView in App.tsx.
+# Same as AppView in App.tsx.
 VIEWS = ("map", "globe", "chunk")
 
-# Coordinates the model is never allowed to supply for a place name. Keys are
-# lowercased for lookup; the label is what gets echoed back to the reader.
+# Fixed coordinates for place names. Keys are lowercase; the label is shown back.
 NAMED_REGIONS: dict[str, dict[str, Any]] = {
     "bay of bengal": {"label": "Bay of Bengal", "lat_range": (5.0, 23.0), "lon_range": (78.0, 95.0)},
     "arabian sea": {"label": "Arabian Sea", "lat_range": (5.0, 25.0), "lon_range": (55.0, 78.0)},
@@ -54,30 +45,26 @@ NAMED_REGIONS: dict[str, dict[str, Any]] = {
     "world": {"label": "the world", "lat_range": (-90.0, 90.0), "lon_range": (-180.0, 180.0)},
 }
 
-# ---- The chunk view's vocabulary. Mirrors frontend/src/viz/chunk/{model,spec}.ts.
+# --- Chunk view (matches frontend/src/viz/chunk/{model,spec}.ts) ---
 
 CHUNK_VARIABLES = ("temperature", "salinity", "speed", "chlorophyll")
-#: No upstream serves chlorophyll in 3D, so the chunk shows it as a slice or not
-#: at all — the same rule the chunk's own panel enforces by disabling buttons.
+# No 3D chlorophyll anywhere, so in the chunk it's slice-only (the panel does the same).
 SURFACE_ONLY_CHUNK_VARIABLES = frozenset({"chlorophyll"})
 CHUNK_MODES = ("slices", "volume", "isosurface")
 CHUNK_CUT_AXES = ("depth", "lon", "lat")
 CHUNK_CAMERAS = ("corner", "top", "section")
-#: The chunk's layers, as its spec declares them. The sea surface was removed
-#: upstream (6718bc1); the instrument traces were removed (38db870) and restored
-#: (77f5583). This table follows the view — when a layer comes or goes there,
-#: it comes or goes here, or the assistant offers a control the reader cannot see.
+# The chunk's layers. Must match the chunk spec, or the assistant offers
+# controls that don't exist.
 CHUNK_LAYERS = {
     "scalar": "the scalar field",
     "currents": "the currents",
     "bathy": "the bathymetry",
     "instruments": "the instrument traces",
 }
-#: The chunk's own exaggeration slider.
+# Same range as the chunk's exaggeration slider.
 EXAGGERATION_RANGE = (10.0, 200.0)
 CHUNK_UNITS = {"temperature": "°C", "salinity": "PSU", "speed": "m/s", "chlorophyll": "mg/m³"}
-#: A physically plausible bracket for an isovalue — not the chunk's own range,
-#: which the model cannot see, but wide enough never to refuse a real one.
+# A wide, physically sensible range for isovalues.
 ISO_RANGE = {
     "temperature": (-2.0, 40.0),
     "salinity": (0.0, 42.0),
@@ -111,23 +98,17 @@ _ALIASES: dict[str, dict[str, str]] = {
 
 
 def choose(kind: str, raw: Any, allowed) -> str | None:
-    """Normalise a reader's word to one the view knows, or None."""
+    """Map the user's word to one the view knows, or None."""
     key = str(raw or "").strip().lower()
     key = _ALIASES.get(kind, {}).get(key, key)
     return key if key in allowed else None
 
 
 class ActionError(Exception):
-    """An action the assistant may not take, with a reason fit to show a reader.
-
-    The message goes back to the model as the tool result *and* may be shown in
-    the panel, so it follows §5.3: state what happened and what to do, no apology.
-    """
+    """An action the assistant can't take, with a reason that can be shown to the user."""
 
 
-# --------------------------------------------------------------------------
-# Screen state: every view, every turn
-# --------------------------------------------------------------------------
+# --- Screen state ---
 
 def _only_known(cls, data: Any) -> dict[str, Any]:
     names = {f.name for f in fields(cls)}
@@ -136,10 +117,10 @@ def _only_known(cls, data: Any) -> dict[str, Any]:
 
 @dataclass
 class MapState:
-    #: Topmost first: {key, visible, opacity, provider, time_start, time_end}.
+    # Top first: {key, visible, opacity, provider, time_start, time_end}.
     layers: list[dict[str, Any]] = field(default_factory=list)
     time: str = ""
-    #: The layer the depth ruler drives: {key, depth_m, depth_levels | None}.
+    # Layer the depth ruler controls: {key, depth_m, depth_levels | None}.
     active: dict[str, Any] | None = None
     pin: dict[str, float] | None = None
 
@@ -151,19 +132,19 @@ class MapState:
 @dataclass
 class GlobeState:
     time: str = ""
-    #: The scenario window the globe's timeline covers: [start, end].
+    # The globe timeline's window: [start, end].
     window: list[str] = field(default_factory=list)
     selected: str | None = None
-    #: Platform ids of the floats reporting at this date.
+    # Floats reporting on this date.
     floats: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ChunkState:
-    #: False when the chunk view is not open: the block then describes the
-    #: chunk as it would open, so a switch mid-turn is validated truthfully.
+    # False when the chunk view isn't open; the block then describes the chunk as it
+    # would open, so a mid-turn switch validates correctly.
     mounted: bool = False
-    #: (lon_min, lat_min, lon_max, lat_max), the spec's own order.
+    # (lon_min, lat_min, lon_max, lat_max), same order as the spec.
     bbox: list[float] = field(default_factory=lambda: [85.0, 10.0, 90.0, 15.0])
     variable: str = "temperature"
     time: str = ""
@@ -175,15 +156,15 @@ class ChunkState:
     camera: str = "corner"
     layers: dict[str, dict[str, Any]] = field(default_factory=dict)
     colour: dict[str, Any] = field(default_factory=dict)
-    #: Platform ids of the floats with a track in this chunk and window.
+    # Floats with a track in this chunk and time window.
     platforms: list[str] = field(default_factory=list)
-    #: The float whose cast is open against the model, if any.
+    # Float whose profile is open, if any.
     open_float: str | None = None
 
 
 @dataclass
 class ScreenState:
-    """What the frontend says is currently true, for all three views."""
+    """What the frontend says is on screen, for all three views."""
 
     view: str = "map"
     map: MapState = field(default_factory=MapState)
@@ -192,7 +173,7 @@ class ScreenState:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any] | None) -> "ScreenState":
-        """Tolerant by design: a missing block or an unknown key is not an error."""
+        """Lenient: missing blocks and unknown keys are fine."""
         data = payload or {}
         view = str(data.get("view") or "map")
         return cls(
@@ -203,19 +184,17 @@ class ScreenState:
         )
 
     def view_date(self) -> str:
-        """The date the view on screen is showing, as YYYY-MM-DD, or ""."""
+        """Date shown in the current view, YYYY-MM-DD, or ""."""
         raw = {"map": self.map.time, "globe": self.globe.time, "chunk": self.chunk.time}.get(
             self.view, ""
         )
         return (raw or "")[:10]
 
 
-# --------------------------------------------------------------------------
-# Formatting shared with reads and the prompt
-# --------------------------------------------------------------------------
+# --- Formatting (shared with reads and the prompt) ---
 
 def fmt_date(iso: str) -> str:
-    """A date as the app writes dates: "12 Oct 2013"."""
+    """Format a date like the app does: "12 Oct 2013"."""
     try:
         d = datetime.fromisoformat(str(iso)[:10])
     except ValueError:
@@ -231,7 +210,7 @@ def fmt_point(lat: float, lon: float) -> str:
 
 
 def snap_tile(lon: float, lat: float) -> list[float]:
-    """The chunk tile containing a point — the same floor `snapTile` uses client-side."""
+    """Chunk tile containing a point (same as snapTile on the client)."""
     step = CHUNK_TILE_DEGREES
     lon0 = math.floor(lon / step) * step
     lat0 = math.floor(lat / step) * step
@@ -276,9 +255,7 @@ def _region(args: dict[str, Any]) -> dict[str, Any]:
     return region
 
 
-# --------------------------------------------------------------------------
-# Validators — (view, name) → fn(args, state, catalogue) -> action
-# --------------------------------------------------------------------------
+# --- Validators: (view, name) -> fn(args, state, catalogue) -> action ---
 
 Validator = Callable[[dict[str, Any], ScreenState, list[str]], dict[str, Any]]
 
@@ -301,7 +278,7 @@ def _v_open_chunk(args, _state, _cat):
     raise ActionError("Say which region to open, or give the coordinates the reader stated.")
 
 
-# ---- map
+# --- map ---
 
 def _v_set_layers(args, state, catalogue):
     add = list(args.get("add") or [])
@@ -318,8 +295,7 @@ def _v_set_layers(args, state, catalogue):
             )
 
     present = set(state.map.layer_keys)
-    # Asking for what is already true is satisfied, not failed — the reader
-    # asked for an end state, not a transition.
+    # Asking for something that's already true counts as done.
     add = [k for k in add if k not in present]
     for key in [*remove, *show, *hide]:
         if key not in present:
@@ -404,7 +380,7 @@ def _v_set_area(args, _state, _cat):
     }
 
 
-# ---- globe
+# --- globe ---
 
 def _v_globe_set_time(args, state, _cat):
     iso = _parse_time(args.get("time"))
@@ -436,7 +412,7 @@ def _v_clear_selection(_args, _state, _cat):
     return {"type": "clear_selection"}
 
 
-# ---- chunk
+# --- chunk ---
 
 def _surface_only(state: ScreenState) -> bool:
     return state.chunk.variable in SURFACE_ONLY_CHUNK_VARIABLES
@@ -592,7 +568,7 @@ def _v_move_chunk(args, state, _cat):
     return {"type": "move_chunk", "direction": direction, "lat": lat, "lon": lon}
 
 
-# ---- the registry
+# --- registry ---
 
 COMMON_ACTIONS = ("set_view", "open_chunk")
 VIEW_ACTIONS: dict[str, tuple[str, ...]] = {
@@ -608,7 +584,7 @@ COMMON_READS = ("query_point", "list_floats", "compare_float")
 VIEW_READS: dict[str, tuple[str, ...]] = {"map": (), "globe": (), "chunk": ("describe_chunk",)}
 
 ACTION_TOOLS = frozenset(COMMON_ACTIONS).union(*VIEW_ACTIONS.values())
-#: Actions after which the next round must be planned against another view.
+# After these, the next round needs the new view's tools.
 VIEW_SWITCHING = frozenset({"set_view", "open_chunk"})
 
 _VALIDATORS: dict[tuple[str, str], Validator] = {
@@ -638,17 +614,15 @@ _VALIDATORS: dict[tuple[str, str], Validator] = {
 
 
 def tools_for(view: str) -> tuple[str, ...]:
-    """Every tool a turn on this view is offered, actions first."""
+    """All tools offered for this view, actions first."""
     return COMMON_ACTIONS + VIEW_ACTIONS.get(view, ()) + COMMON_READS + VIEW_READS.get(view, ())
 
 
 def validate_action(
     name: str, args: dict[str, Any], state: ScreenState, catalogue: list[str]
 ) -> dict[str, Any]:
-    """Check one proposed action against the view on screen; return it, or raise.
-
-    Raises `ActionError` with a reader-facing reason, which callers hand straight
-    back to the model so it learns what actually happened.
+    """Check one action against the current view and return it, or raise ActionError
+    with a reason we pass back to the model.
     """
     view = state.view
     if name not in ACTION_TOOLS:
@@ -667,12 +641,8 @@ def validate_action(
 
 
 def advance_state(state: ScreenState, action: dict[str, Any]) -> bool:
-    """Carry one applied action into the server's copy of the screen.
-
-    Later actions in the same turn are validated against the result, so "show
-    chlorophyll, then the volume" is refused at the second step, as the chunk's
-    own panel would. Returns True when the view changed, which is the loop's cue
-    to plan the next round against that view's tools.
+    """Apply an accepted action to our copy of the screen state, so later actions in
+    the same turn are checked against it. Returns True if the view changed.
     """
     kind, scope, before = action["type"], action.get("scope"), state.view
     chunk = state.chunk
@@ -734,13 +704,8 @@ def advance_state(state: ScreenState, action: dict[str, Any]) -> bool:
     return state.view != before
 
 
-# --------------------------------------------------------------------------
-# The confirmation a command turn ends with
-# --------------------------------------------------------------------------
-#
-# A turn made only of successful actions does not spend a second model round on
-# a sentence (decided 2026-09-10): the sentence is composed here, from what was
-# validated, in the §5.3 voice the prompt asks the model for.
+# --- Confirmation for command-only turns ---
+# Built here from the validated actions, so we don't spend a model round on it.
 
 _MODE_WORDS = {"slices": "Showing slices.", "volume": "Showing the volume.", "isosurface": "Switched to the isosurface."}
 _CAMERA_WORDS = {"corner": "corner", "top": "top-down", "section": "section"}
@@ -819,13 +784,9 @@ def describe_actions(actions: list[dict[str, Any]]) -> str:
     return " ".join(p for p in (_describe(a) for a in actions) if p) or "Done."
 
 
-# --------------------------------------------------------------------------
-# Declarations handed to Gemini
-# --------------------------------------------------------------------------
-#
-# Written for the model, and they earn their length: the difference between
-# "gets a value" and a sentence saying the value is a real measurement from a
-# named grid cell is the difference between the model fetching and recalling.
+# --- Function declarations sent to Gemini ---
+# The descriptions are detailed on purpose; it makes the model fetch values
+# instead of guessing them.
 
 def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict:
     return {
@@ -1045,6 +1006,6 @@ _VIEW_DECLS: dict[str, dict[str, dict]] = {
 
 
 def declarations_for(view: str) -> list[dict]:
-    """The function declarations one turn on this view is offered."""
+    """Function declarations for this view."""
     own = _VIEW_DECLS.get(view, {})
     return [own.get(name) or _COMMON_DECLS[name] for name in tools_for(view)]

@@ -1,13 +1,7 @@
-"""Terrain relief endpoints.
+"""Terrain endpoints. Small JSON metadata, plus the heightfield as raw Float32.
 
-Same split as the field endpoints: small JSON metadata, and the heightfield
-itself as raw Float32 so the browser can push it straight into a geometry
-buffer without parsing.
-
-Bounds are optional. Omitting them gives the Bay of Bengal box the globe and the
-water column have always used; passing them gives one chunk's seabed. The
-default is spelled out in the signature rather than applied inside, so the
-`data_url` a client is handed always names the box it will get back.
+Bounds are optional; the default is the Bay of Bengal box. The default is in the
+signature so the data_url always names the box you'll get.
 """
 
 from __future__ import annotations
@@ -28,7 +22,7 @@ def _bounds(
     lon_min: float | None,
     lon_max: float | None,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
-    """All four or none. A half-given box would silently mix two extents."""
+    """All four bounds or none."""
     given = [v for v in (lat_min, lat_max, lon_min, lon_max) if v is not None]
     if not given:
         return TERRAIN_LAT_RANGE, TERRAIN_LON_RANGE
@@ -85,8 +79,6 @@ def terrain_meta(
         "stride_arcmin": stride,
         "units": "m",
         "data_url": "/api/terrain/data?" + _query(lat_range, lon_range, stride),
-        # NCEI's ImageServer, not CoastWatch — the PFEG hosts died and the
-        # transport moved on 2026-09-05. This line said otherwise until now.
         "attribution": "ETOPO1 bedrock relief via NOAA NCEI",
         **stats,
         "source": result.source.model_dump(),
@@ -101,9 +93,8 @@ def terrain_data(
     lon_max: float | None = None,
     stride: int = Query(TERRAIN_STRIDE, ge=1, le=60),
 ) -> Response:
-    """Raw little-endian Float32 elevation in metres, C order (lat, lon).
-
-    Positive is land, negative is seafloor; zero is sea level.
+    """Raw little-endian Float32 elevation in metres, (lat, lon).
+    Positive is land, negative is seafloor.
     """
     lat_range, lon_range = _bounds(lat_min, lat_max, lon_min, lon_max)
     result = _load(lat_range, lon_range, stride)

@@ -1,16 +1,7 @@
 /**
- * The layer stack.
- *
- * Both reference tools (Copernicus MyOcean Pro, NASA Worldview) draw these as
- * rounded cards with drop shadows. That is exactly the SaaS-card kit CLAUDE.md
- * Step 4 warns against, so here a layer is a *housing*: a flat band, full width
- * of the rail, separated by hairlines, square-cornered, no shadow. The only
- * radius inside it is on the controls, per `--radius-control`.
- *
- * Each housing always states its dataset, grid spacing and cadence in mono, and
- * never in a tooltip. That is not decoration — it is the mechanism that keeps a
- * global map honest (context.md §5.1 Principle 7): the reader can always tell
- * what they are looking at and how coarse it is.
+ * The map's layer stack. Each layer is a flat band separated by thin lines, and
+ * always shows its dataset, grid spacing and cadence in mono (not in a tooltip),
+ * so you can always tell where a pixel came from and how coarse it is.
  */
 
 import { useMemo } from "react";
@@ -19,12 +10,10 @@ import type { MapLayerInfo, MapSliceMeta } from "../api/client";
 import { toCssGradient } from "../viz/colormaps";
 import { datasetOf, MAX_LAYERS, type MapLayer, type MapState, resolveLayerTime } from "./state";
 
-/** A compact horizontal colorbar, for inside a housing.
- *
- *  `components/Colorbar.tsx` cannot be reused: it is a vertical instrument built
- *  for the 104px right rail (`grid-template-rows: auto 1fr auto`), and
- *  `toCssGradient` emits `to top`. Different orientation, different component;
- *  the 3D views keep theirs untouched. */
+/**
+ * Small horizontal colorbar for inside a layer. Colorbar.tsx is vertical, so it
+ * can't be reused here.
+ */
 function LayerColorbar({
   layer,
   meta,
@@ -73,8 +62,10 @@ function formatValue(v: number): string {
   return v.toFixed(3);
 }
 
-/** Depth levels arrive at full float precision (0.49402499198913574). A ruler
- *  prints what a reader can use. */
+/**
+ * Depth levels come in at full float precision (0.49402499198913574); round them
+ * for display.
+ */
 function formatDepth(d: number): string {
   if (d >= 100) return d.toFixed(0);
   if (d >= 10) return d.toFixed(1);
@@ -124,8 +115,7 @@ function LayerCard({
     (info.lon_range[1] - info.lon_range[0]) / Math.max(1, info.native_shape[1]),
   );
 
-  // Stated, not hidden: a monthly field and a daily field stacked together are
-  // not the same instant, and the reader has to be able to see that.
+  // Show the offset when layers with different cadences aren't on the same date.
   const offset = resolved && Math.abs(resolved.offsetDays) > info.cadence_days / 2
     ? `${resolved.offsetDays > 0 ? "+" : "−"}${Math.abs(Math.round(resolved.offsetDays))} d`
     : null;
@@ -177,7 +167,7 @@ function LayerCard({
         </button>
       </div>
 
-      {/* Always visible, always mono. This is the honesty mechanism. */}
+      {/* dataset, grid and cadence, always visible */}
       <p className="layer-card__source readout">
         {info.provider} · {spacing.toFixed(2)}° · {info.cadence}
         {meta && meta.stride > 1 ? ` · sampled 1:${meta.stride}` : ""}
@@ -206,9 +196,7 @@ function LayerCard({
 
       <LayerColorbar layer={layer} meta={meta} />
 
-      {/* Copernicus's licence requires this credit and the product DOI wherever
-          its data appears. It is a condition of use, not a courtesy, so it sits
-          with the layer rather than in a footer someone can scroll past. */}
+      {/* Copernicus licence: credit line and product DOI shown with the layer */}
       {info.attribution ? (
         <p className="layer-card__credit readout">{info.attribution}</p>
       ) : null}

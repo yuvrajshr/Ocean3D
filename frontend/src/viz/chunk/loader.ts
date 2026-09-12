@@ -1,33 +1,30 @@
 /**
- * Fetching for the chunk view: which tile, which step, and what to keep.
+ * Loading for the chunk view: which tile, which time step, and what to cache.
  *
- * The chunk view asks for one variable at one instant at a time, but a person
- * scrubbing a timeline asks for thirty in a row. This module is what makes that
- * feel like one dataset rather than thirty requests: a small LRU of decoded
- * sources, a prefetch of the neighbouring steps, and a play loop that advances
- * only as steps actually land.
+ * Scrubbing the timeline can ask for dozens of steps in a row, so there's a
+ * small LRU of decoded steps, prefetching of neighbouring steps, and a play loop
+ * that only advances once a step has loaded.
  *
- * It also owns tile resolution. A click on the globe is a point; a chunk is a
- * 5-degree tile. Snapping happens here and on the server both, so two clients
- * cannot ask two different questions about the same click and cache two answers.
+ * Also snaps clicks to 5 degree tiles (the server does the same, so clients
+ * share cache entries).
  */
 
 import { ApiError, api, type ChunkMeta, type ChunkVectorField } from "../../api/client";
 import { createChunkSource, type ChunkRelief, type ChunkSource } from "./source";
 import type { VariableKey } from "./model";
 
-/** Mirrors CHUNK_TILE_DEGREES in backend/app/config.py. If that moves, this moves. */
+/** Same as CHUNK_TILE_DEGREES in backend/app/config.py. */
 export const TILE_DEGREES = 5;
 
-/** How many decoded steps to keep. Each is ~0.6 MB, or ~1.7 MB with currents. */
+/** Decoded steps to keep. ~0.6 MB each, ~1.7 MB with currents. */
 const CACHE_LIMIT = 8;
 
-/** Steps either side of the cursor to warm in the background. */
+/** Steps on each side of the current one to load in the background. */
 const PREFETCH_RADIUS = 2;
 
 export type Bbox = [number, number, number, number];
 
-/** Floor a point onto the tile grid. The same arithmetic as `_tile` on the server. */
+/** Snap a point to the tile grid (same maths as _tile on the server). */
 export function snapTile(lon: number, lat: number): Bbox {
   const lon0 = Math.floor(lon / TILE_DEGREES) * TILE_DEGREES;
   const lat0 = Math.floor(lat / TILE_DEGREES) * TILE_DEGREES;
@@ -36,7 +33,7 @@ export function snapTile(lon: number, lat: number): Bbox {
 
 export const tileKey = (b: Bbox): string => `${b[0]},${b[1]}`;
 
-/** Tiles at exactly `ring` steps from a centre tile, nearest edge first. */
+/** Tiles exactly ``ring`` steps away from a centre tile, nearest first. */
 function ringTiles(centre: Bbox, ring: number): Bbox[] {
   if (ring === 0) return [centre];
   const out: Bbox[] = [];
@@ -51,7 +48,7 @@ function ringTiles(centre: Bbox, ring: number): Bbox[] {
       ]);
     }
   }
-  // Straight neighbours before diagonals, so "nearest" means nearest.
+  // Edge neighbours before diagonals.
   return out.sort((a, b) => {
     const da = Math.abs(a[0] - centre[0]) + Math.abs(a[1] - centre[1]);
     const db = Math.abs(b[0] - centre[0]) + Math.abs(b[1] - centre[1]);
@@ -59,7 +56,7 @@ function ringTiles(centre: Bbox, ring: number): Bbox[] {
   });
 }
 
-/** A window of consecutive daily steps centred on a date. */
+/** Consecutive daily steps centred on a date. */
 export function dailyWindow(centre: string, steps: number): string[] {
   const mid = Date.UTC(
     Number(centre.slice(0, 4)),
@@ -75,18 +72,16 @@ export function dailyWindow(centre: string, steps: number): string[] {
 
 export interface TileResolution {
   bbox: Bbox;
-  /** True when the click's own tile had no coverage and we moved outward. */
+  /** True if the clicked tile had no data and we used a neighbour. */
   moved: boolean;
   meta: ChunkMeta;
 }
 
 /**
- * The tile under a click, or the nearest one that actually holds data.
+ * The tile under a click, or the nearest one with data.
  *
- * The coverage test is the metadata request itself: the server answers 404 when
- * a tile has nothing finite in it, which is exactly the question being asked.
- * Two rings is 24 candidates — far enough to step off a coastline, close enough
- * that "nearest" still means something to the person who clicked.
+ * The server's metadata request returns 404 for tiles with no data, so that's the
+ * test. We check up to two rings out (24 tiles).
  */
 export async function resolveTile(
   lon: number,
@@ -107,9 +102,7 @@ export async function resolveTile(
         return { bbox, moved: ring > 0, meta };
       } catch (error) {
         if (signal?.aborted) throw error;
-        // 404 is the coverage answer, not a failure. Anything else — the
-        // upstream being down, a bad shape — must not be silently retried
-        // twenty-four times.
+        // 404 just means no data. Other errors shouldn't be retried 24 times.
         if (error instanceof ApiError && error.status === 404) continue;
         throw error;
       }
@@ -125,11 +118,8 @@ const sourceKey = (bbox: Bbox, variable: string, time: string): string =>
   `${tileKey(bbox)}|${variable}|${time}`;
 
 /**
- * Decoded chunks, kept for as long as they are worth keeping.
- *
- * Relief is cached per tile rather than per step: it is the same seabed on every
- * day of the window, and re-fetching it thirty times would be the single most
- * wasteful thing this view could do.
+ * Decoded chunks. The seabed is cached per tile, not per step, since it's the
+ * same every day.
  */
 export class ChunkStore {
   private readonly sources = new Map<string, ChunkSource>();
@@ -137,23 +127,18 @@ export class ChunkStore {
   private readonly inflight = new Map<string, Promise<ChunkSource>>();
   private readonly vectors = new Map<string, Promise<ChunkVectorField | null>>();
   /**
-   * Steps the upstream cannot serve, so we stop asking.
-   *
-   * APDRC answers HTTP 500 for a depth *range* on some HYCOM steps while
-   * serving the same step's surface perfectly — broken blocks in their
-   * aggregation, not a transient fault: it reproduces on every retry. Recording
-   * them keeps the prefetch from hammering a request that will never succeed,
-   * and lets the timeline mark the days that have no volume.
+   * Steps the upstream can't serve, so we don't keep asking. APDRC consistently
+   * returns HTTP 500 for some HYCOM steps. The timeline marks these days.
    */
   private readonly broken = new Map<string, string>();
-  /** Background warms run one at a time — see `prefetch`. */
+  /** Background loads run one at a time (see prefetch). */
   private queue: Promise<unknown> = Promise.resolve();
 
   peek(bbox: Bbox, variable: string, time: string): ChunkSource | undefined {
     const key = sourceKey(bbox, variable, time);
     const hit = this.sources.get(key);
     if (hit) {
-      // Re-insert so the Map's insertion order is a real recency order.
+      // Re-insert so Map order tracks recency.
       this.sources.delete(key);
       this.sources.set(key, hit);
     }
@@ -186,36 +171,24 @@ export class ChunkStore {
       this.reliefs.set(key, value);
       return value;
     } catch {
-      // The relief is context, not the subject — the same call the water column
-      // already makes. Without it the bathymetry layer says so and the field
-      // still draws, because the field's own mask never depended on it.
+      // The seabed is optional; without it the bathymetry layer says so and the field
+      // still draws.
       this.reliefs.set(key, null);
       return null;
     }
   }
 
   /**
-   * Fetch a step, or join the fetch already running for it.
+   * Fetch a step, or join a fetch that's already running.
    *
-   * Deliberately takes no AbortSignal. A shared promise cannot be bound to one
-   * caller's lifetime: the first version of this passed the caller's signal
-   * into the task, so a component that unmounted mid-flight — which React's
-   * StrictMode guarantees on every mount — aborted the request AND left the
-   * dead promise in `inflight` for the remount to join, so the chunk never
-   * loaded at all and nothing retried.
-   *
-   * Running to completion is not waste here either: the result is cached, and
-   * the step a caller just abandoned is usually the one it asks for next.
-   * Callers that no longer want it check their own signal after awaiting.
+   * No AbortSignal on purpose: the promise is shared, so one caller's abort would
+   * kill it for everyone (StrictMode's unmount/remount did exactly this and the
+   * chunk never loaded). The result is cached anyway. Callers check their own
+   * signal after awaiting.
    */
   /**
-   * The tile's currents at one step, whichever scalar is being displayed.
-   *
-   * Deliberately keyed on tile and time alone. The currents layer is
-   * independent of the variable in the colour ramp — a forecaster looking at
-   * salinity still wants to see the flow through it — so binding the vector to
-   * the displayed variable would make the traces vanish on every switch away
-   * from current speed.
+   * The tile's currents for one step. Keyed on tile and time only, so the current
+   * traces stay when you switch the colour variable.
    */
   private vector(bbox: Bbox, time: string): Promise<ChunkVectorField | null> {
     const key = `${tileKey(bbox)}|${time}`;
@@ -232,11 +205,8 @@ export class ChunkStore {
         if (!meta.vector_url) return null;
         return await api.chunkVector(meta);
       } catch {
-        // No direction available is a state the currents layer already handles:
-        // it withdraws rather than freezing, and the panel says why. Forget the
-        // attempt so a transient upstream failure does not cost this step its
-        // currents for the rest of the session — unlike a broken scalar step,
-        // which is permanent and recorded as such.
+        // Forget failed attempts so a temporary error doesn't lose currents for the
+        // whole session (unlike broken scalar steps, which are permanent).
         this.vectors.delete(key);
         return null;
       }
@@ -256,8 +226,7 @@ export class ChunkStore {
 
     const task = (async () => {
       const meta = await api.chunkMeta({ variable, time, lon_min: bbox[0], lat_min: bbox[1] });
-      // The relief and the currents run alongside rather than after: three
-      // different upstreams, none waiting on the others.
+      // Seabed and currents load in parallel with the field.
       const [values, relief, vector] = await Promise.all([
         api.chunkData(meta),
         this.relief(bbox),
@@ -275,9 +244,8 @@ export class ChunkStore {
 
     this.inflight.set(key, task);
     task.catch((error: unknown) => {
-      // A 5xx names a step the upstream cannot build. A 404 is a tile with no
-      // coverage, which is equally permanent for this request. Anything else —
-      // a dropped connection, the backend restarting — stays retryable.
+      // 5xx means the upstream can't build this step; 404 means no data. Both are
+      // permanent. Other errors can be retried.
       if (error instanceof ApiError && error.status >= 404) {
         this.broken.set(key, error.message);
       }
@@ -285,12 +253,7 @@ export class ChunkStore {
     return task;
   }
 
-  /**
-   * Warm the steps either side of the cursor.
-   *
-   * Fire-and-forget: failures are ignored, because this is an optimisation and
-   * the real load reports anything that matters.
-   */
+  /** Load the steps around the current one in the background. Errors are ignored. */
   prefetch(bbox: Bbox, variable: VariableKey, times: string[], index: number): void {
     for (let d = 1; d <= PREFETCH_RADIUS; d++) {
       for (const i of [index + d, index - d]) {
@@ -298,11 +261,8 @@ export class ChunkStore {
         if (time === undefined) continue;
         if (this.peek(bbox, variable, time)) continue;
         if (this.broken.has(sourceKey(bbox, variable, time))) continue;
-        // One at a time. Firing all four at once made APDRC answer 503 to three
-        // of them: the upstream throttles concurrent griddap requests, and a
-        // prefetch storm is exactly what looks like abuse from the outside.
-        // A serial queue warms the neighbours just as well and never competes
-        // with the step the reader is actually waiting for.
+        // One at a time: APDRC throttles parallel requests and returned 503 when we
+        // fired four at once.
         this.queue = this.queue.then(() =>
           this.peek(bbox, variable, time)
             ? undefined
@@ -315,12 +275,12 @@ export class ChunkStore {
     }
   }
 
-  /** Whether a step can be drawn without waiting. Play advances on this. */
+  /** Whether a step is ready to draw. Playback waits on this. */
   has(bbox: Bbox, variable: string, time: string): boolean {
     return this.sources.has(sourceKey(bbox, variable, time));
   }
 
-  /** Why a step cannot be drawn at all, if we have already found out. */
+  /** Why a step can't be drawn, if we already know. */
   brokenReason(bbox: Bbox, variable: string, time: string): string | undefined {
     return this.broken.get(sourceKey(bbox, variable, time));
   }

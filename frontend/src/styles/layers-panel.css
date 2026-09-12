@@ -1,8 +1,4 @@
-/* ============================================================================
-   layers-panel.css — Ratio Design System Variable & Layers Panel
-   Modern Swiss International Style + 12-Column Mathematical Grid
-   Palette: #000000 · #FFFFFF · #F5F5F5 · #808080 · #FF0000 (Red Rule Accent)
-   ========================================================================== */
+/* layers-panel.css: the layers panel. */
 
 #ocean3d-layers-panel {
   position: absolute;
@@ -25,9 +21,7 @@
   width: 380px;
 }
 
-/* ============================================================================
-   COLLAPSED EXPAND BUTTON
-   ========================================================================== */
+/* --- collapsed button --- */
 .layers-expand-btn {
   position: absolute;
   top: 0;
@@ -70,9 +64,7 @@
   visibility: hidden;
 }
 
-/* ============================================================================
-   EXPANDED PANEL WRAPPER
-   ========================================================================== */
+/* --- expanded panel --- */
 .layers-expanded-wrapper {
   width: 380px;
   max-width: calc(100vw - 28px);
@@ -97,9 +89,7 @@
   pointer-events: none;
 }
 
-/* ============================================================================
-   HEADER BAR
-   ========================================================================== */
+/* --- header --- */
 .layers-header {
   display: flex;
   align-items: center;
@@ -201,9 +191,7 @@
   color: #15161a !important;
 }
 
-/* ============================================================================
-   DROPDOWN MODAL PANELS (Discussion, Info, Upload, Share)
-   ========================================================================== */
+/* --- dropdowns (notes, info, upload, share) --- */
 .layers-dropdown {
   position: absolute;
   top: calc(100% + 4px);
@@ -363,9 +351,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* ============================================================================
-   MAIN CONTENT CONTAINER
-   ========================================================================== */
+/* --- content --- */
 .layers-content {
   margin-top: 6px;
   background: var(--rt-surface, #1c1d22);
@@ -395,7 +381,7 @@
   border-radius: 0px;
 }
 
-/* Empty State */
+/* Empty state */
 .layers-empty-body {
   padding: 32px 20px;
   text-align: center;
@@ -424,9 +410,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* ============================================================================
-   LAYER ITEM CARDS (Theme C Warm Maritime Chronometer)
-   ========================================================================== */
+/* --- layer cards --- */
 .layers-list {
   display: flex;
   flex-direction: column;
@@ -449,7 +433,7 @@
   background: var(--rt-surface-hover, #262830);
 }
 
-/* ── Active Selected Layer: SIGNATURE COPPER 3PX LEFT STRIPE ─────────────── */
+/* Selected layer: copper stripe on the left */
 .layer-item--active {
   background: var(--rt-surface, #1c1d22);
   border: 1px solid var(--rt-border-color, #2e303a);
@@ -470,7 +454,7 @@
   opacity: 0.3;
 }
 
-/* Layer Header Row */
+/* Layer header row */
 .layer-header-row {
   display: flex;
   align-items: flex-start;
@@ -555,7 +539,7 @@
   flex-shrink: 0;
 }
 
-/* Ratio Status Tag with Copper Beacon */
+/* Status tag */
 .layer-status-pill {
   display: inline-flex;
   align-items: center;
@@ -595,7 +579,7 @@
   background: var(--rt-ink-muted, #9698a3);
 }
 
-/* Metadata Subtext */
+/* Metadata line */
 .layer-subline,
 .layer-meta-line {
   font-family: var(--rt-font-mono, "IBM Plex Mono", monospace);
@@ -614,7 +598,7 @@
   color: var(--rt-border-color, #2e303a);
 }
 
-/* Trash / Delete button */
+/* Delete button */
 .layer-delete-btn,
 .layer-remove-btn {
   width: 24px;
@@ -638,9 +622,7 @@
   color: var(--rt-copper, #e59858);
 }
 
-/* ============================================================================
-   COLORMAP & VALUE SCALE BAR
-   ========================================================================== */
+/* --- colour scale bar --- */
 .layer-scale-wrap,
 .layer-scale-wrapper {
   position: relative;
@@ -648,7 +630,7 @@
   user-select: none;
 }
 
-/* Floating Readout Tooltip Track above the bar */
+/* Tooltip track above the bar */
 .layer-scale-tooltip-track {
   position: relative;
   height: 22px;
@@ -720,7 +702,7 @@
   width: 1.5px;
 }
 
-/* Scrubber Needle on Colormap */
+/* Scrubber on the colour bar */
 .layer-scale-scrubber {
   position: absolute;
   top: -5px;
@@ -777,9 +759,7 @@
   color: var(--rt-ink-muted, #9698a3);
 }
 
-/* ============================================================================
-   CARD CONTROLS FOOTER ([JSON], [INFO], [OPACITY])
-   ========================================================================== */
+/* --- card controls (JSON, info, opacity) --- */
 .layer-controls-row {
   display: flex;
   align-items: center;
@@ -857,9 +837,7 @@
   font-weight: 800;
 }
 
-/* ============================================================================
-   EXPANDABLE OPACITY DRAWER (2s Auto-close preserved)
-   ========================================================================== */
+/* --- opacity drawer --- */
 .layer-settings-drawer {
   margin-top: 8px;
   padding: 10px;

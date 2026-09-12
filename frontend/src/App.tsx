@@ -46,12 +46,13 @@ import {
 } from "./viz/scene";
 
 
-/** The map and the chunk view are views but not SceneViews: each owns a
- *  separate canvas and never touches viz/scene.ts. Widening here is what keeps
- *  the 3D camera rig and bloom composer out of both. */
+/**
+ * Map and chunk have their own canvases and don't use viz/scene.ts, so they're
+ * added here rather than to SceneView.
+ */
 type AppView = SceneView | "map" | "chunk";
 
-/** Floats within half a model step of the current run are "concurrent" with it. */
+/** Floats within half a model step of the current run count as reporting with it. */
 const MARKER_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
 const PLAY_INTERVAL_MS = 1100;
 
@@ -62,9 +63,7 @@ export default function App() {
   const sceneRef = useRef<OceanScene | null>(null);
 
   const [webglReady] = useState(isWebGL2Available);
-  // The map is the landing view. The load-in descent survives as the product's
-  // one orchestrated moment; it now plays on the first dive into the column
-  // rather than at boot, so the view toggle is live immediately.
+  // The app opens on the map.
   const [view, setView] = useState<AppView>("map");
   const [entryDone, setEntryDone] = useState(true);
 
@@ -73,7 +72,7 @@ export default function App() {
   const [mapLoading, setMapLoading] = useState<Record<string, boolean>>({});
   const [columnExtent, setColumnExtent] =
     useState<{ latRange: [number, number]; lonRange: [number, number] } | null>(null);
-  /** The tile the chunk view is showing, and a note if it is not the one clicked. */
+  /** Tile shown in the chunk view, plus a note if it isn't the one that was clicked. */
   const [chunk, setChunk] = useState<{ bbox: Bbox; movedFrom: string | null }>({
     bbox: snapTile(87.5, 12.5),
     movedFrom: null,
@@ -85,7 +84,7 @@ export default function App() {
   const [sectionLoaded, setSectionLoaded] = useState(false);
   const [isPointsOpen, setIsPointsOpen] = useState(false);
 
-  /** The layer stack the side panel owns, mirrored here so the map can draw it. */
+  /** Copy of the side panel's layer stack, so the map can draw it. */
   const [layerStack, setLayerStack] = useState<{
     keys: string[];
     visibility: Record<string, boolean>;
@@ -113,10 +112,9 @@ export default function App() {
   const [depthIndex, setDepthIndex] = useState<number>(DEFAULT_DEPTH_LEVELS.length - 1);
   const [bootError, setBootError] = useState<string | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  // A stack the assistant has pushed. VariablePanel owns the layer stack during
-  // normal use and only mirrors it up to `layerStack`, so writing that mirror
-  // changes nothing on screen — the panel has to be handed the new stack, and
-  // the nonce is what tells it this is a fresh instruction.
+  // A stack pushed by the assistant. VariablePanel keeps its own copy of the stack
+  // and only reports it up, so changing layerStack alone does nothing on screen.
+  // The panel has to be given the new stack; the nonce marks it as a new instruction.
   const [assistantStack, setAssistantStack] = useState<{
     keys: string[];
     visibility: Record<string, boolean>;
@@ -133,44 +131,36 @@ export default function App() {
   }, []);
 
   /**
-   * Switch view. Returning to the column replays the descent, so `entryDone` is reset and
-   * the existing "Skip intro" control comes back with it.
+   * Switch view. Going back to the column replays the entry animation, so
+   * entryDone is reset and "Skip intro" shows again.
    */
   const handleView = useCallback((next: AppView) => {
     setView(next);
-    // The map and the chunk view own their own canvases; the ocean scene is
-    // told nothing about either.
+    // Map and chunk have their own canvases; the 3D scene isn't involved.
     if (next === "map" || next === "chunk") return;
     if (next === "globe") {
       sceneRef.current?.enterGlobe();
     } else {
       setEntryDone(false);
-      // enterColumn() guards with `if (this.view === "column") return`, and the
-      // scene's own view never leaves "column" while the map is up — the map is
-      // a React-level view the scene knows nothing about. Diving from the map
-      // would early-return, never fire onEntryComplete, and leave the toggle
-      // disabled for good. startEntry() is the same descent without the guard.
+      // enterColumn() returns early if the scene is already on "column", and the scene
+      // stays on "column" while the map is shown (it doesn't know about the map). So
+      // use startEntry(), which is the same animation without that check.
       const scene = sceneRef.current;
       if (scene?.currentView === "globe") scene.enterColumn();
       else scene?.startEntry();
     }
   }, []);
 
-  // The chunk view draws its own WebGL surface over this one, so the console's
-  // scene stops rendering rather than competing with it for frames.
+  // The chunk view has its own WebGL canvas on top, so pause this scene meanwhile.
   useEffect(() => {
     sceneRef.current?.setPaused(view === "chunk");
   }, [view]);
 
-  // ----------------------------------------------------------- assistant
-  //
-  // The assistant reaches app state only through useAssistantBridge, created
-  // below once everything it routes to exists. The one piece that stays here is
-  // the layer seam, because App owns that state: VariablePanel owns the stack
-  // and only mirrors it up, so a new stack must set the mirror AND be handed to
-  // the panel through `externalStack`, whose nonce marks a fresh instruction.
-  // Either half alone looks like the assistant reporting a change that did not
-  // happen (next_session.md §1c trap 1).
+  // --- assistant ---
+  // The assistant changes app state through useAssistantBridge (created below).
+  // The layer stack is handled here because App owns it: set the mirror and pass
+  // the stack to the panel via externalStack (with a new nonce). Doing only one of
+  // the two looks like the assistant reporting a change that never happened.
   const pushLayerStack = useCallback(
     (stack: { keys: string[]; visibility: Record<string, boolean>; opacity: Record<string, number> }) => {
       setLayerStack(stack);
@@ -182,7 +172,7 @@ export default function App() {
   const activeVariable = variables.find((v) => v.key === variableKey);
   const currentTime = scenario?.timesteps[timeIndex];
 
-  // ------------------------------------------------------------ scene setup
+  // --- scene setup ---
 
   useEffect(() => {
     if (!webglReady || !canvasRef.current) return;
@@ -191,15 +181,12 @@ export default function App() {
 
     scene.onHover = setHovered;
     scene.onEntryComplete = () => setEntryDone(true);
-    // The scene can change view on its own — clicking the region on the globe dives in.
+    // The scene can change view itself (clicking the region on the globe).
     scene.onViewChange = setView;
-    // A click on the globe opens the chunk under it. Held in a ref because the
-    // scene is built once and this callback is not.
+    // A globe click opens the chunk under it. Via a ref since the scene is built once.
     scene.onGlobePick = (lat, lon) => openChunkRef.current(lat, lon);
 
-    // Exposed so the screenshot harness can read a real frame rate. CLAUDE.md
-    // treats a janky 3D scene as a bug, which means it has to be measured
-    // rather than eyeballed.
+    // Exposed so the screenshot tests can read the frame rate.
     (window as unknown as { __oceanScene?: OceanScene }).__oceanScene = scene;
 
     const observer = new ResizeObserver(() => scene.resize());
@@ -212,7 +199,7 @@ export default function App() {
     };
   }, [webglReady]);
 
-  // ------------------------------------------------------------- catalog load
+  // --- catalog load ---
 
   useEffect(() => {
     const controller = new AbortController();
@@ -238,8 +225,7 @@ export default function App() {
         );
         sceneRef.current?.startEntry();
 
-        // The relief is context, not the subject: if it fails, the analysis
-        // still renders and the app stays usable.
+        // If the terrain fails, the analysis still renders.
         try {
           const relief = await api.terrainMeta(undefined, controller.signal);
           const elevation = await api.terrainData(relief, controller.signal);
@@ -254,7 +240,7 @@ export default function App() {
             });
           }
         } catch {
-          /* no relief; the water column stands on its own */
+          /* no terrain, the water column still works */
         }
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -268,7 +254,7 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  // --------------------------------------------------------------- field load
+  // --- field load ---
 
   useEffect(() => {
     if (!activeVariable) {
@@ -284,8 +270,7 @@ export default function App() {
       setFieldLoading(true);
       setFieldError(null);
       try {
-        // The column follows a box dragged on the map when there is one, and
-        // the scenario otherwise. This is the area -> 3D bridge.
+        // Use the box dragged on the map if there is one, otherwise the scenario box.
         const box = columnExtent ?? {
           latRange: scenario.lat_range,
           lonRange: scenario.lon_range,
@@ -307,9 +292,7 @@ export default function App() {
           { lat: meta.grid.lat, lon: meta.grid.lon, depths: meta.depth_levels, shape: meta.shape },
           meta.value_range,
           meta.colormap,
-          // 5th argument added on main: the lattice suppresses its depth labels
-          // for a surface variable, since writing "500 m" on a surface field
-          // asserts a measurement that does not exist (context.md section 10).
+          // Variable key, so the lattice can hide depth labels for surface variables.
           variableKey,
         );
         sceneRef.current?.setDepthWindow(depthWindow[0], depthWindow[1]);
@@ -325,11 +308,11 @@ export default function App() {
     })();
 
     return () => controller.abort();
-    // depthWindow is applied separately; re-fetching on every drag would be wasteful.
+    // depthWindow is applied separately; don't refetch on every drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario, currentTime, variableKey, activeVariable, columnExtent]);
 
-  // ---------------------------------------------------------- instrument load
+  // --- instrument load ---
 
   useEffect(() => {
     if (!scenario) return;
@@ -346,7 +329,7 @@ export default function App() {
         );
         if (!controller.signal.aborted) setInstruments(list);
       } catch {
-        /* markers are additive; the column still stands without them */
+        /* markers are optional; the column works without them */
       }
     })();
     return () => controller.abort();
@@ -357,7 +340,7 @@ export default function App() {
     [scenario],
   );
 
-  /** Floats reporting alongside the selected model run. */
+  /** Floats reporting with the selected model run. */
   const visiblePlatforms = useMemo<PlatformSummary[]>(() => {
     if (!instruments || !currentTime) return [];
     const centre = new Date(currentTime).getTime();
@@ -365,8 +348,8 @@ export default function App() {
     const out: PlatformSummary[] = [];
     for (const p of instruments.platforms) {
       if (Math.abs(new Date(p.time).getTime() - centre) > MARKER_WINDOW_MS) continue;
-      // One entry per float per run; a high-cadence float such as 2901335
-      // would otherwise stack a dozen identical dots on the same spot.
+      // One entry per float per run, otherwise a high-cadence float like 2901335 would
+      // stack a dozen dots in one spot.
       if (seen.has(p.platform_id)) continue;
       seen.add(p.platform_id);
       out.push(p);
@@ -408,12 +391,9 @@ export default function App() {
   }, []);
 
   /**
-   * Open the chunk containing a point.
-   *
-   * One resolver for both entrances — a click on the globe and a box dragged on
-   * the map — so the same place always opens the same tile. The chunk view does
-   * the coverage walk itself and reports where it landed; this only decides
-   * which tile to ask about.
+   * Open the chunk for a point. Used by both globe clicks and map box drags so the
+   * same place always opens the same tile. The chunk view itself finds the nearest
+   * tile with data.
    */
   const openChunkAt = useCallback(
     (lat: number, lon: number) => {
@@ -448,8 +428,7 @@ export default function App() {
     sceneRef.current?.setSelected(selected?.platform_id ?? null);
   }, [visibleMarkers, selected]);
 
-  // Marker selection is wired here rather than in the scene so React owns the
-  // resulting panel state.
+  // Marker selection lives here so React owns the panel state.
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
@@ -460,7 +439,7 @@ export default function App() {
     };
   }, [instruments]);
 
-  // ------------------------------------------------------------- comparison
+  // --- comparison ---
 
   useEffect(() => {
     if (!selected) {
@@ -492,7 +471,7 @@ export default function App() {
     return () => controller.abort();
   }, [selected, variableKey]);
 
-  // -------------------------------------------------------------- map data
+  // --- map data ---
 
   useEffect(() => {
     const controller = new AbortController();
@@ -510,8 +489,8 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  // The side panel owns the stack; the map adopts it. A layer is a variable, so
-  // each view resolves it to whichever source serves that view best.
+  // The map follows the side panel's stack. Each view picks its own best source
+  // for a variable.
   useEffect(() => {
     dispatchMap({ type: "layers/sync", stack: layerStack });
   }, [layerStack, map.catalogue.length]);
@@ -525,7 +504,7 @@ export default function App() {
         .mapTimes(layer.datasetId, controller.signal)
         .then((axis) => dispatchMap({ type: "axis/loaded", dataset: layer.datasetId, axis }))
         .catch(() => {
-          /* the layer still draws; only its tick row is missing */
+          /* the layer still draws, only its tick row is missing */
         });
     }
     return () => controller.abort();
@@ -584,7 +563,7 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [map.playing, view]);
 
-  /** Index into the point block nearest the map clock, for the chart cursors. */
+  /** Index into the point block closest to the map's time, for the chart cursors. */
   const pointTimeIndex = useMemo(() => {
     if (!point || !map.time) return 0;
     const at = Date.parse(map.time);
@@ -600,7 +579,7 @@ export default function App() {
     return best;
   }, [point, map.time]);
 
-  // --------------------------------------------------------------- timeline
+  // --- timeline ---
 
   useEffect(() => {
     if (!playing || !scenario || scenario.timesteps.length < 2) return;
@@ -628,14 +607,12 @@ export default function App() {
   }, []);
 
   const closePanel = useCallback(() => {
-    // Closing must not disturb the camera: the scene is never re-created here.
+    // Closing the panel shouldn't touch the camera.
     setSelected(null);
     sceneRef.current?.setSelected(null);
   }, []);
 
-  /** The active map layer's real levels, or null — which removes the ruler
-   *  from the DOM entirely rather than greying it, because a surface field has
-   *  no depth to slice (context.md §10). */
+  /** The active map layer's depth levels, or null for surface fields (removes the ruler). */
   const mapDepthLevels = useMemo(() => {
     if (!mapActiveInfo || mapActiveInfo.depth_levels.length === 0) return null;
     return mapActiveInfo.depth_levels.map((d) => ({
@@ -645,8 +622,10 @@ export default function App() {
     }));
   }, [mapActiveInfo]);
 
-  /** The map slice, shaped as a FieldMeta so the shared layer card can read it.
-   *  Only the fields the card touches are real; the rest are inert. */
+  /**
+   * The map slice wrapped as a FieldMeta so the shared layer card can read it.
+   * Only the fields the card uses are real.
+   */
   const shimOf = (meta: MapSliceMeta | undefined) => {
     if (!meta) return undefined;
     return {
@@ -673,7 +652,7 @@ export default function App() {
     [mapActiveLayer, mapMetas],
   );
 
-  /** Per-variable source labels, so a card credits the server that drew it. */
+  /** Source label per variable, so each card credits the right server. */
   const mapSourceByKey = useMemo(() => {
     const out: Record<string, string | undefined> = {};
     for (const layer of map.layers) {
@@ -683,7 +662,7 @@ export default function App() {
     return out;
   }, [map]);
 
-  /** One shim per layer, keyed by variable, so each card reports its own range. */
+  /** One shim per layer, keyed by variable, so each card shows its own range. */
   const mapFieldByKey = useMemo(() => {
     const out: Record<string, FieldMeta | undefined> = {};
     for (const layer of map.layers) {
@@ -693,17 +672,15 @@ export default function App() {
     return out;
   }, [map, mapMetas]);
 
-  // ------------------------------------------------------------------ render
+  // --- render ---
 
-  // In map mode the upstream is whatever the active layer came from, which is
-  // usually not INCOIS. A hardcoded source string cannot stay true.
+  // On the map the source is whatever the active layer uses (often not INCOIS).
   const mapSource: SourceStatus | null = mapActiveLayer
     ? mapMetas[mapActiveLayer.id]?.source ?? null
     : null;
   const source: SourceStatus | null =
     view === "map" ? mapSource : fieldMeta?.source ?? instruments?.source ?? null;
-  /** "Loading Temperature..." rather than a bare spinner: §5.3 asks loading
-   *  states to name what is loading. */
+  /** Name what's loading ("Loading Temperature...") instead of a bare spinner. */
   const mapLoadingLabel = useMemo(() => {
     if (view !== "map") return null;
     const pending = map.layers.filter((l) => mapLoading[l.id]);
@@ -735,12 +712,9 @@ export default function App() {
     return (v?.colormap as ColormapName) || (fieldMeta?.colormap as ColormapName) || "thermal";
   }, [variables, variableKey, fieldMeta]);
 
-  // The assistant layer is fixed to the window so it survives the chunk view,
-  // which conceals `.console`. But in the map and globe everything in it — the
-  // Ask dock, its panel, the build stamp — is placed as if it were inside the
-  // viewport, and with `inset: 0` the dock sat 40px into the command bar. So
-  // the layer takes the viewport's box. Measured rather than written down,
-  // because the command bar and the timeline are both content-sized rows.
+  // The assistant layer is fixed to the window so it stays visible in the chunk
+  // view. In map and globe views it should line up with the viewport, so we
+  // measure the viewport's box (the command bar and timeline heights vary).
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const layer = assistantLayerRef.current;
@@ -758,8 +732,7 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener("resize", sync);
     };
-    // Re-measured on every view switch as well as on resize: cheap, and it does
-    // not rely on the observer catching a row that changes height between views.
+    // Re-measure on view switches too, in case a row changed height.
   }, [view]);
 
   const handleZoomIn = useCallback(() => {
@@ -788,8 +761,7 @@ export default function App() {
     }
   }, [view]);
 
-  // Routes each assistant action to the view it was validated for (context.md
-  // §5.1 Principle 13, amended 2026-09-10).
+  // Sends each assistant action to the view it was validated for.
   const assistant = useAssistantBridge({
     view,
     handleView,
@@ -838,8 +810,7 @@ export default function App() {
         className={`console__main${view === "globe" ? " console__main--globe" : ""}`}
       >
         <div className="viewport" ref={viewportRef}>
-          {/* The layer panel is shared: it drives the 3D column's single field and
-              the map's whole stack. Not shown on the globe, which has no layers. */}
+          {/* Layer panel: drives the 3D field and the map's stack. Hidden on the globe. */}
           {view === "column" || view === "map" ? (
             <VariablePanel
               variables={variables}
@@ -877,9 +848,7 @@ export default function App() {
                   onOpenColumn={openChunkFromMap}
                 />
               ) : null}
-              {/* The status line and hint describe the water column; in map mode
-                  the map draws its own HUD and these would report on a scene
-                  the reader is not looking at. */}
+              {/* These describe the water column, so hide them on the map (it has its own HUD). */}
               <div className={`viewport__overlay${view === "map" ? " viewport__overlay--hidden" : ""}`}>
                 {fieldError ? (
                   <div className="viewport__status viewport__status--error">
@@ -1025,23 +994,13 @@ export default function App() {
         />
       ) : null}
 
-      {/* The chunk view is full-screen and self-contained: it covers the
-          console rather than docking into it, because the question it answers
-          is a different one and its own chrome is the whole instrument. */}
-      {/* The assistant sits OUTSIDE the console on purpose.
-          It used to live inside `.viewport`, which meant `.console--concealed`
-          inherited `visibility: hidden` onto it and the Ask button simply was
-          not there in the chunk view — the feature present in the bundle and
-          absent from the screen, which is exactly the failure AssistantDock's
-          own header was written about. Out here it is reachable in all three
-          views, which is what "ask anywhere" has to mean. */}
+      {/* The chunk view is full screen and covers the console. */}
+      {/* Outside the console so it's still visible in the chunk view (which hides the console). */}
       <div
         ref={assistantLayerRef}
         className={`assistant-layer${view === "chunk" ? " assistant-layer--chunk" : ""}`}
       >
-        {/* Here rather than in the viewport for the same reason as the Ask
-            dock: a stale-build warning that vanishes in the chunk view would
-            be absent from exactly one screen, with no sign it was missing. */}
+        {/* Also outside the viewport so the build warning shows in every view. */}
         <BuildStatus />
 
         <AssistantDock

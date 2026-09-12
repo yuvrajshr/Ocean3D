@@ -5,7 +5,7 @@ import react from "@vitejs/plugin-react";
 
 import { classifyBackend, classifyFrontend, parseReflog, type BuildMode } from "./src/build/classify";
 
-/** Run git from the repo; null when git is absent or this is not a checkout. */
+/** Run git in the repo; null if git isn't available or this isn't a checkout. */
 function git(...args: string[]): string | null {
   try {
     return execFileSync("git", args, {
@@ -19,26 +19,23 @@ function git(...args: string[]): string | null {
 }
 
 /**
- * Build identity: the page states which commit it was built from, and the
- * server says when the code on disk has moved past it.
+ * Build identity: the page shows which commit it was built from, and the server
+ * reports when the code on disk has moved past it.
  *
- * `__BUILD__` is fixed when this config loads — at dev-server start, or at
- * `vite build`. `/__build` is answered live, so after a `git pull` it reports
- * the new HEAD while the page still carries the old one. See
- * `src/build/classify.ts` for why "HEAD moved" alone is not the test.
- *
- * Served in both `vite` and `vite preview`. A static host has no such endpoint,
- * so the check quietly does nothing there and the stamp still renders.
+ * __BUILD__ is fixed when this config loads (dev server start or vite build).
+ * /__build answers live, so after a git pull it shows the new HEAD while the page
+ * still has the old one. See src/build/classify.ts for how "stale" is decided.
+ * Available in vite and vite preview only; on a static host the check does nothing.
  */
 function buildIdentity(): Plugin {
   const sha = git("rev-parse", "HEAD");
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   const builtAt = Date.now();
 
-  /** Repo-relative paths changed between two commits; [] when unknown. */
+  /** Paths changed between two commits; [] if unknown. */
   const changedBetween = (from: string | null, to: string | null): string[] => {
     if (!from || !to) return [];
-    // Run from the repo top so the paths come back as "frontend/…", "backend/…".
+    // Run from the repo root so paths come back as "frontend/...", "backend/...".
     const top = git("rev-parse", "--show-toplevel");
     try {
       return execFileSync("git", ["diff", "--name-only", from, to], {
@@ -49,8 +46,7 @@ function buildIdentity(): Plugin {
         .split(/\r?\n/)
         .filter(Boolean);
     } catch {
-      // `from` is not in this clone (a squashed or rewritten history): treat
-      // it as changed everywhere, which errs toward asking for a restart.
+      // ``from`` isn't in this clone (rewritten history), so assume everything changed.
       return ["frontend", "backend"];
     }
   };
@@ -98,19 +94,15 @@ function buildIdentity(): Plugin {
   };
 }
 
-// The frontend never talks to erddap.incois.gov.in directly — it has no CORS
-// headers and an incomplete TLS chain. Everything goes through the FastAPI
-// backend, which is proxied here in dev so the app uses same-origin /api paths
-// in both development and production.
+// The browser can't reach ERDDAP directly (no CORS, incomplete TLS chain), so
+// everything goes through the backend, proxied here in dev so /api works the same
+// in dev and production.
 export default defineConfig({
   plugins: [react(), buildIdentity()],
   server: {
     port: 5173,
-    // Fail instead of drifting to 5174. Without this, an old dev server still
-    // holding 5173 keeps answering the tab everyone already has open while the
-    // fresh one hides on the next port — so a `git pull` appears to change
-    // nothing. That is how a deleted control stayed on a teammate's screen for
-    // two days after it left `main` (next_session.md §1h).
+    // Fail instead of moving to 5174; otherwise an old server on 5173 keeps serving
+    // the open tab and a pull looks like it changed nothing.
     strictPort: true,
     proxy: {
       "/api": {

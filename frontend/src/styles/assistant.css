@@ -1,31 +1,16 @@
-/**
- * The assistant dock and panel — Theme C (context.md §5.1.3).
+/*
+ * Assistant dock and panel. Uses the --rt-* tokens like the rest of the console.
  *
- * Previously drawn in the floating console's slate-and-cyan palette, which
- * §5.1.2 recorded as one half of the two-palette split. That split is closed:
- * everything here now resolves through the `--rt-*` tokens, with the 0px Swiss
- * geometry, hairline borders and 8px spacing scale the rest of the console uses.
- * No literal hex appears below except through a token fallback.
- *
- * Two things did NOT move, because they are not container decisions:
- *
- *   1. Readouts stay IBM Plex Mono. A dataset name, a date, a depth and a unit
- *      are literal values, which §5.1 assigns to mono wherever they appear.
- *
- *   2. The ungrounded marker stays `advisory`, not copper. Theme C's accent
- *      (#E59858) and advisory amber (#F59E0B) are near neighbours, so an
- *      unsourced answer marked in the accent colour would read as ordinary
- *      chrome. It is drawn in advisory and paired with words — "General
- *      knowledge — not from your data" — so the meaning never rests on the
- *      colour alone (§5.1 Principle 13, §5.4).
- *
- * The panel sits on the floating-console z-plane, the same one as the layer
- * panel. It does not introduce a fourth level.
+ * - Readouts (dataset, date, depth, units) are IBM Plex Mono.
+ * - The "general knowledge" marker uses advisory amber, not copper: the two are
+ *   similar, and in copper it would look like normal UI. It always comes with
+ *   text, so it doesn't rely on colour.
  */
 
-/* ── The dock ──────────────────────────────────────────────────────────────
-   One button, top-right, clear of the depth ruler's vertically-centred 240px
-   track (§5.1 Principle 11: right-hand instruments occupy non-colliding lanes). */
+/*
+ * --- Dock ---
+ * One button, top right, clear of the depth ruler.
+ */
 
 .assistant-dock {
   position: absolute;
@@ -67,7 +52,7 @@
   color: var(--rt-ink, #f4efe6);
 }
 
-/* Active is the 3px copper stripe designTest uses throughout, not a fill. */
+/* Active state is the 3px copper stripe, not a fill. */
 .assistant-dock__btn--active {
   border-left-color: var(--rt-copper, #e59858);
   background: var(--rt-surface-active, #2f313c);
@@ -79,7 +64,7 @@
   outline-offset: -2px;
 }
 
-/* ── The panel ─────────────────────────────────────────────────────────── */
+/* --- Panel --- */
 
 .assistant-panel {
   position: absolute;
@@ -147,11 +132,10 @@
   min-width: 0;
 }
 
-/* Which view the assistant's changes land on (context.md §5.1 Principle 13,
-   amended 2026-09-10). The view's name is a label, in the UI face; the extent
-   or date it shows is a literal readout, in Plex Mono. Two jobs, two elements,
-   and no middle dot between them (§5.2). Indented to sit under the title text,
-   past the 15px mark and its 8px gap. */
+/*
+ * Which view the assistant acts on: the view name as a label, the extent or
+ * date in mono. Indented to line up with the title text.
+ */
 .assistant-panel__scope {
   display: flex;
   align-items: baseline;
@@ -191,8 +175,7 @@
 
 .assistant-panel__log {
   flex: 1;
-  /* Without this a column-flex child will not shrink below its content, and a
-     panel with a fixed height clips the log instead of scrolling it. */
+  /* Lets the column-flex child shrink so the log scrolls instead of being clipped. */
   min-height: 0;
   overflow-y: auto;
   padding: var(--rt-space-4, 16px);
@@ -201,7 +184,7 @@
   gap: var(--rt-space-4, 16px);
 }
 
-/* An invitation with a next step, not an apology (§5.3). */
+/* Empty state with a suggestion of what to ask. */
 .assistant-panel__empty {
   color: var(--rt-ink-muted, #9698a3);
   font-size: var(--rt-text-sm, 10.7px);
@@ -267,8 +250,7 @@
   color: rgb(var(--advisory-rgb, 245 158 11));
 }
 
-/* Provenance. Mono because it is a literal readout — dataset, date, depth —
-   and §5.1 assigns those to IBM Plex Mono wherever they appear. */
+/* Sources. Mono, since they're readouts (dataset, date, depth). */
 .assistant-cite {
   border-top: 1px solid var(--rt-border-color, #2e303a);
   padding-top: var(--rt-space-2, 8px);
@@ -305,11 +287,7 @@
   padding: var(--rt-space-1, 4px) var(--rt-space-2, 8px);
 }
 
-/* The honest marker on an answer with nothing to cite. Advisory amber means
-   "pay attention" — an unsourced claim in a data tool is exactly that — and it
-   is paired with words, never carrying the meaning by colour. Deliberately not
-   copper: the accent and advisory are close enough in Theme C that the accent
-   would read as ordinary chrome. */
+/* Marker for an answer with nothing to cite. Amber with a text label. */
 .assistant-msg__ungrounded {
   font-size: var(--rt-text-xs, 9.5px);
   color: rgb(var(--advisory-rgb, 245 158 11));
@@ -334,7 +312,7 @@
   outline-offset: -2px;
 }
 
-/* ── Working state ─────────────────────────────────────────────────────── */
+/* --- Working state --- */
 .assistant-thinking {
   display: flex;
   flex-direction: column;
@@ -549,10 +527,10 @@
   }
 }
 
-/* A web source reads differently from a measured one on purpose. Both are real
-   sources — but a page Google returned is not the ocean analysis, and the
-   reader must be able to tell at a glance which they are looking at. The
-   distinction is the copper rule plus the link treatment, not colour alone. */
+/*
+ * Web sources look different from data sources (copper rule plus link style),
+ * since a web page isn't the ocean analysis.
+ */
 .assistant-cite__row--web {
   border-left-color: var(--rt-copper, #e59858);
 }
@@ -567,69 +545,63 @@
   outline-offset: 2px;
 }
 
-/* ------------------------------------------------------------------ layer */
+/* --- Layer --- */
 
-/* The assistant's own stacking context, a sibling of `.console` rather than a
-   child of it. `.console--concealed` sets `visibility: hidden` for the chunk
-   view, and visibility inherits — so while the dock lived inside the viewport
-   the Ask button vanished on exactly the screen that most needed it.
-
-   z-index clears `.chunk-overlay` (60) so the panel opens over the chunk. */
+/*
+ * The assistant's own stacking context, next to .console rather than inside it,
+ * because the chunk view hides the console with visibility: hidden (which is
+ * inherited). z-index is above .chunk-overlay (60) so the panel opens over the chunk.
+ */
 .assistant-layer {
   position: fixed;
   inset: 0;
   z-index: 70;
   pointer-events: none;
-  /* `visibility` inherits, and the chunk view conceals its ancestor with it.
-     Re-asserting here is the same move `.chunk-overlay` makes, and for the same
-     reason: the console's controls must leave the tab order without taking the
-     thing that replaced them with it. */
+  /* visibility is inherited, so turn it back on here (like .chunk-overlay does). */
   visibility: visible;
 }
 .assistant-layer > * {
   pointer-events: auto;
 }
 
-/* Outside the chunk view the layer takes the viewport's box, measured into
-   these two variables by App.tsx. Without them `inset: 0` made everything in
-   here window-relative: the Ask dock sat 40px into the command bar and the
-   panel ran under the timeline, because both were written against the
-   viewport they used to live in. The chunk view keeps the whole window. */
+/*
+ * Outside the chunk view, match the viewport's box (measured by App.tsx into
+ * these variables). The chunk view uses the whole window.
+ */
 .assistant-layer:not(.assistant-layer--chunk) {
   top: var(--viewport-top, 0px);
   bottom: var(--viewport-bottom, 0px);
 }
 
-/* In the chunk view the right rail is taken: the variable panel, the camera
-   presets and the spec inspector all sit at right: 20px. The dock moves to the
-   left of them rather than on top, keeping §5.1 Principle 11's one-rail rule. */
+/*
+ * In the chunk view the right side is taken (variable panel, presets, spec
+ * inspector), so the dock moves to their left.
+ */
 .assistant-layer--chunk .assistant-dock {
   right: auto;
   left: var(--rt-space-4, 16px);
   bottom: 96px;
   top: auto;
 }
-/* The panel sits in the clear band between the chunk's layer rail
-   (.chunk-layers: left 84px + 252px wide) and its variable panel
-   (.chunk-inspector: right 20px + 276px wide), bottom-anchored above the time
-   bar (.chunk-time: bottom 20px, ~56px tall). It covers part of the box — the
-   viewport exception §5.1 Principle 13 already admits — but none of the chunk's
-   own controls, so a change the assistant makes can be watched as it lands.
-   It used to open at the top left, over the layer rail and the back control. */
+/*
+ * In the chunk view the panel sits between the layer rail (left 84px + 252px)
+ * and the variable panel (right 20px + 276px), above the time bar, so it doesn't
+ * cover any chunk controls.
+ */
 .assistant-layer--chunk .assistant-panel {
   right: auto;
   left: 348px;
   top: auto;
-  /* Level with the Ask dock's lower edge, and clear of the chunk's inline
-     "Loading …" chip, which sits just above the time bar. */
+  /* Level with the Ask dock's bottom, and above the "Loading ..." chip. */
   bottom: 96px;
   width: min(420px, calc(100vw - 348px - 296px - 24px));
   height: min(560px, calc(100vh - 200px));
 }
 
-/* After the rule above, and at its specificity: the plain narrow rule earlier
-   in this file is 0,1,0 and would lose to it, pinning the panel at 348px on a
-   phone. */
+/*
+ * Needs to come after the rule above with the same specificity, or the panel
+ * stays 348px wide on phones.
+ */
 @media (max-width: 900px) {
   .assistant-layer--chunk .assistant-panel {
     left: var(--rt-space-4, 16px);

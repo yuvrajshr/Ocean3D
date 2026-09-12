@@ -1,11 +1,7 @@
 /**
- * The assistant's chunk actions, as pure transforms of the scene spec.
- *
- * The chunk view's panels mutate the spec and call commit; the assistant must
- * reach the same end state by the same rules — a variable change resets the
- * colour range exactly as clicking the variable does, and a surface-only field
- * falls back to slices exactly as the panel's disabled buttons imply. Pure, so
- * it is testable in Node: no engine, no WebGL, no React.
+ * Assistant chunk actions as pure spec transforms. They have to follow the same
+ * rules as the chunk panels: changing variable resets the colour range, and a
+ * surface-only field falls back to slices.
  */
 
 import { describe, expect, it } from "vitest";
@@ -118,7 +114,7 @@ describe("describeChunkSpec", () => {
       cut: { axis: "depth", value: 80 },
       camera: "corner",
     });
-    // The instrument traces were restored upstream (77f5583); the sea surface was not.
+    // Must match the chunk's layer list.
     expect(Object.keys(state.layers).sort()).toEqual(["bathy", "currents", "instruments", "scalar"]);
     expect(state.platforms).toEqual([]);
     expect(state.open_float).toBeNull();

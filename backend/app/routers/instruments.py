@@ -1,9 +1,4 @@
-"""In-situ observation endpoints, including the model-vs-measurement comparison.
-
-The comparison endpoint is the point of the whole product: it puts an INCOIS
-gridded analysis and a real Argo cast on one depth axis so a forecaster can see
-where the analysis is right and where it is not.
-"""
+"""Argo endpoints, including the float-vs-model comparison."""
 
 from __future__ import annotations
 
@@ -70,10 +65,8 @@ def get_profile(
     lon_min: float | None = None,
     lon_max: float | None = None,
 ) -> InstrumentProfile:
-    # Bounds are overridable, like the dates beside them. They were pinned to the
-    # Phailin box while the dates were not, so a float the caller had just been
-    # handed by /instruments for some other area could not have its cast fetched.
-    # The chunk view asks about floats anywhere the globe was clicked.
+    # Bounds can be overridden like the dates, so floats from any area (e.g. the
+    # chunk view) can be fetched.
     start, end, lat, lon = _scenario_window(
         time_start, time_end, lat_min, lat_max, lon_min, lon_max
     )
@@ -104,11 +97,10 @@ def compare(
     variable: str = Query("temperature"),
     cycle: int | None = None,
 ) -> dict[str, object]:
-    """Overlay one Argo cast on the gridded analysis at the same place and time.
+    """Put one Argo profile next to the INCOIS analysis at the same place and time.
 
-    The model column is sampled nearest-neighbour, not interpolated: the grid is
-    1 degree (~111 km) and smoothing it would imply precision the analysis does
-    not have. The response states the offset so the UI can show it.
+    The model column is the nearest grid cell (1 degree, ~111 km), not
+    interpolated. The response includes the offset so the UI can show it.
     """
     if variable not in _GRID_VARIABLE:
         raise HTTPException(
@@ -152,9 +144,8 @@ def compare(
         (float(d), float(v)) for d, v in zip(depths, column, strict=True) if np.isfinite(v)
     ]
 
-    # Residual = observation - analysis, with the analysis interpolated onto the
-    # float's own levels. Only within the analysis's depth span; extrapolating
-    # past 2000 m would invent numbers.
+    # Residual = observed - model, with the model interpolated to the float's
+    # levels. Only within the model's depth range, no extrapolating past 2000 m.
     residual: list[dict[str, float]] = []
     if model_pairs and observed:
         md = np.array([p[0] for p in model_pairs])

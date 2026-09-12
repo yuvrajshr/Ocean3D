@@ -1,15 +1,10 @@
 /**
- * Map state, as a pure reducer.
+ * Map state as a pure reducer.
  *
- * A reducer rather than a dozen more `useState` calls in App.tsx for one
- * concrete reason: the hard part of this view is not storage, it is deciding
- * what three layers on three different time axes should each display. That
- * decision belongs in functions that can be tested in Node, not in JSX.
- *
- * The single most important invariant: **there is exactly one clock.**
- * `MapState.time` is one ISO instant, and every layer resolves itself against
- * it. Storing a per-layer index instead is how a stack silently ends up showing
- * three different dates while claiming to show one.
+ * Kept out of App.tsx because the tricky part is working out what each layer
+ * shows when they have different time axes, and that's easier to test as plain
+ * functions. Key rule: there is one clock. MapState.time is a single instant and
+ * every layer resolves against it.
  */
 
 import type { ColormapName } from "../viz/colormaps";
@@ -19,18 +14,18 @@ import type { Viewport } from "./projection";
 export const MAX_LAYERS = 3;
 
 export interface MapLayer {
-  /** Stable across reorder: React key and fetch key. */
+  /** Stable across reorder (React key and fetch key). */
   id: string;
   datasetId: string;
   visible: boolean;
   opacity: number;
   colormap: ColormapName;
-  /** Index into the dataset's depth_levels. Always 0 for a surface field. */
+  /** Index into the dataset's depth_levels. Always 0 for surface fields. */
   depthIndex: number;
-  /** null means "use the range the server measured for this slice". */
+  /** null = use the range the server computed for this slice. */
   range: [number, number] | null;
   log: boolean;
-  /** Only meaningful when the dataset has vector components. */
+  /** Only used if the dataset has vector components. */
   streamlines: boolean;
 }
 
@@ -42,19 +37,19 @@ export interface GeoPoint {
 export interface AreaSelection {
   latRange: [number, number];
   lonRange: [number, number];
-  /** Provisional until pointerup; the 3D bridge only offers on a committed box. */
+  /** Provisional until pointerup. */
   dragging: boolean;
 }
 
 export interface MapState {
   catalogue: MapLayerInfo[];
-  /** Time axes, keyed by dataset id. Fetched lazily as layers are added. */
+  /** Time axes by dataset id, fetched as layers are added. */
   axes: Record<string, MapTimeAxis>;
-  /** Draw order: index 0 is the TOP of the list and is drawn LAST, i.e. on top. */
+  /** Index 0 is the top of the list and is drawn last (on top). */
   layers: MapLayer[];
-  /** Drives the timeline cadence, the depth ruler and the point readout. */
+  /** Controls the timeline cadence, depth ruler and point readout. */
   activeLayerId: string | null;
-  /** THE clock. One instant; every layer resolves against it. */
+  /** The one clock; every layer resolves against it. */
   time: string;
   playing: boolean;
   viewport: Viewport;
@@ -75,13 +70,10 @@ export type MapAction =
   | { type: "layer/activate"; id: string }
   | {
       /**
-       * Adopt the layer stack the side panel owns.
+       * Take the layer stack from the side panel.
        *
-       * A layer in the UI is a *variable*, not a dataset. This resolves each
-       * variable to whichever map dataset serves it best (Copernicus over
-       * HYCOM over INCOIS, by `preference`) and rebuilds the map's layers to
-       * match — so "Add layer" in the panel lands on the map too, and the 3D
-       * column's topmost-visible rule stays untouched.
+       * A UI layer is a variable, not a dataset. Each one is resolved to the best map
+       * dataset for it (by preference) and the map's layers are rebuilt to match.
        */
       type: "layers/sync";
       stack: {
@@ -114,8 +106,7 @@ export function createInitialMapState(): MapState {
     activeLayerId: null,
     time: "",
     playing: false,
-    // Opens on the whole world, per the locked decision. worldFitZoom refines
-    // this the moment the canvas reports a real size.
+    // Start on the whole world; worldFitZoom adjusts once the canvas has a size.
     viewport: { lonCentre: 0, latCentre: 0, zoom: 3 },
     pin: null,
     area: null,
@@ -132,11 +123,10 @@ export function activeLayer(state: MapState): MapLayer | null {
   return state.layers.find((l) => l.id === state.activeLayerId) ?? null;
 }
 
-/** The depth levels the ruler should offer, or null when there is no depth.
- *
- *  null removes the ruler from the DOM entirely rather than disabling it. A
- *  surface field has no depth to slice, and a greyed-out ruler still asserts
- *  that one exists (context.md §10). */
+/**
+ * Depth levels for the ruler, or null if the field has no depth (the ruler is
+ * then removed).
+ */
 export function activeDepthLevels(state: MapState): number[] | null {
   const layer = activeLayer(state);
   if (!layer) return null;
@@ -147,21 +137,17 @@ export function activeDepthLevels(state: MapState): number[] | null {
 
 export interface ResolvedTime {
   time: string;
-  /** Signed days from state.time. Surfaced when it exceeds half a step. */
+  /** Signed days from state.time. Shown when it's more than half a step. */
   offsetDays: number;
-  /** True when the clock is outside this layer's coverage entirely. */
+  /** True when the clock is outside this layer's coverage. */
   outOfCoverage: boolean;
 }
 
 const DAY_MS = 86_400_000;
 
 /**
- * The timestep a layer will actually display.
- *
- * Nearest, not previous — matching the nearest-neighbour convention already used
- * by `erddap_grid.sample_column`. The offset is returned rather than hidden so
- * the layer card can state it: a monthly field and a daily field stacked
- * together are not the same instant, and the reader must be able to see that.
+ * The time step a layer will actually show: the nearest one, with the offset
+ * returned so the layer card can show it.
  */
 export function resolveLayerTime(state: MapState, layer: MapLayer): ResolvedTime | null {
   const info = datasetOf(state, layer);
@@ -176,9 +162,8 @@ export function resolveLayerTime(state: MapState, layer: MapLayer): ResolvedTime
   }
 
   const axis = state.axes[layer.datasetId];
-  // A truncated axis is a sample for drawing tick marks, NOT the real steps.
-  // Snapping to it invents an offset the product does not have: CMEMS is daily
-  // over 12,227 days, sent as every 7th stamp, which read as "-4 d".
+  // A truncated axis is only a sample for tick marks, not the real steps. Snapping
+  // to it would invent offsets (CMEMS is daily but sent every 7th day).
   if (!axis || axis.times.length === 0 || axis.truncated) {
     return { time: state.time, offsetDays: 0, outOfCoverage: false };
   }
@@ -199,7 +184,7 @@ export function resolveLayerTime(state: MapState, layer: MapLayer): ResolvedTime
   };
 }
 
-/** Layers with nothing to draw at the current clock. Their fetch is skipped. */
+/** Layers with nothing to show at the current time. Their fetch is skipped. */
 export function layersOutOfCoverage(state: MapState): ReadonlySet<string> {
   const out = new Set<string>();
   for (const layer of state.layers) {
@@ -209,7 +194,7 @@ export function layersOutOfCoverage(state: MapState): ReadonlySet<string> {
   return out;
 }
 
-/** The timeline rail spans the union of every visible layer's coverage. */
+/** The timeline covers all visible layers' ranges combined. */
 export function timelineBounds(state: MapState): { start: string; end: string } | null {
   const visible = state.layers.filter((l) => l.visible).map((l) => datasetOf(state, l));
   const infos = visible.filter((d): d is MapLayerInfo => d !== undefined);
@@ -223,7 +208,7 @@ export function timelineBounds(state: MapState): { start: string; end: string } 
   return { start, end };
 }
 
-/** The best map dataset for a UI variable, or undefined if the map cannot draw it. */
+/** Best map dataset for a UI variable, or undefined if the map can't draw it. */
 export function sourceForVariable(
   catalogue: MapLayerInfo[],
   variableKey: string,
@@ -242,7 +227,7 @@ function makeLayer(info: MapLayerInfo): MapLayer {
     colormap: info.colormap,
     depthIndex: 0,
     range: null,
-    log: info.id === "viirs_chlorophyll", // strongly right-skewed by nature
+    log: info.id === "viirs_chlorophyll", // chlorophyll is heavily skewed
     streamlines: info.has_vectors,
   };
 }
@@ -250,9 +235,8 @@ function makeLayer(info: MapLayerInfo): MapLayer {
 export function mapReducer(state: MapState, action: MapAction): MapState {
   switch (action.type) {
     case "catalogue/loaded":
-      // Deliberately does not seed a layer. The side panel owns the stack and
-      // pushes it here via layers/sync; seeding one would race that and briefly
-      // show a layer the panel does not list.
+      // Don't add a layer here; the side panel owns the stack and sends it via
+      // layers/sync. Adding one here would briefly show a layer the panel doesn't have.
       return { ...state, catalogue: action.datasets, error: null };
 
     case "catalogue/failed":
@@ -302,9 +286,8 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
       const layers: MapLayer[] = [];
       for (const key of keys) {
         const info = sourceForVariable(state.catalogue, key);
-        if (!info) continue; // the map has no source for this variable
-        // Reuse the existing layer so its depth, colour scale and log setting
-        // survive a visibility toggle rather than resetting.
+        if (!info) continue; // no map source for this variable
+        // Reuse the existing layer so its settings survive a visibility toggle.
         const existing = state.layers.find((l) => l.datasetId === info.id);
         layers.push({
           ...(existing ?? makeLayer(info)),
@@ -339,7 +322,7 @@ export function mapReducer(state: MapState, action: MapAction): MapState {
       const layer = activeLayer(state);
       const info = layer ? datasetOf(state, layer) : undefined;
       if (!info || !state.time) return state;
-      // Step in the ACTIVE layer's cadence, and say so on the button.
+      // Step by the active layer's cadence.
       const ms = action.steps * info.cadence_days * DAY_MS;
       const start = Date.parse(`${info.time_start}T00:00:00Z`);
       const end = Date.parse(`${info.time_end}T00:00:00Z`);

@@ -1,21 +1,9 @@
-"""Copernicus Marine (GLORYS) slices for the 2D map.
+"""Copernicus Marine (GLORYS) slices for the map.
 
-A third upstream, on a third protocol. INCOIS and NOAA are ERDDAP and answer a
-griddap URL; Copernicus is a Zarr store reached through Mercator Ocean's
-`copernicusmarine` toolbox, which subsets server-side and returns a NetCDF.
-
-Two facts shape everything here, both measured on 2026-09-05:
-
-  * **There is no server-side striding.** A global slice is the full
-    2041 x 4320 grid, ~17 MB, whatever we actually want to draw. We therefore
-    downsample after the fetch and cache the *downsampled* array, so the
-    expensive step happens once per (variable, date, depth).
-  * **There is ~11 s of fixed overhead per request**, largely catalogue and auth
-    setup, which dwarfs the transfer for small requests. That is the real reason
-    for caching, not the bytes.
-
-The result objects are the same ones `erddap_map` returns, so the router does
-not care which protocol served a layer.
+Uses the copernicusmarine toolbox instead of ERDDAP. Two things drive the design:
+there's no server-side striding (a global slice is ~17 MB), and each request
+has ~11 s of overhead. So we downsample after fetching and cache the result.
+Returns the same result types as erddap_map.
 """
 
 from __future__ import annotations
@@ -49,15 +37,12 @@ _logged_in = False
 
 
 class CopernicusUnavailable(UpstreamUnavailable):
-    """No credentials, or the toolbox could not authenticate."""
+    """No credentials, or login failed."""
 
 
 def _ensure_login() -> None:
-    """Authenticate once per process.
-
-    The toolbox writes a credentials file on first login; after that it is a
-    no-op. Failing here rather than at import time means a missing .env
-    degrades to "the Copernicus layers are unavailable" instead of a dead app.
+    """Log in once per process. Doing it lazily means a missing .env just disables
+    the Copernicus layers.
     """
     global _logged_in
     if _logged_in:
@@ -89,7 +74,7 @@ def _stride_for(ds: MapDataset, lat_range, lon_range) -> int:
 
 
 def _key(ds: MapDataset, kind: str, **parts) -> str:
-    """A synthetic cache key. `cache` is keyed on an opaque string, not a URL."""
+    """Cache key (the cache takes any string, not just URLs)."""
     tail = "&".join(f"{k}={v}" for k, v in sorted(parts.items()) if v is not None)
     return f"cmems://{ds.dataset_id}/{kind}?{tail}"
 
@@ -147,7 +132,7 @@ def _subset(ds: MapDataset, variables: list[str], **kw) -> xr.Dataset:
         files = sorted(tmp.glob("*.nc"))
         if not files:
             raise CopernicusUnavailable("Copernicus returned no file for this request.")
-        # Read fully into memory before the temp dir goes away.
+        # Load fully before the temp dir is deleted.
         with xr.open_dataset(files[0]) as opened:
             return opened.load()
     except CopernicusUnavailable:
@@ -159,11 +144,10 @@ def _subset(ds: MapDataset, variables: list[str], **kw) -> xr.Dataset:
 
 
 def _depth_window(depth: float | None) -> dict[str, float]:
-    """A narrow band around one level. CMEMS selects by value, not by index."""
+    """Small window around one depth level (CMEMS selects by value, not index)."""
     if depth is None:
         return {"minimum_depth": 0.0, "maximum_depth": 1.0}
-    # Levels widen with depth (0.5 m near the surface, ~450 m at the bottom), so
-    # the window has to scale or a deep request selects nothing.
+    # Levels get further apart with depth, so the window grows too.
     pad = max(1.0, depth * 0.06)
     return {"minimum_depth": max(0.0, depth - pad), "maximum_depth": depth + pad}
 
@@ -183,11 +167,8 @@ def depth_levels(ds: MapDataset) -> tuple[list[float], SourceStatus | None]:
 
 
 def available_times(ds: MapDataset) -> tuple[list[str], SourceStatus]:
-    """Generated rather than fetched.
-
-    These products are strictly daily over a stated range, so enumerating the
-    axis would cost a 10 s catalogue read to learn something the range already
-    says. If a product ever becomes irregular this must go back to the server.
+    """Build the time axis from the stated range instead of a 10 s catalogue call.
+    These products are daily with no gaps.
     """
     start = datetime.fromisoformat(ds.time_range[0]).replace(tzinfo=timezone.utc)
     end = datetime.fromisoformat(ds.time_range[1]).replace(tzinfo=timezone.utc)
@@ -242,7 +223,7 @@ def fetch_slice(
 
 
 def _thin(opened: xr.Dataset, variable: str, stride: int):
-    """Squeeze to (lat, lon), subsample, and normalise to ascending latitude."""
+    """Squeeze to (lat, lon), subsample, and make latitude ascending."""
     da = opened[variable]
     if "depth" in da.dims and len(da.dims) > 2:
         da = da.isel(depth=0)
@@ -319,14 +300,14 @@ def fetch_point_block(
         minimum_longitude=lon - 0.05, maximum_longitude=lon + 0.05,
     )
     da = opened[ds.variable]
-    # Collapse the tiny lat/lon window to its first cell.
+    # Take the first cell of the small lat/lon window.
     for axis in ("latitude", "longitude"):
         if axis in da.dims:
             da = da.isel({axis: 0})
     values = np.atleast_2d(np.asarray(da.values, dtype=np.float32))
     depths = [float(d) for d in np.atleast_1d(opened["depth"].values)]
     times = [str(t)[:10] + "T00:00:00Z" for t in np.atleast_1d(opened["time"].values)]
-    # griddap-style (depth, time) is what the panel reads.
+    # Panel expects (depth, time).
     if values.shape == (len(times), len(depths)) and len(times) != len(depths):
         values = values.T
     values = np.where(np.isfinite(values), values, np.nan).astype(np.float32)
@@ -343,18 +324,15 @@ def fetch_point_block(
                       source=_status("live", at, ds))
 
 
-# ------------------------------------------------------------- point reads
+# --- Point reads ---
 
 _arco_lock = threading.Lock()
 _arco: dict[str, xr.Dataset] = {}
 
 
 def _arco_handle(ds: MapDataset) -> xr.Dataset:
-    """A lazily-opened ARCO store, held for the life of the process.
-
-    Spiked 2026-09-10: opening costs ~8 s once, and after that one cell costs
-    4-6 s, against ~11 s for every `subset`. Point reads are the one request
-    shape where holding the handle pays, so only they use it.
+    """ARCO store opened once and kept for the process. Opening takes ~8 s, then each
+    cell is 4-6 s (vs ~11 s per subset), so point reads use this.
     """
     with _arco_lock:
         handle = _arco.get(ds.dataset_id)
@@ -388,7 +366,7 @@ def _point_value(arrays: dict, ds: MapDataset, day: str, source: SourceStatus) -
 def fetch_point_value(
     *, ds: MapDataset, lat: float, lon: float, time: str, depth: float | None = None
 ) -> PointValue:
-    """One native cell through the held ARCO handle, disk-cached for 30 days."""
+    """One native cell via the ARCO handle, cached on disk for 30 days."""
     day = time[:10]
     names = list(ds.vector_components) if ds.vector_components else [ds.variable]
     key = _key(ds, "value", var=",".join(names), lat=round(lat, 3), lon=round(lon, 3), t=day, d=depth)
@@ -419,7 +397,7 @@ def fetch_point_value(
 
 
 def warm_in_background(datasets) -> threading.Thread | None:
-    """Open the ARCO handles off the request path, so a first question skips ~8 s."""
+    """Open the ARCO handles in the background so the first question isn't slow."""
     unique = list({d.dataset_id: d for d in datasets if d.protocol == "cmems"}.values())
     if not unique or not COPERNICUS_AVAILABLE:
         return None

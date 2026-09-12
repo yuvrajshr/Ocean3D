@@ -1,20 +1,15 @@
 /**
- * The 2D map viewport.
+ * The 2D map.
  *
- * Three canvases and an SVG, separated by how often each redraws:
+ * Three canvases and an SVG, split by how often they redraw:
  *
  *   basemap   land silhouette          on data change
  *   data      the coloured layers      on data change or pan/zoom  (a blit)
  *   flow      streamline particles     every frame while animating
- *   overlay   graticule, extent, pin   React/SVG, so it stays keyboard-reachable
+ *   overlay   graticule, extent, pin   React/SVG, so it's keyboard accessible
  *
- * They all sit inside `--z-viewport`. They are NOT a fourth chrome z-plane —
- * §5.1's three-plane rule governs the console (viewport / docked / floating),
- * and this is all one plane's internals.
- *
- * Pan and zoom never re-colour anything. The expensive step is rasterizing a
- * field into pixels, and that is keyed on the data, not on the camera; moving
- * the map is a `drawImage` of a bitmap that already exists.
+ * Panning and zooming never re-colour anything; they just redraw the already
+ * coloured bitmap.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,8 +35,7 @@ import {
 import { ParticleField, type VectorField } from "./streamlines";
 import { datasetOf, type MapAction, type MapState } from "./state";
 
-/** The INCOIS analysis extent, drawn as a measured mark — the same treatment the
- *  globe gives it, so the two views agree about where our own data lives. */
+/** INCOIS analysis extent, drawn the same way as on the globe. */
 const INCOIS_EXTENT = { latRange: [-29.5, 29.5], lonRange: [30.5, 119.5] } as const;
 
 const TOKEN = {
@@ -50,11 +44,10 @@ const TOKEN = {
   graticule: "rgba(234, 243, 241, 0.10)",
   label: "rgba(234, 243, 241, 0.45)",
   flow: "rgba(234, 243, 241, 0.55)",
-  // Reference geography. Both are `foam` at low alpha, so they read as chrome
-  // rather than as anything measured. The coast is the stronger of the two
-  // because it is the edge of the data; a border is only a line on the land.
+  // Coastlines and borders in faint foam. The coast is a bit stronger since it's
+  // where the data ends.
   coast: "rgba(234, 243, 241, 0.62)",
-  // abyss at high alpha: separates the coast from the bright end of a ramp.
+  // Dark casing so the coast shows against the bright end of a colormap.
   coastCasing: "rgba(5, 11, 18, 0.78)",
   border: "rgba(234, 243, 241, 0.38)",
 };
@@ -82,10 +75,10 @@ function toBitmap(image: ImageData): HTMLCanvasElement {
   return c;
 }
 
-/** Draw an equirectangular bitmap, repeating it across the antimeridian.
- *
- *  A global grid is a cylinder. Without the +/-360 copies, panning past the
- *  date line leaves a blank half-frame where the world continues. */
+/**
+ * Draw an equirectangular bitmap, repeated across the antimeridian so panning
+ * past the date line doesn't leave a gap.
+ */
 function drawGrid(
   ctx: CanvasRenderingContext2D,
   bitmap: HTMLCanvasElement,
@@ -104,7 +97,7 @@ function drawGrid(
   for (const shift of [-360, 0, 360]) {
     const xL = t.lonToX(west + shift);
     const xR = t.lonToX(east + shift);
-    // t.size is CSS pixels, matching xL/xR; ctx.canvas.width is device pixels.
+    // t.size is CSS pixels like xL/xR; ctx.canvas.width is device pixels.
     if (xR < -2 || xL > t.size.width + 2) continue;
     ctx.drawImage(bitmap, xL, yTop, xR - xL, yBot - yTop);
   }
@@ -138,7 +131,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     [state.viewport, size],
   );
 
-  // ---------------------------------------------------------------- sizing
+  // --- sizing ---
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -151,7 +144,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     return () => ro.disconnect();
   }, []);
 
-  // Open at a world fit once the canvas has a real size.
+  // Fit the world once the canvas has a real size.
   const fitted = useRef(false);
   useEffect(() => {
     if (fitted.current || size.width < 2) return;
@@ -162,10 +155,8 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     });
   }, [size, dispatch]);
 
-  // --------------------------------------------------------- reference geography
-  // Loaded by level of detail rather than all at once: 110m is all the world
-  // view can resolve, and the 1.1 MB fine set is only worth its redraw cost
-  // once you are zoomed in far enough to see the difference.
+  // --- reference geography ---
+  // Load 110m for the world view and the 1.1 MB 50m set only when zoomed in.
   const wantScale = scaleFor(transform.viewport.zoom, worldFitZoom(size));
   useEffect(() => {
     let cancelled = false;
@@ -173,7 +164,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
       if (cancelled || !loaded) return;
       setGeo(loaded);
       setGeoScale(wantScale);
-      // Verification hook, same idea as window.__oceanScene for the 3D views.
+      // Exposed for the screenshot tests, like window.__oceanScene.
       (window as unknown as Record<string, unknown>).__mapGeoScale = wantScale;
     });
     return () => {
@@ -181,7 +172,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     };
   }, [wantScale]);
 
-  // ------------------------------------------------------------ data fetch
+  // --- data fetch ---
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
@@ -197,7 +188,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
       for (const layer of state.layers) {
         const info = datasetOf(state, layer);
         if (!info || !state.time) continue;
-        // Skip a fetch the clock cannot satisfy rather than asking for nothing.
+        // Skip fetches for times the layer doesn't cover.
         const t = Date.parse(state.time);
         if (t < Date.parse(`${info.time_start}T00:00:00Z`) || t > Date.parse(`${info.time_end}T00:00:00Z`)) {
           continue;
@@ -234,8 +225,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
       cancelled = true;
       controller.abort();
     };
-    // Deliberately keyed on what changes the DATA, not the camera: panning and
-    // zooming must never trigger a refetch or a re-colour.
+    // Only depends on data changes, not the camera, so pan/zoom never refetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     state.time,
@@ -243,7 +233,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     state.catalogue.length,
   ]);
 
-  // -------------------------------------------------------- streamline data
+  // --- streamline data ---
   const flowLayer = state.layers.find((l) => l.visible && l.streamlines);
   const flowInfo = flowLayer ? datasetOf(state, flowLayer) : undefined;
   useEffect(() => {
@@ -283,7 +273,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     particles.current.setField(flowField);
   }, [flowField]);
 
-  // ------------------------------------------------------------- rendering
+  // --- rendering ---
   const dpr = Math.min(2, typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
 
   const prepare = useCallback(
@@ -303,17 +293,14 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     [size, dpr],
   );
 
-  // Basemap: land derived from the data's own gaps, per context.md §10.
+  // Basemap: land comes from the data's own no-data mask.
   useEffect(() => {
     const ctx = prepare(basemapRef.current);
     if (!ctx) return;
     ctx.clearRect(0, 0, size.width, size.height);
 
-    // The land mask is derived from a layer's own no-data gaps, so it exists
-    // only when a layer has loaded. The coastlines are not: they are reference
-    // geography, and a map with no layer yet still has to look like the Earth.
-    // Returning early here left an empty grid with nothing on it, which read as
-    // "the map is broken" rather than "no layer is selected".
+    // The land mask needs a loaded layer, but coastlines don't, so the map still
+    // looks like the Earth before any layer loads.
     const first = state.layers.map((l) => renders[l.id]).find((r) => r !== undefined);
     if (first) {
       const mask = toBitmap(rasterizeLandMask(first.values, first.grid, [5, 11, 18]));
@@ -321,8 +308,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
       drawGrid(ctx, mask, first.grid, transform, 1);
     }
 
-    // Strokes on top of the mask, never instead of it. The fill is still the
-    // data's own no-data mask, so nothing here can hide or invent an ocean cell.
+    // Lines go on top of the mask; the fill itself is still the data's own mask.
     if (geo) {
       drawGeography(ctx, geo, transform, {
         coast: TOKEN.coast,
@@ -338,11 +324,10 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     const ctx = prepare(dataRef.current);
     if (!ctx) return;
     ctx.clearRect(0, 0, size.width, size.height);
-    // Nearest-neighbour on purpose: bilinear scaling interpolates BETWEEN LUT
-    // entries and invents colours that are not in the cmocean ramp. Blocky at
-    // low zoom is honest — it shows the real grid.
+    // Nearest-neighbour: bilinear scaling would create colours that aren't in the
+    // colormap. Blocky at low zoom just shows the real grid.
     ctx.imageSmoothingEnabled = false;
-    // layers[0] is the top of the list, so it must be painted last.
+    // layers[0] is the top of the list, so draw it last.
     for (let i = state.layers.length - 1; i >= 0; i--) {
       const layer = state.layers[i]!;
       if (!layer.visible) continue;
@@ -352,31 +337,26 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     }
   }, [renders, transform, size, prepare, state.layers]);
 
-  // Flow: the only per-frame cost in the view.
+  // Flow: the only per-frame work in this view.
   useEffect(() => {
     const canvas = flowRef.current;
     if (!canvas) return;
     let raf = 0;
     const tick = () => {
-      // Sized through `prepare`, which compares BOTH axes. The old guard here
-      // tested width alone, so a height-only resize — the timeline expanding, a
-      // panel opening, the browser's own chrome appearing — left this canvas
-      // with its previous backing-store height while its CSS box followed the
-      // new one. The browser then stretched it, and the streamlines drifted off
-      // the coastlines under them by whatever the height had changed by.
+      // prepare() checks both width and height; checking only width left the canvas
+      // stretched after height-only resizes.
       const ctx = prepare(canvas);
       if (ctx) {
         particles.current.draw(ctx, transform, TOKEN.flow, reduced);
       }
-      // Under reduced motion the traces are drawn once and left standing: the
-      // paths carry direction, and only the animation is motion.
+      // With reduced motion the traces are drawn once and stay still.
       if (!reduced) raf = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(raf);
   }, [transform, prepare, reduced, flowField]);
 
-  // -------------------------------------------------------------- pointers
+  // --- pointers ---
   const pointToGeo = (e: { clientX: number; clientY: number }) => {
     const rect = hostRef.current!.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -428,7 +408,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
     dispatch({ type: "viewport/set", viewport: next.viewport });
   };
 
-  // ---------------------------------------------------------- overlay maths
+  // --- overlay ---
   const step = graticuleStep(transform.viewport.zoom);
   const bounds = transform.bounds();
   const lons: number[] = [];
@@ -495,8 +475,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
       <canvas ref={flowRef} className="map__canvas" style={{ width: size.width, height: size.height }} />
 
       <svg className="map__overlay" width={size.width} height={size.height} aria-hidden="true">
-        {/* Meridians converge at the poles; drawing them past 90 degrees would
-            put a grid over space that is not on the Earth. */}
+        {/* don't draw meridians past the poles */}
         {lons.map((lon) => (
           <line
             key={`x${lon}`}
@@ -540,7 +519,7 @@ export function MapView({ state, dispatch, onMetas, onLoading, onOpenColumn: _on
           </text>
         ))}
 
-        {/* The one measured mark on the map that is not a field. */}
+        {/* INCOIS analysis extent */}
         <rect
           x={extentBox.x}
           y={extentBox.y}

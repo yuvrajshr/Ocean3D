@@ -1,8 +1,4 @@
-/* ============================================================================
-   command-pill.css — Ratio Design System Navigation Bar (Grid Columns 1–12)
-   Modern Swiss International Style + 12-Column Mathematical Grid
-   Palette: #000000 · #FFFFFF · #F5F5F5 · #808080 · #FF0000 (Red Rule Accent)
-   ========================================================================== */
+/* command-pill.css: top navigation bar. */
 
 .command-pill-container {
   position: relative;
@@ -32,7 +28,7 @@
   font-family: var(--rt-font-ui, "Inter", sans-serif);
 }
 
-/* ----------------------------------------------------------- Brand Block */
+/* --- brand --- */
 .command-pill__brand {
   display: flex;
   align-items: center;
@@ -70,7 +66,7 @@
   line-height: 1;
 }
 
-/* The signature Theme C 3px solid copper rule */
+/* 3px copper rule */
 .command-pill__red-rule {
   display: block;
   width: 3px;
@@ -108,7 +104,7 @@
   text-overflow: ellipsis;
 }
 
-/* -------------------------------------------------------- Status Beacon */
+/* --- status --- */
 .command-pill__status-wrap {
   display: inline-flex;
   align-items: center;
@@ -181,7 +177,7 @@
   display: block;
 }
 
-/* ----------------------------------------------------- Vertical Divider */
+/* --- divider --- */
 .command-pill__divider {
   width: 1px;
   height: 24px;
@@ -189,7 +185,7 @@
   flex-shrink: 0;
 }
 
-/* ---------------------------------------------------- Right Controls Group */
+/* --- right-hand controls --- */
 .command-pill__right-group {
   display: flex;
   align-items: center;
@@ -198,7 +194,7 @@
   flex-shrink: 0;
 }
 
-/* ------------------------------------------------ View-Mode Segmented Control */
+/* --- view switcher --- */
 .command-pill__view-rail {
   display: flex;
   align-items: center;
@@ -239,7 +235,7 @@
   background: var(--rt-surface-hover, #262830);
 }
 
-/* Active Segment: Brushed Marine Copper Inversion */
+/* Active button: copper background. */
 .command-pill__view-btn--active {
   background: var(--rt-copper, #e59858) !important;
   color: #15161a !important;
@@ -261,7 +257,7 @@
   cursor: not-allowed;
 }
 
-/* ---------------------------------------------------- Points/Floats Button */
+/* --- floats button --- */
 .command-pill__points-btn {
   display: inline-flex;
   align-items: center;
@@ -328,7 +324,7 @@
   background-color: var(--rt-copper, #e59858);
 }
 
-/* ------------------------------------------------------------- Responsive */
+/* --- responsive --- */
 @media (max-width: 900px) {
   .command-pill {
     padding: 0 12px;

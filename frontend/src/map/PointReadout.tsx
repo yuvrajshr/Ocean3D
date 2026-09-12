@@ -1,18 +1,10 @@
 /**
- * What one point measures: values, a depth profile, a time series, and a
- * depth-time section.
+ * Readouts for one point: values, a depth profile, a time series and a
+ * depth-time section, all from a single (depth x time) block and one request.
  *
- * All four are views of a single (depth x time) block from one request — values
- * are one cell, the profile a column, the series a row, and the section the
- * whole thing. That is why there is one endpoint rather than four.
- *
- * Charts are hand-written SVG, matching `components/ProfilePanel.tsx`, which
- * says why in its own header: the depth axis has to agree exactly with
- * `viz/depth.ts`, and no charting library will do that for us.
- *
- * The profile and section sections do not render for a surface field. That falls
- * out of the data (one depth level) rather than being special-cased, which is
- * the behaviour context.md §10 requires.
+ * Charts are plain SVG (like ProfilePanel.tsx) so the depth axis matches
+ * viz/depth.ts exactly. Profile and section don't show for surface fields
+ * (there's only one level).
  */
 
 import { useState, useMemo } from "react";
@@ -32,9 +24,9 @@ interface Props {
   block: MapPointBlock | null;
   loading: boolean;
   error: string | null;
-  /** The index into `block.depths` the map is currently slicing. */
+  /** Index into block.depths the map is showing. */
   depthIndex: number;
-  /** The index into `block.times` nearest the map's clock. */
+  /** Index into block.times nearest the map's clock. */
   timeIndex: number;
   onClose: () => void;
   onLoadSection: () => void;
@@ -42,8 +34,7 @@ interface Props {
   sectionLoading: boolean;
 }
 
-/** Depth levels arrive at full float precision; a readout prints what a reader
- *  can use. Same rule as the depth ruler and the layer housing. */
+/** Round depth levels for display (same as the ruler and layer panel). */
 function fmtDepth(d: number): string {
   if (d >= 100) return d.toFixed(0);
   if (d >= 10) return d.toFixed(1);
@@ -153,7 +144,7 @@ export function PointReadout({
   const encoded = encodeRange(block.value_range, block.colormap);
   const hasDepth = derived.nD > 1;
 
-  // --- series path -------------------------------------------------------
+  // --- time series path ---
   const sx = (i: number) => PAD_L + (i / Math.max(1, derived.nT - 1)) * (W - PAD_L - PAD_R);
   const sLo = seriesStats?.min ?? 0;
   const sHi = seriesStats?.max ?? 1;
@@ -169,7 +160,7 @@ export function PointReadout({
     pen = true;
   });
 
-  // --- profile path (power-0.65 depth axis, shared with the 3D column) ----
+  // --- profile path (same 0.65 power depth axis as the 3D column) ---
   const maxDepth = block.depths[derived.nD - 1] ?? 1;
   const py = (d: number) => 14 + depthToNorm(d, maxDepth) * (H_PROFILE - 28);
   const pLo = profileStats?.min ?? 0;
@@ -219,7 +210,7 @@ export function PointReadout({
         grid cell {block.offset_km < 0.05 ? "exact" : `${block.offset_km.toFixed(0)} km away`}
       </p>
 
-      {/* --- time series ------------------------------------------------- */}
+      {/* time series */}
       <section className="point-panel__chart">
         <h3 className="point-panel__chart-title">Over time</h3>
         <svg width={W} height={H_SERIES} role="img" aria-label={`${block.label} over time`}>
@@ -243,7 +234,7 @@ export function PointReadout({
         ) : null}
       </section>
 
-      {/* --- depth profile ------------------------------------------------ */}
+      {/* depth profile */}
       {hasDepth ? (
         <section className="point-panel__chart">
           <h3 className="point-panel__chart-title">With depth</h3>
@@ -269,7 +260,7 @@ export function PointReadout({
         </section>
       ) : null}
 
-      {/* --- depth-time section ------------------------------------------- */}
+      {/* depth-time section */}
       {hasDepth ? (
         <section className="point-panel__chart">
           <h3 className="point-panel__chart-title">Depth over time</h3>

@@ -1,13 +1,9 @@
 /**
- * Scientific colormaps (cmocean), per context.md §5.1.
+ * cmocean colormaps for data.
  *
- * These are NOT the six brand tokens and must never be used for chrome. They
- * exist because encoding a physical value needs perceptual uniformity: a ramp
- * with uneven lightness steps invents banding that reads as ocean structure
- * which isn't there, and fails the color-vision requirement in §5.4.
- *
- * Values are sampled from Kristen Thyng's cmocean, the de-facto standard in
- * oceanography — the same family Ocean Data View users already read fluently.
+ * Only for encoding values, never for UI colours. They're perceptually uniform,
+ * so there's no fake banding and they hold up for colour-blind readers. Values
+ * are sampled from Kristen Thyng's cmocean, the usual choice in oceanography.
  */
 
 export type ColormapName =
@@ -20,7 +16,7 @@ export type ColormapName =
 
 type Stop = [number, number, number];
 
-/** Control points, low value to high. Interpolated to 256 steps at build time. */
+/** Control points, low to high. Interpolated to 256 steps. */
 const STOPS: Record<ColormapName, Stop[]> = {
   // Temperature: deep blue (cold) through magenta to pale yellow (warm).
   thermal: [
@@ -34,13 +30,13 @@ const STOPS: Record<ColormapName, Stop[]> = {
     [23, 161, 125], [86, 190, 103], [175, 211, 78], [238, 227, 106],
     [253, 238, 153],
   ],
-  // Diverging, for mixed-layer/anomaly fields.
+  // Diverging, for anomaly fields.
   delta: [
     [16, 31, 63], [42, 107, 165], [134, 198, 224], [241, 237, 236],
     [159, 204, 114], [71, 145, 60], [37, 45, 20],
   ],
-  // Diverging blue-white-red, zero-centred. Used for model minus observation:
-  // blue = analysis too warm, red = analysis too cold.
+  // Diverging blue-white-red around zero, for model minus observation:
+  // blue = model too warm, red = model too cold.
   balance: [
     [24, 28, 67], [37, 82, 158], [96, 154, 205], [178, 205, 226],
     [241, 237, 236], [228, 178, 160], [206, 108, 88], [161, 42, 43],
@@ -60,7 +56,7 @@ const STOPS: Record<ColormapName, Stop[]> = {
 
 export const LUT_SIZE = 256;
 
-/** Build a 256-entry RGB lookup table by linear interpolation of the stops. */
+/** Build a 256-entry RGB lookup table from the stops. */
 export function buildLut(name: ColormapName): Uint8Array {
   const stops = STOPS[name] ?? STOPS.thermal;
   const lut = new Uint8Array(LUT_SIZE * 3);
@@ -79,14 +75,14 @@ export function buildLut(name: ColormapName): Uint8Array {
   return lut;
 }
 
-/** A single CSS color from a colormap, for legends and chart strokes. */
+/** One CSS colour from a colormap, for legends and chart lines. */
 export function sampleCss(name: ColormapName, t: number): string {
   const lut = buildLut(name);
   const i = Math.max(0, Math.min(LUT_SIZE - 1, Math.round(t * (LUT_SIZE - 1))));
   return `rgb(${lut[i * 3]}, ${lut[i * 3 + 1]}, ${lut[i * 3 + 2]})`;
 }
 
-/** CSS gradient for the colorbar ruler. */
+/** CSS gradient for the colorbar. */
 export function toCssGradient(name: ColormapName, steps = 24): string {
   const lut = buildLut(name);
   const parts: string[] = [];
@@ -98,36 +94,31 @@ export function toCssGradient(name: ColormapName, steps = 24): string {
   return `linear-gradient(to top, ${parts.join(", ")})`;
 }
 
-/** Diverging maps must be centred on zero or the residual sign reads wrong. */
+/** Diverging maps have to be centred on zero. */
 export const DIVERGING: ReadonlySet<ColormapName> = new Set(["balance", "delta"]);
 
 /**
- * The value range actually encoded into a LUT, after any diverging re-centring.
- *
- * This lived inline in two places — `volume.ts`'s texture upload and
- * `Colorbar.tsx`'s tick labels — and a third copy was about to be written for
- * the 2D map's rasterizer. Three copies of "what colour is this value" is how
- * the same reading ends up a different colour in two views, which is the exact
- * failure context.md §10 records twice. One definition, imported everywhere.
+ * The range actually encoded into the LUT, after re-centring diverging maps.
+ * Used by the volume, the colorbar and the map, so a value gets the same colour
+ * everywhere.
  */
 export function encodeRange(
   range: [number, number],
   colormap: ColormapName,
 ): [number, number] {
   if (!DIVERGING.has(colormap)) return range;
-  // A diverging map that is not centred on zero puts "no difference" at a
-  // coloured position, which reads as a signal. Centre it.
+  // Centre diverging maps on zero so "no difference" is the neutral colour.
   const extent = Math.max(Math.abs(range[0]), Math.abs(range[1])) || 1;
   return [-extent, extent];
 }
 
-/** Value to 0..1 against an already-encoded range. Non-finite in, NaN out. */
+/** Value to 0..1 in an encoded range. Non-finite gives NaN. */
 export function normaliseValue(value: number, encoded: [number, number]): number {
   const span = encoded[1] - encoded[0] || 1;
   return Number.isFinite(value) ? (value - encoded[0]) / span : NaN;
 }
 
-/** Value to a LUT index, or -1 for no data. The single definition of the mapping. */
+/** Value to LUT index, or -1 for no data. */
 export function lutIndex(value: number, encoded: [number, number]): number {
   const t = normaliseValue(value, encoded);
   if (!Number.isFinite(t)) return -1;

@@ -1,13 +1,7 @@
 /**
- * DepthRuler / DepthSlider Component
- *
- * Precision glassmorphic vertical ocean depth slider matching modern GIS instruments:
- * - Clean vertical D E P T H header
- * - Glassmorphic pill container with cyan accents
- * - Depth gradient fill tracking from surface down to active level
- * - Accurate 24-level INCOIS ERDDAP depth discretization
- * - Live left-anchored tooltip callout with active depth and oceanographic zone
- * - Synchronized with Three.js water column volume windowing
+ * Vertical depth slider for the INCOIS analysis's 24 levels. Shows the current
+ * depth and ocean zone (mixed layer, thermocline, etc.) in a callout, and
+ * controls which depths the 3D volume shows.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,9 +9,10 @@ import type { ColormapName } from "../viz/colormaps";
 import { COLORMAP_GRADIENTS } from "./VariablePanel";
 import "../styles/depth-ruler.css";
 
-/** Depth levels can arrive at full float precision from a model grid
- *  (Copernicus surface level is 0.49402499198913574 m). The built-in levels are
- *  round numbers, which is why this only shows up with an external `levels`. */
+/**
+ * Model depths can come in at full float precision (Copernicus's surface level is
+ * 0.49402499198913574 m), so round them for display.
+ */
 function formatDepth(d: number): string {
   if (d >= 100) return d.toFixed(0);
   if (d >= 10) return d.toFixed(1);
@@ -83,7 +78,6 @@ export function DepthRuler({
   const [showTooltip, setShowTooltip] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  // Derive current active depth index
   let activeIndex: number;
   if (externalIndex !== undefined) {
     activeIndex = externalIndex;
@@ -105,7 +99,10 @@ export function DepthRuler({
 
   const DEFAULT_BLUE_GRADIENT = "linear-gradient(to bottom, #38bdf8, #2563eb 50%, #050810 100%)";
 
-  /** Reverses horizontal colormap gradient so that surface/warm colors are at top (0m) and depth/cold colors are below (2000m) */
+  /**
+   * Flip the horizontal colormap gradient so warm/surface colours are at the top
+   * and cold/deep at the bottom.
+   */
   const reverseGradientToBottom = (gradientStr: string): string => {
     const colorMatches = gradientStr.match(/rgb\([^)]+\)|rgba\([^)]+\)|#[0-9a-fA-F]+/g);
     if (!colorMatches || colorMatches.length < 2) {
@@ -217,7 +214,7 @@ export function DepthRuler({
       role="region"
       aria-label="Ocean Depth Control"
     >
-      {/* Current depth callout tooltip anchored to the left of the slider */}
+      {/* depth callout */}
       {showTooltip && (
         <div className="depth-slider-tooltip">
           <div className="depth-slider-tooltip-tag">Active Ocean Depth</div>
@@ -230,9 +227,7 @@ export function DepthRuler({
         </div>
       )}
 
-      {/* Pill Container */}
       <div className="depth-slider-pill">
-        {/* Vertical DEPTH text header */}
         <div className="depth-slider-header" title="Ocean Water Column Depth">
           <span>D</span>
           <span>E</span>
@@ -241,14 +236,13 @@ export function DepthRuler({
           <span>H</span>
         </div>
 
-        {/* Vertical Track */}
+        {/* track */}
         <div
           ref={trackRef}
           onPointerDown={handlePointerDown}
           className="depth-slider-track"
           title="Drag to adjust ocean depth slice"
         >
-          {/* Depth Gradient Fill */}
           <div
             className="depth-slider-fill"
             style={{
@@ -257,7 +251,7 @@ export function DepthRuler({
             }}
           />
 
-          {/* Level Tick marks */}
+          {/* level ticks */}
           {levels.map((lvl, idx) => {
             const tickPercent = (idx / (totalLevels - 1)) * 100;
             const isSelected = idx === safeIndex;
@@ -270,7 +264,7 @@ export function DepthRuler({
             );
           })}
 
-          {/* Draggable Cyan Handle */}
+          {/* handle */}
           <button
             type="button"
             className="depth-slider-handle"
@@ -290,7 +284,7 @@ export function DepthRuler({
           </button>
         </div>
 
-        {/* Bottom Depth Readout */}
+        {/* depth readout */}
         <div className="depth-slider-footer">
           {formatDepth(currentLevel.depthMeters)}m
         </div>
@@ -299,5 +293,5 @@ export function DepthRuler({
   );
 }
 
-// Named alias export for compatibility
+// Alias export.
 export const DepthSlider = DepthRuler;

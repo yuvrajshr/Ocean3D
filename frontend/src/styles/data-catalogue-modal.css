@@ -1,7 +1,4 @@
-/* ============================================================================
-   data-catalogue-modal.css — Ratio Design System Ocean Data Catalogue
-   Theme C: Warm Maritime Chronometer & Copper
-   ========================================================================== */
+/* data-catalogue-modal.css: the data catalogue modal. */
 
 .catalogue-modal-overlay {
   position: fixed;
@@ -24,7 +21,7 @@
   pointer-events: none !important;
 }
 
-/* Modal Shell */
+/* Modal box */
 .catalogue-modal-box {
   background: var(--rt-surface, #1c1d22);
   border: 1px solid var(--rt-border-color, #2e303a);
@@ -69,7 +66,7 @@
   to { opacity: 0; transform: translateY(8px) scale(0.97); }
 }
 
-/* --- Topbar with Copper Rule --- */
+/* --- top bar --- */
 .catalogue-modal-topbar {
   display: flex;
   align-items: center;
@@ -141,7 +138,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* --- Modal Body: 2-Column Layout --- */
+/* --- body: two columns --- */
 .catalogue-modal-body {
   flex: 1;
   display: flex;
@@ -150,7 +147,7 @@
   background: var(--rt-surface, #1c1d22);
 }
 
-/* --- Left Sidebar (290px) --- */
+/* --- sidebar (290px) --- */
 .catalogue-sidebar {
   width: 290px;
   flex-shrink: 0;
@@ -212,7 +209,7 @@
   scrollbar-color: rgba(229, 152, 88, 0.3) transparent;
 }
 
-/* Search Input */
+/* Search */
 .catalogue-search-wrapper {
   position: relative;
   width: 100%;
@@ -271,7 +268,7 @@
   color: var(--rt-copper, #e59858);
 }
 
-/* Filter Categories */
+/* Filter categories */
 .catalogue-filter-section {
   display: flex;
   flex-direction: column;
@@ -361,7 +358,7 @@
   border-color: var(--rt-copper, #e59858);
 }
 
-/* Selected Item - Swiss Theme C Sharp Copper Inset */
+/* Selected item: copper inset */
 .catalogue-option-item--selected {
   background: rgba(229, 152, 88, 0.16) !important;
   color: var(--rt-ink, #f4efe6) !important;
@@ -415,7 +412,7 @@
   font-style: italic;
 }
 
-/* --- Right Area: Products Main --- */
+/* --- products --- */
 .catalogue-products-main {
   flex: 1;
   background: var(--rt-surface, #1c1d22);
@@ -496,14 +493,14 @@
   cursor: pointer;
 }
 
-/* Products Grid */
+/* Product grid */
 .catalogue-products-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
 }
 
-/* Product Card */
+/* Product card */
 .catalogue-card {
   background: var(--rt-ground, #15161a);
   border: 1px solid var(--rt-border-color, #2e303a);
@@ -514,7 +511,7 @@
   flex-direction: column;
 }
 
-/* Available product: signature Theme C Copper Stripe */
+/* Available products get a copper stripe */
 .catalogue-card--available {
   border: 1px solid var(--rt-border-color, #2e303a);
   border-left: 3px solid var(--rt-copper, #e59858) !important;
@@ -533,7 +530,7 @@
   opacity: 0.85;
 }
 
-/* Card Thumbnail */
+/* Thumbnail */
 .catalogue-card-thumb {
   position: relative;
   aspect-ratio: 16 / 7;
@@ -607,7 +604,7 @@
   border-radius: 0px !important;
 }
 
-/* Active "Add to map" button */
+/* "Add to map" button */
 .catalogue-add-to-map-btn {
   position: absolute;
   bottom: 8px;
@@ -687,7 +684,7 @@
   letter-spacing: 0.06em;
 }
 
-/* Readonly tag */
+/* Read-only tag */
 .catalogue-readonly-badge {
   position: absolute;
   bottom: 8px;
@@ -710,7 +707,7 @@
   z-index: 5;
 }
 
-/* Card Body */
+/* Card body */
 .catalogue-card-body {
   padding: 10px 12px;
   flex: 1;

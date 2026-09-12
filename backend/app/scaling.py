@@ -1,9 +1,4 @@
-"""Colour-scale range for a field.
-
-Extracted from `routers/field.py` when the 2D map needed the same rule. Two
-copies of "what range does the colorbar span" is how a legend ends up
-disagreeing with the pixels it labels, so there is one.
-"""
+"""Colour scale range, shared by the field, map and chunk routes."""
 
 from __future__ import annotations
 
@@ -11,7 +6,7 @@ import numpy as np
 
 
 class ValueRange:
-    """The span a colorbar should use, and whether it hides real extremes."""
+    """Colorbar range, and whether it cuts off real extremes."""
 
     __slots__ = ("low", "high", "true_low", "true_high", "clipped")
 
@@ -24,15 +19,11 @@ class ValueRange:
 
 
 def percentile_range(values: np.ndarray, lo_pct: float = 2.0, hi_pct: float = 98.0) -> ValueRange | None:
-    """Stretch the colour scale over the 2nd-98th percentile, not the extremes.
+    """Use the 2nd-98th percentile instead of min/max.
 
-    Some of these fields carry genuine outliers — geostrophic currents diverge as
-    1/f toward the equator, and chlorophyll is strongly right-skewed with most
-    values below 1 mg/m3 — and a min/max scale lets one extreme cell wash out all
-    the structure everyone actually needs to see. The true range is still
-    reported, and the UI says when clipping applied.
-
-    Returns None when there is nothing finite to scale.
+    Currents blow up near the equator and chlorophyll is heavily skewed, so one
+    outlier would flatten the whole scale. The true range is still returned.
+    Returns None if there's nothing finite.
     """
     finite = values[np.isfinite(values)]
     if finite.size == 0:

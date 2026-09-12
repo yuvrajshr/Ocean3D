@@ -1,10 +1,9 @@
 /**
- * What is running, and whether it is older than the code on disk.
+ * What's running, and whether it's older than the code on disk.
  *
- * Two sources: GET /api/build (the commit the API process started from) and
- * GET /__build (answered by the Vite server, which can see the repo). A static
- * host has neither the second endpoint nor usually the first; both failures
- * leave the stamp showing the bundle's own commit and the check silent.
+ * Uses GET /api/build (commit the API started from) and GET /__build (from the
+ * Vite server, which can see the repo). On a static host these aren't available,
+ * so the stamp shows the bundle's own commit and the check stays quiet.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -28,8 +27,7 @@ export interface DiskReport {
   api: BuildVerdict;
 }
 
-/** Re-checked this often, and whenever the tab regains focus — which is the
- *  moment someone comes back from running `git pull` in a terminal. */
+/** Poll interval. Also re-checked when the tab regains focus (e.g. after a git pull). */
 const POLL_MS = 60_000;
 
 async function getJson<T>(url: string): Promise<T | null> {

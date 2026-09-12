@@ -1,12 +1,9 @@
 /**
- * Variable picker and colour-range editor.
+ * Variable picker and colour range editor.
  *
- * The range handles sit directly on the value histogram rather than on two
- * number fields, so clipping is something you can see yourself doing: drag the
- * minimum past the bulk of the distribution and the bars you just excluded grey
- * out. Auto snaps to the chunk's true extremes; picking a variable resets to
- * that variable's published range, because a forecaster reads the same scale
- * every day and a range that moves under them is worse than one that clips.
+ * The range handles sit on the value histogram, so you can see which values you
+ * are clipping (they grey out). Auto uses the chunk's actual min/max; picking a
+ * variable resets to that variable's fixed range.
  */
 
 import {
@@ -60,8 +57,8 @@ export function FieldPanel({ spec, hist, onCommit, onVariable }: Props) {
   const fMax = clamp01((cr.max - hist.lo) / span);
 
   const setEnd = (which: "min" | "max", val: number): void => {
-    // The two ends can never cross, and never close to nothing: a zero-width
-    // range renders one flat colour and reads as a broken field.
+    // Keep the ends from crossing or getting too close (a zero-width range is one
+    // flat colour).
     if (which === "min") cr.min = Math.min(val, cr.max - span * 0.02);
     else cr.max = Math.max(val, cr.min + span * 0.02);
     onCommit();
@@ -84,7 +81,7 @@ export function FieldPanel({ spec, hist, onCommit, onVariable }: Props) {
     move(e.nativeEvent);
   };
 
-  /** The handles are draggable, but they must also be reachable by keyboard. */
+  /** Keyboard control for the handles. */
   const nudge = (which: "min" | "max", dir: number): void => {
     setEnd(which, (which === "min" ? cr.min : cr.max) + (dir * span) / 100);
   };
